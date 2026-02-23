@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.RemoteViews
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import java.text.SimpleDateFormat
@@ -49,14 +51,8 @@ fun scheduleExactHourlyAlarm(context: Context) {
     )
 
     val calendar = Calendar.getInstance().apply {
-        val currentMinute = get(Calendar.MINUTE)
-        val currentSecond = get(Calendar.SECOND)
-
-        if (currentMinute == 0 && currentSecond < 5) {
-            add(Calendar.HOUR_OF_DAY, 1)
-        } else {
-            add(Calendar.HOUR_OF_DAY, 1)
-        }
+        // Trigger at the start of the next hour
+        add(Calendar.HOUR_OF_DAY, 1)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
@@ -72,37 +68,190 @@ fun scheduleExactHourlyAlarm(context: Context) {
 
 class NotificationReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == "android.intent.action.BOOT_COMPLETED") {
-            scheduleExactHourlyAlarm(context)
-            return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        when (intent.action) {
+            "android.intent.action.BOOT_COMPLETED" -> {
+                scheduleExactHourlyAlarm(context)
+            }
+            "ACTION_SELECT_SCORE" -> {
+                // Pass existing timestamp/label through to the next stage
+                val score = intent.getIntExtra("SCORE", 1)
+                val ts = intent.getLongExtra("TARGET_TS", 0L)
+                val label = intent.getStringExtra("TARGET_LABEL") ?: ""
+
+                showCustomNotification(context, manager, score, ts, label)
+            }
+            "ACTION_SUBMIT_SCORE" -> {
+                val score = intent.getIntExtra("SCORE", 1)
+                val ts = intent.getLongExtra("TARGET_TS", 0L)
+                val label = intent.getStringExtra("TARGET_LABEL") ?: ""
+
+                // Double-check we have valid data
+                if (ts > 0) {
+                    val entry = RatingEntry(
+                        id = System.currentTimeMillis(),
+                        score = score,
+                        timestamp = ts,
+                        hourLabel = label,
+                        note = "",
+                        tags = emptyList()
+                    )
+                    saveRating(context, entry)
+                    Toast.makeText(context, "Saved score $score for $label!", Toast.LENGTH_SHORT).show()
+                }
+
+                manager.cancel(1)
+            }
+            else -> {
+                // STANDARD TRIGGER (Start of a new hour)
+                // Calculate the "Previous Hour" NOW and freeze it
+                val now = Calendar.getInstance()
+                val endHour = now.get(Calendar.HOUR_OF_DAY)
+
+                // If it's 5:00 PM, we are rating 4:00 PM - 5:00 PM
+                val startHour = if (endHour == 0) 23 else endHour - 1
+
+                // Calculate Timestamp (Start of the rated hour)
+                val targetTimestamp = Calendar.getInstance().apply {
+                    if (endHour == 0) add(Calendar.DAY_OF_YEAR, -1) // Handle midnight wrap-around
+                    set(Calendar.HOUR_OF_DAY, startHour)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+
+                // Calculate Label (e.g., "5th")
+                val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
+
+                showCustomNotification(context, manager, null, targetTimestamp, ordinal)
+                scheduleExactHourlyAlarm(context)
+            }
+        }
+    }
+
+    private fun showCustomNotification(
+        context: Context,
+        manager: NotificationManager,
+        selectedScore: Int?,
+        targetTs: Long,
+        targetLabel: String
+    ) {
+        val remoteViews = RemoteViews(context.packageName, R.layout.notification_rating)
+
+        // 1. Format the text
+        val cal = Calendar.getInstance().apply { timeInMillis = targetTs }
+        val startH = cal.get(Calendar.HOUR_OF_DAY)
+        val endH = if (startH == 23) 0 else startH + 1
+
+        val rangeText = "${formatH(startH)}-${formatH(endH)}"
+        remoteViews.setTextViewText(R.id.notif_title, "How was your last hour? ($rangeText)")
+
+        // 2. Setup Chips with Color Logic
+        val buttonIds = listOf(
+            R.id.btn_1, R.id.btn_2, R.id.btn_3, R.id.btn_4, R.id.btn_5,
+            R.id.btn_6, R.id.btn_7, R.id.btn_8, R.id.btn_9, R.id.btn_10
+        )
+
+        buttonIds.forEachIndexed { index, id ->
+            val score = index + 1
+
+            // Logic to colorize the selected button
+            if (selectedScore == score) {
+                // SELECTED: Solid Color Background, White Text
+                val bgRes = when {
+                    score >= 8 -> R.drawable.rounded_notif_btn_green
+                    score >= 5 -> R.drawable.rounded_notif_btn_yellow
+                    else -> R.drawable.rounded_notif_btn_red
+                }
+                remoteViews.setInt(id, "setBackgroundResource", bgRes)
+                remoteViews.setTextColor(id, android.graphics.Color.WHITE)
+            } else {
+                // UNSELECTED: Neutral Background, Colored Text
+                remoteViews.setInt(id, "setBackgroundResource", R.drawable.rounded_notif_btn_neutral)
+                val textColor = when {
+                    score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
+                    score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
+                    else -> android.graphics.Color.parseColor("#B71C1C") // Red
+                }
+                remoteViews.setTextColor(id, textColor)
+            }
+
+            // Click Intent
+            val selectIntent = Intent(context, NotificationReceiver::class.java).apply {
+                action = "ACTION_SELECT_SCORE"
+                putExtra("SCORE", score)
+                putExtra("TARGET_TS", targetTs)
+                putExtra("TARGET_LABEL", targetLabel)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, score, selectIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            remoteViews.setOnClickPendingIntent(id, pendingIntent)
         }
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // 3. Open App Intent
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            mainIntent,
+            context, 0, mainIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        remoteViews.setOnClickPendingIntent(R.id.btn_open_app, pendingIntent)
 
+        // 4. Toggle Submit Button
+        if (selectedScore != null) {
+            remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.GONE)
+            remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.VISIBLE)
+            remoteViews.setTextViewText(R.id.btn_submit, "Submit score $selectedScore")
+
+            // Neutral styling is handled by XML style, but ensuring text is black/primary
+            remoteViews.setTextColor(R.id.btn_submit, android.graphics.Color.BLACK)
+
+            val submitIntent = Intent(context, NotificationReceiver::class.java).apply {
+                action = "ACTION_SUBMIT_SCORE"
+                putExtra("SCORE", selectedScore)
+                putExtra("TARGET_TS", targetTs)
+                putExtra("TARGET_LABEL", targetLabel)
+            }
+            val submitPendingIntent = PendingIntent.getBroadcast(
+                context, 100, submitIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            remoteViews.setOnClickPendingIntent(R.id.btn_submit, submitPendingIntent)
+        } else {
+            remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.VISIBLE)
+            remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.GONE)
+        }
+
+        // 5. Build
         val notification = NotificationCompat.Builder(context, "hourly_bee")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Time to check in 🐝")
-            .setContentText("How was your last hour?")
+            .setCustomContentView(remoteViews)
+            .setCustomBigContentView(remoteViews)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
 
         manager.notify(1, notification)
-        scheduleExactHourlyAlarm(context)
+    }
+
+    // Private helpers to ensure Utils.kt is self-contained
+    private fun formatH(h: Int) = "${if(h%12==0) 12 else h%12}${if(h<12)"am" else "pm"}"
+    private fun getSuffix(n: Int) = when {
+        n in 11..13 -> "th"
+        n%10==1 -> "st"
+        n%10==2 -> "nd"
+        n%10==3 -> "rd"
+        else -> "th"
     }
 }
 
-// --- TAGS MANAGEMENT (defined early to avoid forward reference issues) ---
+// --- TAGS MANAGEMENT ---
 fun loadTags(c: Context): List<String> {
     val prefs = c.getSharedPreferences("b", 0)
     val tagsString = prefs.getString("tags", "Work,Health,Rest,Social") ?: "Work,Health,Rest,Social"
@@ -119,7 +268,12 @@ fun saveRating(context: Context, entry: RatingEntry) {
     val prefs = context.getSharedPreferences("b", 0)
     val existing = loadRatings(context).toMutableList()
     existing.removeAll { it.id == entry.id }
-    existing.add(entry)
+
+    // Safety: Sanitize note to prevent CSV corruption
+    val safeNote = entry.note.replace(",", " ").replace("\n", " ")
+    val safeEntry = entry.copy(note = safeNote)
+
+    existing.add(safeEntry)
 
     val serialized = existing.joinToString("|") { e ->
         "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}"
@@ -160,21 +314,14 @@ fun deleteRating(context: Context, id: Long) {
 fun saveToCsv(c: Context, u: Uri, r: List<RatingEntry>) {
     c.contentResolver.openOutputStream(u)?.use { stream ->
         val writer = stream.bufferedWriter(Charsets.UTF_8)
-
-        // Write available tags list as first line (special metadata)
         val availableTags = loadTags(c)
         writer.write("# AVAILABLE_TAGS: ${availableTags.joinToString("|")}\n")
-
-        // Write header
         writer.write("ID,Score,Timestamp,Recording_Time,Hour_Label,Note,Tags\n")
-
-        // Write each rating entry
         r.forEach {
             val recordingTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.id))
             val line = "${it.id},${it.score},${it.timestamp},\"$recordingTime\",\"${it.hourLabel}\",\"${it.note}\",\"${it.tags.joinToString("|")}\"\n"
             writer.write(line)
         }
-
         writer.flush()
     }
 }
@@ -186,7 +333,6 @@ fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
             var lineNumber = 0
             reader.forEachLine { line ->
                 try {
-                    // First line: check for available tags metadata
                     if (lineNumber == 0 && line.startsWith("# AVAILABLE_TAGS:")) {
                         val tagsString = line.substringAfter("# AVAILABLE_TAGS:").trim()
                         if (tagsString.isNotBlank()) {
@@ -196,18 +342,13 @@ fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
                         lineNumber++
                         return@forEachLine
                     }
-
-                    // Skip header row
                     if (line.startsWith("ID,Score,Timestamp")) {
                         lineNumber++
                         return@forEachLine
                     }
-
-                    // Parse CSV with quoted fields
                     val parts = mutableListOf<String>()
                     var currentPart = StringBuilder()
                     var inQuotes = false
-
                     for (char in line) {
                         when {
                             char == '"' -> inQuotes = !inQuotes
@@ -219,8 +360,6 @@ fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
                         }
                     }
                     parts.add(currentPart.toString())
-
-                    // Parse fields: ID, Score, Timestamp, Recording_Time, Hour_Label, Note, Tags
                     if (parts.size >= 7) {
                         entries.add(
                             RatingEntry(
@@ -235,7 +374,6 @@ fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
                     }
                     lineNumber++
                 } catch (e: Exception) {
-                    // Skip malformed lines
                     lineNumber++
                 }
             }
@@ -248,27 +386,22 @@ fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
 
 fun scheduleAutoBackup(context: Context) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
         return
     }
-
     val intent = Intent(context, BackupReceiver::class.java)
     val pendingIntent = PendingIntent.getBroadcast(
         context, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
-
     val calendar = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 5)
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
-
         if (before(Calendar.getInstance())) {
             add(Calendar.DAY_OF_YEAR, 1)
         }
     }
-
     alarmManager.cancel(pendingIntent)
     alarmManager.setRepeating(
         android.app.AlarmManager.RTC_WAKEUP,
@@ -291,25 +424,18 @@ class BackupReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val prefs = context.getSharedPreferences("b", 0)
         val backupUriString = prefs.getString("backup_uri", null) ?: return
-
         try {
             val backupUri = Uri.parse(backupUriString)
             val ratings = loadRatings(context)
-
             val fileName = "bee_backup.csv"
             val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
                 backupUri,
                 android.provider.DocumentsContract.getTreeDocumentId(backupUri)
             )
-
             val resolver = context.contentResolver
             val childUri = android.provider.DocumentsContract.createDocument(
-                resolver,
-                docUri,
-                "text/csv",
-                fileName
+                resolver, docUri, "text/csv", fileName
             )
-
             childUri?.let {
                 saveToCsv(context, it, ratings)
                 prefs.edit { putLong("last_backup", System.currentTimeMillis()) }
@@ -317,22 +443,17 @@ class BackupReceiver : android.content.BroadcastReceiver() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
         scheduleAutoBackup(context)
     }
 }
 
-// --- STREAK CALCULATION ---
 fun calculateStreak(r: List<RatingEntry>): Int {
     if (r.isEmpty()) return 0
-
-    // Helper: Checks if there's a rating for a specific hour offset
     fun hasRatingForHour(offset: Int): Boolean {
         val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
         val targetHour = cal.get(Calendar.HOUR_OF_DAY)
         val targetDay = cal.get(Calendar.DAY_OF_YEAR)
         val targetYear = cal.get(Calendar.YEAR)
-
         return r.any { entry ->
             val c = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
             c.get(Calendar.HOUR_OF_DAY) == targetHour &&
@@ -340,28 +461,17 @@ fun calculateStreak(r: List<RatingEntry>): Int {
                     c.get(Calendar.YEAR) == targetYear
         }
     }
-
-    // Determine starting point based on the rules:
-    // 1. If current hour (offset 0) or previous hour (offset 1) has a rating, start from that hour
-    // 2. If neither has a rating but the hour before that (offset 2) has one, start from offset 2
-    // 3. Otherwise return 0
-
     val startOffset = when {
-        hasRatingForHour(0) -> 0  // Current hour has rating
-        hasRatingForHour(1) -> 1  // Previous hour has rating
-        hasRatingForHour(2) -> 2  // Hour before the previous has rating
-        else -> return 0  // None of the relevant hours have ratings
+        hasRatingForHour(0) -> 0
+        hasRatingForHour(1) -> 1
+        hasRatingForHour(2) -> 2
+        else -> return 0
     }
-
-    // Count streak starting from the determined hour
     var streak = 1
     var currentOffset = startOffset + 1
-
-    // Look for ratings in each preceding hour
     while (hasRatingForHour(currentOffset)) {
         streak++
         currentOffset++
     }
-
     return streak
 }

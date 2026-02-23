@@ -14,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -225,7 +224,7 @@ fun NowTab(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                "Yesterday:",
+                                "Yesterday's Average:",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -262,7 +261,7 @@ fun NowTab(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                "Today:",
+                                "Today's Average:",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -316,7 +315,7 @@ fun NowTab(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Great job rating the last 2 hours, make your current hour amazing!",
+                            "Great job rating your past hours, now go make your current hour amazing!",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -370,7 +369,7 @@ fun NowTab(
                 }
 
                 Text(
-                    text = "You can only rate the bygone hour and the hour before that, to ensure you are constantly mindful of your day.",
+                    text = "You can only rate the immediate past hour and the hour before that, to ensure you are constantly mindful of your day.",
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                         fontSize = 11.sp,

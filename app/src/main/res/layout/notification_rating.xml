@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/notif_title"
+        style="@style/TextAppearance.Compat.Notification.Title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="How was your last hour?"
+        android:layout_marginBottom="12dp"
+        android:layout_gravity="center_horizontal"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="5"
+        android:layout_marginBottom="6dp">
+        <Button android:id="@+id/btn_1" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="1" android:textColor="#B71C1C" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_2" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="2" android:textColor="#B71C1C" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_3" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="3" android:textColor="#B71C1C" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_4" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="4" android:textColor="#B71C1C" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_5" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="5" android:textColor="#F57C00" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="5"
+        android:layout_marginBottom="8dp">
+        <Button android:id="@+id/btn_6" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="6" android:textColor="#F57C00" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_7" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="7" android:textColor="#F57C00" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_8" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="8" android:textColor="#2E7D32" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_9" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="9" android:textColor="#2E7D32" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/btn_10" android:background="@drawable/rounded_notif_btn_neutral" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="10" android:textColor="#2E7D32" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        
+        <Button
+            android:id="@+id/btn_open_app"
+            android:background="@drawable/rounded_notif_btn_neutral"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:text="Open App"/>
+
+        <Button
+            android:id="@+id/btn_submit"
+            android:background="@drawable/rounded_notif_btn_neutral"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:visibility="gone"
+            android:textColor="?android:attr/textColorPrimary"
+            android:text="Submit score" />
+    </FrameLayout>
+</LinearLayout>

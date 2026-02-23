@@ -3,7 +3,6 @@ package com.example.beeing
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -326,7 +325,7 @@ fun HourlyPulseApp() {
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Developed by Athivignesh",
+                                "Developed by AthrixMatrix",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.Gray
                             )

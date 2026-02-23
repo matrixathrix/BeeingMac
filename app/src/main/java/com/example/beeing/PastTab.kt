@@ -14,10 +14,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import java.util.*
 
 /**
- * PAST TAB - WITH EXPANDED SCORE TABLE
+ * PAST TAB - WITH UNDO FEATURE
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,12 +29,14 @@ fun PastTab(
     onChartYPosition: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // Load ratings from ViewModel
     val allRatings = viewModel.allRatings
 
     // Chart view state
-    var currentChartView by remember { mutableStateOf(ChartView.DAY) }
+    var currentChartView by remember { mutableStateOf(ChartView.HOURLY) }
 
     // Edit state
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
@@ -43,192 +46,114 @@ fun PastTab(
     val scoreStats = remember(allRatings, viewModel.refreshTrigger) {
         val now = Calendar.getInstance()
 
-        // Yesterday
-        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val dayToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
+        // Helper to filter safely
+        fun getAvgFor(field: Int, amount: Int): Double {
+            val target = Calendar.getInstance().apply { add(field, amount) }
+            val relevant = allRatings.filter { entry ->
+                val c = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
+                when (field) {
+                    Calendar.DAY_OF_YEAR -> isSameDay(c, target)
+                    Calendar.MONTH -> c.get(Calendar.MONTH) == target.get(Calendar.MONTH) && c.get(Calendar.YEAR) == target.get(Calendar.YEAR)
+                    Calendar.YEAR -> c.get(Calendar.YEAR) == target.get(Calendar.YEAR)
+                    else -> false
                 }
-            } else cal
-            dayToCheck.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) &&
-                    dayToCheck.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
+            }
+            return if (relevant.isEmpty()) 0.0 else relevant.map { it.score }.average()
         }
-        val yesterdayAvg = if (yesterdayRatings.isEmpty()) 0.0 else yesterdayRatings.map { it.score }.average()
-
-        // Today
-        val todayRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val dayToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else cal
-            dayToCheck.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR) &&
-                    dayToCheck.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-        }
-        val todayAvg = if (todayRatings.isEmpty()) 0.0 else todayRatings.map { it.score }.average()
-
-        // Last Month
-        val lastMonth = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
-        val lastMonthRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val monthToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else cal
-            monthToCheck.get(Calendar.MONTH) == lastMonth.get(Calendar.MONTH) &&
-                    monthToCheck.get(Calendar.YEAR) == lastMonth.get(Calendar.YEAR)
-        }
-        val lastMonthAvg = if (lastMonthRatings.isEmpty()) 0.0 else lastMonthRatings.map { it.score }.average()
-
-        // Current Month
-        val currentMonthRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val monthToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else cal
-            monthToCheck.get(Calendar.MONTH) == now.get(Calendar.MONTH) &&
-                    monthToCheck.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-        }
-        val currentMonthAvg = if (currentMonthRatings.isEmpty()) 0.0 else currentMonthRatings.map { it.score }.average()
-
-        // Last Year
-        val lastYear = Calendar.getInstance().apply { add(Calendar.YEAR, -1) }
-        val lastYearRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val yearToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else cal
-            yearToCheck.get(Calendar.YEAR) == lastYear.get(Calendar.YEAR)
-        }
-        val lastYearAvg = if (lastYearRatings.isEmpty()) 0.0 else lastYearRatings.map { it.score }.average()
-
-        // Current Year
-        val currentYearRatings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val yearToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else cal
-            yearToCheck.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-        }
-        val currentYearAvg = if (currentYearRatings.isEmpty()) 0.0 else currentYearRatings.map { it.score }.average()
 
         mapOf(
-            "Yesterday" to yesterdayAvg,
-            "Today" to todayAvg,
-            "Last Month" to lastMonthAvg,
-            "Current Month" to currentMonthAvg,
-            "Last Year" to lastYearAvg,
-            "Current Year" to currentYearAvg
+            "Yesterday" to getAvgFor(Calendar.DAY_OF_YEAR, -1),
+            "Today" to getAvgFor(Calendar.DAY_OF_YEAR, 0),
+            "Last Month" to getAvgFor(Calendar.MONTH, -1),
+            "Current Month" to getAvgFor(Calendar.MONTH, 0),
+            "Last Year" to getAvgFor(Calendar.YEAR, -1),
+            "Current Year" to getAvgFor(Calendar.YEAR, 0)
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 0.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(48.dp)) // DOUBLE the padding for header
-
-        // EXPANDED SCORE COMPARISON TABLE
-        if (allRatings.isNotEmpty()) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "Score Comparison",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-
-                    // Row headers
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        Text("", modifier = Modifier.weight(1f)) // Empty for label column
-                        Text("Previous", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Current", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-
-                    Divider(Modifier.padding(vertical = 8.dp))
-
-                    // Day comparison
-                    ScoreComparisonRow("Day", scoreStats["Yesterday"] ?: 0.0, scoreStats["Today"] ?: 0.0)
-                    Divider(Modifier.padding(vertical = 4.dp))
-
-                    // Month comparison
-                    ScoreComparisonRow("Month", scoreStats["Last Month"] ?: 0.0, scoreStats["Current Month"] ?: 0.0)
-                    Divider(Modifier.padding(vertical = 4.dp))
-
-                    // Year comparison
-                    ScoreComparisonRow("Year", scoreStats["Last Year"] ?: 0.0, scoreStats["Current Year"] ?: 0.0)
-                }
-            }
-        }
-
-        // Chart and Insights Section
-        if (allRatings.isNotEmpty()) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = Color.Transparent
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .onGloballyPositioned {
-                        onChartYPosition(it.positionInParent().y)
-                    }
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 0.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Professional Chart (original style with toggle buttons inside)
-                ProfessionalChart(
+                Spacer(Modifier.height(48.dp))
+
+                // EXPANDED SCORE COMPARISON TABLE
+                if (allRatings.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "Score Comparison",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Text("", modifier = Modifier.weight(1f))
+                                Text("Previous", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Current", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            ScoreComparisonRow("Day", scoreStats["Yesterday"] ?: 0.0, scoreStats["Today"] ?: 0.0)
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            ScoreComparisonRow("Month", scoreStats["Last Month"] ?: 0.0, scoreStats["Current Month"] ?: 0.0)
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            ScoreComparisonRow("Year", scoreStats["Last Year"] ?: 0.0, scoreStats["Current Year"] ?: 0.0)
+                        }
+                    }
+                }
+
+                // Chart and Insights Section
+                if (allRatings.isNotEmpty()) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned {
+                                onChartYPosition(it.positionInParent().y)
+                            }
+                    ) {
+                        ProfessionalChart(
+                            ratings = allRatings,
+                            view = currentChartView,
+                            onToggle = { currentChartView = it }
+                        )
+
+                        InsightPanel(
+                            ratings = allRatings,
+                            view = currentChartView
+                        )
+                    }
+                }
+
+                // History Panel with UNDO Logic
+                HistoryPanel(
                     ratings = allRatings,
-                    view = currentChartView,
-                    onToggle = { currentChartView = it }
+                    onEdit = { editingEntry = it }
                 )
 
-                // Insight Panel
-                InsightPanel(
-                    ratings = allRatings,
-                    view = currentChartView
-                )
+                Spacer(Modifier.height(32.dp))
             }
         }
-
-        // History Panel
-        HistoryPanel(
-            ratings = allRatings,
-            onEdit = { editingEntry = it }
-        )
-
-        Spacer(Modifier.height(32.dp))
     }
 
     // Edit Bottom Sheet
@@ -244,8 +169,27 @@ fun PastTab(
                     editingEntry = null
                 },
                 onDelete = { id ->
+                    // 1. Capture the entry to delete for potential Undo
+                    val entryToDelete = allRatings.find { it.id == id }
+
+                    // 2. Perform deletion
                     viewModel.deleteRating(context, id)
-                    editingEntry = null
+                    editingEntry = null // Close sheet immediately
+
+                    // 3. Show Snackbar with Undo
+                    if (entryToDelete != null) {
+                        scope.launch {
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Rating deleted",
+                                actionLabel = "Undo",
+                                duration = SnackbarDuration.Short // Persists for ~4 seconds
+                            )
+                            if (result == SnackbarResult.ActionPerformed) {
+                                // 4. Restore if Undo clicked
+                                viewModel.saveRating(context, entryToDelete)
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -265,22 +209,13 @@ fun ScoreComparisonRow(label: String, previousScore: Double, currentScore: Doubl
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium
         )
-
-        // Previous score
         Text(
             if (previousScore > 0) String.format("%.1f", previousScore) else "-",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = when {
-                previousScore >= 8.0 -> Color(0xFF2E7D32)
-                previousScore >= 5.0 -> Color(0xFFF57C00)
-                previousScore > 0.0 -> Color(0xFFC62828)
-                else -> Color.Gray
-            }
+            color = getScoreColor(previousScore)
         )
-
-        // Current score with trend indicator
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.Start,
@@ -290,15 +225,8 @@ fun ScoreComparisonRow(label: String, previousScore: Double, currentScore: Doubl
                 if (currentScore > 0) String.format("%.1f", currentScore) else "-",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = when {
-                    currentScore >= 8.0 -> Color(0xFF2E7D32)
-                    currentScore >= 5.0 -> Color(0xFFF57C00)
-                    currentScore > 0.0 -> Color(0xFFC62828)
-                    else -> Color.Gray
-                }
+                color = getScoreColor(currentScore)
             )
-
-            // Trend indicator
             if (previousScore > 0 && currentScore > 0) {
                 Spacer(Modifier.width(4.dp))
                 Text(
@@ -308,13 +236,18 @@ fun ScoreComparisonRow(label: String, previousScore: Double, currentScore: Doubl
                         else -> "→"
                     },
                     fontSize = 16.sp,
-                    color = when {
-                        currentScore > previousScore -> Color(0xFF2E7D32)
-                        currentScore < previousScore -> Color(0xFFC62828)
-                        else -> Color.Gray
-                    }
+                    color = getScoreColor(currentScore)
                 )
             }
         }
+    }
+}
+
+fun getScoreColor(score: Double): Color {
+    return when {
+        score >= 8.0 -> Color(0xFF2E7D32)
+        score >= 5.0 -> Color(0xFFF57C00)
+        score > 0.0 -> Color(0xFFC62828)
+        else -> Color.Gray
     }
 }
