@@ -75,8 +75,9 @@ fun NowTab(
     // Check if current targeted hour is logged
     val isLoggedCurrent by remember(allRatings, displayHourInfo, targetedHourOffset, viewModel.refreshTrigger) {
         derivedStateOf {
+            // dayKey is based on the START of the rated hour (offset+1 hours back)
             val targetDayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
-                Date(System.currentTimeMillis() - (targetedHourOffset * 3600000L))
+                Date(System.currentTimeMillis() - ((targetedHourOffset + 1) * 3600000L))
             )
             allRatings.any {
                 it.hourLabel == displayHourInfo.third &&
@@ -85,39 +86,25 @@ fun NowTab(
         }
     }
 
-    // Check if latest hour is logged
-    val now = remember(viewModel.refreshTrigger) { Calendar.getInstance() }
-    val currentHour = now.get(Calendar.HOUR_OF_DAY)
-
-    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger) {
-        allRatings.any { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            cal.get(Calendar.HOUR_OF_DAY) == currentHour &&
-                    cal.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR) &&
-                    cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+    // Helper: check if a given hour-slot is already logged.
+    // offset=0 → the most-recent completed hour (e.g. 12PM-1PM when it's 1PM)
+    // offset=1 → the grace-period hour before that
+    // timestamp is stored at the START of the rated hour, so the dayKey uses (offset+1) hours back.
+    fun isHourLogged(offset: Int): Boolean {
+        val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
+        val endH = cal.get(Calendar.HOUR_OF_DAY)
+        val label = "${if (endH == 0) 24 else endH}${getOrdinalSuffix(if (endH == 0) 24 else endH)}"
+        val dayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
+            Date(System.currentTimeMillis() - ((offset + 1) * 3600000L))
+        )
+        return allRatings.any {
+            it.hourLabel == label &&
+                    SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(it.timestamp)) == dayKey
         }
     }
 
-    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) {
-        val previousHour = if (currentHour == 0) 23 else currentHour - 1
-        allRatings.any { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val entryHour = cal.get(Calendar.HOUR_OF_DAY)
-            val entryDay = cal.get(Calendar.DAY_OF_YEAR)
-            val entryYear = cal.get(Calendar.YEAR)
-
-            if (currentHour == 0) {
-                val yesterday = Calendar.getInstance().apply {
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-                entryHour == 23 && entryDay == yesterday.get(Calendar.DAY_OF_YEAR) &&
-                        entryYear == yesterday.get(Calendar.YEAR)
-            } else {
-                entryHour == previousHour && entryDay == now.get(Calendar.DAY_OF_YEAR) &&
-                        entryYear == now.get(Calendar.YEAR)
-            }
-        }
-    }
+    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(0) }
+    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
 
     val bothHoursRated = isLatestHourLogged && isPreviousHourLogged
     val streak = calculateStreak(allRatings)
@@ -136,19 +123,8 @@ fun NowTab(
         val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
         val yesterdayRatings = allRatings.filter { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-
-            val dayToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else {
-                cal
-            }
-
-            dayToCheck.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) &&
-                    dayToCheck.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
+            cal.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) &&
+                    cal.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
         }
         if (yesterdayRatings.isEmpty()) 0.0 else yesterdayRatings.map { it.score }.average()
     }
@@ -158,19 +134,8 @@ fun NowTab(
         val today = Calendar.getInstance()
         val todayRatings = allRatings.filter { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-
-            val dayToCheck = if (hour == 0) {
-                Calendar.getInstance().apply {
-                    timeInMillis = entry.timestamp
-                    add(Calendar.DAY_OF_YEAR, -1)
-                }
-            } else {
-                cal
-            }
-
-            dayToCheck.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) &&
-                    dayToCheck.get(Calendar.YEAR) == today.get(Calendar.YEAR)
+            cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) &&
+                    cal.get(Calendar.YEAR) == today.get(Calendar.YEAR)
         }
         if (todayRatings.isEmpty()) 0.0 else todayRatings.map { it.score }.average()
     }
@@ -417,7 +382,10 @@ fun NowTab(
                                 text = s.toString(),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = if (selectedScore == s && s < 5) Color.White else Color.Unspecified
+                                color = if (selectedScore == s) {
+                                    // Dark text on green/yellow, white on red for contrast
+                                    if (s >= 5) Color.Black else Color.White
+                                } else Color.Unspecified
                             )
                         }
                     }
@@ -428,8 +396,9 @@ fun NowTab(
                             val entry = RatingEntry(
                                 System.currentTimeMillis(),
                                 selectedScore,
+                                // timestamp = START of the rated hour (one hour before the end)
                                 Calendar.getInstance().apply {
-                                    add(Calendar.HOUR_OF_DAY, -targetedHourOffset)
+                                    add(Calendar.HOUR_OF_DAY, -(targetedHourOffset + 1))
                                     set(Calendar.MINUTE, 0)
                                     set(Calendar.SECOND, 0)
                                     set(Calendar.MILLISECOND, 0)

@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 //import androidx.compose.ui.layout.onGloballyPositioned
 //import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -47,7 +48,19 @@ import kotlin.math.sin
 fun ProfessionalChart(ratings: List<RatingEntry>, view: ChartView, onToggle: (ChartView) -> Unit) {
     val isDark = isSystemInDarkTheme()
     val axisTextColor = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
-    val data = remember(ratings, view) { getChartData(ratings, view) }
+
+    // Date seeker state — only used for HOURLY view; today = offset 0
+    var selectedDateOffset by remember { mutableIntStateOf(0) }
+    // Reset to today when switching away from HOURLY
+    LaunchedEffect(view) { if (view != ChartView.HOURLY) selectedDateOffset = 0 }
+
+    val selectedDate = remember(selectedDateOffset) {
+        Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -selectedDateOffset) }
+    }
+
+    val data = remember(ratings, view, selectedDateOffset) {
+        getChartData(ratings, view, if (view == ChartView.HOURLY) selectedDate else null)
+    }
 
     val textPaint = remember(axisTextColor) {
         android.graphics.Paint().apply {
@@ -82,18 +95,58 @@ fun ProfessionalChart(ratings: List<RatingEntry>, view: ChartView, onToggle: (Ch
                 Row { ChartView.entries.forEach { v -> TextButton(onClick = { onToggle(v) }) { Text(v.name, color = if(view==v) MaterialTheme.colorScheme.primary else Color.Gray, fontSize = 11.sp) } } }
             }
 
+            // Date seeker — only shown for HOURLY view
+            if (view == ChartView.HOURLY) {
+                val dateLabel = remember(selectedDateOffset) {
+                    SimpleDateFormat("ddMMMyyyy", Locale.getDefault()).format(selectedDate.time)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { selectedDateOffset++ }) {
+                        Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous day")
+                    }
+                    Text(
+                        text = dateLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                    IconButton(
+                        onClick = { if (selectedDateOffset > 0) selectedDateOffset-- },
+                        enabled = selectedDateOffset > 0
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Next day",
+                            tint = if (selectedDateOffset > 0) LocalContentColor.current else Color.Gray
+                        )
+                    }
+                }
+            }
+
             val scrollState = rememberScrollState()
             val density = LocalDensity.current
+            var viewportWidthPx by remember { mutableIntStateOf(0) }
 
-            LaunchedEffect(data, view) {
+            LaunchedEffect(data, view, selectedDateOffset, viewportWidthPx) {
+                if (viewportWidthPx == 0) return@LaunchedEffect
                 val lastEntryIndex = data.indexOfLast { it.second > 0f }
+                val chartWidthDp = if (view == ChartView.HOURLY) 1000.dp else 550.dp
+                val totalWidthPx = with(density) { chartWidthDp.toPx() }
+                val barSpacingPx = totalWidthPx / data.size
+                val startPaddingPx = with(density) { 50.dp.toPx() }
+
                 if (lastEntryIndex != -1) {
-                    val chartWidthDp = if(view == ChartView.HOURLY) 1000.dp else 550.dp
-                    val totalWidthPx = with(density) { chartWidthDp.toPx() }
-                    val offsetPx = (lastEntryIndex.toFloat() / data.size) * totalWidthPx
-                    scrollState.animateScrollTo(offsetPx.toInt())
+                    // Place the right edge of the last-rated bar at the right edge of the viewport:
+                    // scroll offset = barRightEdge - viewportWidth
+                    val barRightEdgePx = startPaddingPx + (lastEntryIndex + 1) * barSpacingPx
+                    val targetScroll = (barRightEdgePx - viewportWidthPx).coerceAtLeast(0f)
+                    scrollState.animateScrollTo(targetScroll.toInt())
                 } else {
-                    scrollState.scrollTo(scrollState.maxValue)
+                    scrollState.scrollTo(0)
                 }
             }
 
@@ -101,6 +154,7 @@ fun ProfessionalChart(ratings: List<RatingEntry>, view: ChartView, onToggle: (Ch
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp)
+                    .onSizeChanged { viewportWidthPx = it.width }
                     .horizontalScroll(scrollState)
             ) {
                 Canvas(
@@ -1148,30 +1202,25 @@ fun NotesSection(
 // HELPER FUNCTIONS
 // ==============================================
 
-fun getChartData(ratings: List<RatingEntry>, view: ChartView): List<Pair<String, Float>> {
+fun getChartData(ratings: List<RatingEntry>, view: ChartView, selectedDate: Calendar? = null): List<Pair<String, Float>> {
     return when(view) {
         ChartView.HOURLY -> {
-            // FIX: Chart range shifted by -1 to exclude the current incomplete hour
-            // Map 0..23 to offsets 24 downTo 1.
-            (0..23).map { i ->
-                val offset = 24 - i
-                val target = Calendar.getInstance().apply {
-                    add(Calendar.HOUR_OF_DAY, -offset)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                val hr = target.get(Calendar.HOUR_OF_DAY)
-                val day = target.get(Calendar.DAY_OF_YEAR)
+            // Show all 24 hours (1st..24th) for the selected date.
+            // The selected date defaults to today.
+            val targetDay = selectedDate ?: Calendar.getInstance()
+            (0..23).map { hourIndex ->
+                // hourIndex 0 = 1st hour (12AM-1AM), startH=0, endH=1
+                val startH = hourIndex
+                val endH = if (startH == 23) 0 else startH + 1
+                val label = "${formatHour(startH)}-${formatHour(endH)}"
 
+                // Find a rating whose timestamp falls on this hour of the target day
                 val match = ratings.find {
                     val c = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    c.get(Calendar.HOUR_OF_DAY) == hr && c.get(Calendar.DAY_OF_YEAR) == day
+                    c.get(Calendar.HOUR_OF_DAY) == startH &&
+                            c.get(Calendar.DAY_OF_YEAR) == targetDay.get(Calendar.DAY_OF_YEAR) &&
+                            c.get(Calendar.YEAR) == targetDay.get(Calendar.YEAR)
                 }
-
-                // FIX: Label range is Hour -> Hour+1
-                val endHour = if (hr == 23) 0 else hr + 1
-                val label = "${formatHour(hr)}-${formatHour(endHour)}"
                 label to (match?.score?.toFloat() ?: 0f)
             }
         }
@@ -1180,18 +1229,7 @@ fun getChartData(ratings: List<RatingEntry>, view: ChartView): List<Pair<String,
                 val target = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -(9 - i)) }
                 val avg = ratings.filter {
                     val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    val hour = cal.get(Calendar.HOUR_OF_DAY)
-
-                    val dayToCheck = if (hour == 0) {
-                        Calendar.getInstance().apply {
-                            timeInMillis = it.timestamp
-                            add(Calendar.DAY_OF_YEAR, -1)
-                        }
-                    } else {
-                        cal
-                    }
-
-                    isSameDay(dayToCheck, target)
+                    isSameDay(cal, target)
                 }.map { it.score }.average()
                 SimpleDateFormat("d-MMM", Locale.getDefault()).format(target.time) to (if(avg.isNaN()) 0f else avg.toFloat())
             }
@@ -1203,18 +1241,7 @@ fun getChartData(ratings: List<RatingEntry>, view: ChartView): List<Pair<String,
                 val year = target.get(Calendar.YEAR)
                 val avg = ratings.filter {
                     val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    val hour = cal.get(Calendar.HOUR_OF_DAY)
-
-                    val weekToCheck = if (hour == 0) {
-                        Calendar.getInstance().apply {
-                            timeInMillis = it.timestamp
-                            add(Calendar.DAY_OF_YEAR, -1)
-                        }
-                    } else {
-                        cal
-                    }
-
-                    weekToCheck.get(Calendar.WEEK_OF_YEAR) == week && weekToCheck.get(Calendar.YEAR) == year
+                    cal.get(Calendar.WEEK_OF_YEAR) == week && cal.get(Calendar.YEAR) == year
                 }.map { it.score }.average()
                 "W$week" to (if(avg.isNaN()) 0f else avg.toFloat())
             }
@@ -1224,23 +1251,10 @@ fun getChartData(ratings: List<RatingEntry>, view: ChartView): List<Pair<String,
                 val target = Calendar.getInstance().apply { add(Calendar.MONTH, -(9 - i)) }
                 val targetMonth = target.get(Calendar.MONTH)
                 val targetYear = target.get(Calendar.YEAR)
-
                 val avg = ratings.filter {
                     val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    val hour = cal.get(Calendar.HOUR_OF_DAY)
-
-                    val monthToCheck = if (hour == 0) {
-                        Calendar.getInstance().apply {
-                            timeInMillis = it.timestamp
-                            add(Calendar.DAY_OF_YEAR, -1)
-                        }
-                    } else {
-                        cal
-                    }
-
-                    monthToCheck.get(Calendar.MONTH) == targetMonth && monthToCheck.get(Calendar.YEAR) == targetYear
+                    cal.get(Calendar.MONTH) == targetMonth && cal.get(Calendar.YEAR) == targetYear
                 }.map { it.score }.average()
-
                 SimpleDateFormat("MMM").format(target.time) to (if(avg.isNaN()) 0f else avg.toFloat())
             }
         }

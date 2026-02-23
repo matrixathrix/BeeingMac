@@ -191,6 +191,12 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             remoteViews.setOnClickPendingIntent(id, pendingIntent)
         }
 
+        // Detect system dark mode once — used for all button text colours
+        val isDarkMode = (context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val themeTextColor = if (isDarkMode) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+
         // 3. Open App Intent
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -200,15 +206,14 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         remoteViews.setOnClickPendingIntent(R.id.btn_open_app, pendingIntent)
+        remoteViews.setTextColor(R.id.btn_open_app, themeTextColor)
 
         // 4. Toggle Submit Button
         if (selectedScore != null) {
             remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.GONE)
             remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.VISIBLE)
             remoteViews.setTextViewText(R.id.btn_submit, "Submit score $selectedScore")
-
-            // Neutral styling is handled by XML style, but ensuring text is black/primary
-            remoteViews.setTextColor(R.id.btn_submit, android.graphics.Color.BLACK)
+            remoteViews.setTextColor(R.id.btn_submit, themeTextColor)
 
             val submitIntent = Intent(context, NotificationReceiver::class.java).apply {
                 action = "ACTION_SUBMIT_SCORE"
