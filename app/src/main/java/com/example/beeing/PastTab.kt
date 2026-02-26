@@ -83,7 +83,7 @@ fun PastTab(
                     .padding(horizontal = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(48.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // EXPANDED SCORE COMPARISON TABLE
                 if (allRatings.isNotEmpty()) {

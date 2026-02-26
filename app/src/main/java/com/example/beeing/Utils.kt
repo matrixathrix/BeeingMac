@@ -29,6 +29,14 @@ enum class ChartView { HOURLY, DAY, WEEK, MONTH }
 // --- NOTIFICATIONS ---
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val soundUri = Uri.parse(
+            "android.resource://${context.packageName}/${R.raw.beeping_android_buzz}"
+        )
+        val audioAttributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
         val channel = NotificationChannel(
             "hourly_bee",
             "Hourly Reminders",
