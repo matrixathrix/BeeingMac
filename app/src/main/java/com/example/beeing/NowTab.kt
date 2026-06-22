@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -62,6 +63,7 @@ fun NowTab(
     var showTagDialog by remember { mutableStateOf(false) }
     var showCelebration by remember { mutableStateOf(false) }
     var showEpicCelebration by remember { mutableStateOf(false) }
+    var showStreakInfo by remember { mutableStateOf(false) }
 
     // Calculate hour info based on targetedHourOffset
     val displayHourInfo = remember(targetedHourOffset) {
@@ -107,7 +109,7 @@ fun NowTab(
     val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
 
     val bothHoursRated = isLatestHourLogged && isPreviousHourLogged
-    val streak = calculateStreak(allRatings)
+    val streakState = remember(allRatings, viewModel.refreshTrigger) { computeStreakState(allRatings) }
 
     // Dismiss notification when both hours are rated
     LaunchedEffect(bothHoursRated) {
@@ -117,27 +119,30 @@ fun NowTab(
         }
     }
 
-    // Calculate yesterday's and today's average scores (ONLY when both hours rated)
-    val yesterdayAvg = remember(allRatings, viewModel.refreshTrigger, bothHoursRated) {
-        if (!bothHoursRated) return@remember 0.0
+    // Yesterday's & today's average scores, and today's single best hour
+    val yesterdayAvg = remember(allRatings, viewModel.refreshTrigger) {
         val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yesterdayRatings = allRatings.filter { entry ->
+        val ratings = allRatings.filter { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
             cal.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) &&
                     cal.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
         }
-        if (yesterdayRatings.isEmpty()) 0.0 else yesterdayRatings.map { it.score }.average()
+        if (ratings.isEmpty()) 0.0 else ratings.map { it.score }.average()
     }
 
-    val todayAvg = remember(allRatings, viewModel.refreshTrigger, bothHoursRated) {
-        if (!bothHoursRated) return@remember 0.0
+    val todayRatings = remember(allRatings, viewModel.refreshTrigger) {
         val today = Calendar.getInstance()
-        val todayRatings = allRatings.filter { entry ->
+        allRatings.filter { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
             cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) &&
                     cal.get(Calendar.YEAR) == today.get(Calendar.YEAR)
         }
+    }
+    val todayAvg = remember(todayRatings) {
         if (todayRatings.isEmpty()) 0.0 else todayRatings.map { it.score }.average()
+    }
+    val todayBest = remember(todayRatings) {
+        todayRatings.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     }
 
     // Pulse animation
@@ -163,110 +168,21 @@ fun NowTab(
                 .padding(top = 24.dp), // EXTRA padding for status bar
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(16.dp))
+            // Prominent streak meter (core feature)
+            StreakMeter(
+                state = streakState,
+                modifier = Modifier.padding(bottom = 16.dp),
+                onClick = { showStreakInfo = true }
+            )
 
-            // Yesterday and Today Score Cards - ONLY when both hours rated
-            if (bothHoursRated && (yesterdayAvg > 0 || todayAvg > 0)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Yesterday's Score Card
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = when {
-                                yesterdayAvg >= 8.0 -> Color(0xFF66BB6A).copy(alpha = 0.2f)
-                                yesterdayAvg >= 5.0 -> Color(0xFFFFB300).copy(alpha = 0.2f)
-                                yesterdayAvg > 0.0 -> Color(0xFFB71C1C).copy(alpha = 0.2f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "Yesterday's Average:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                if (yesterdayAvg > 0) String.format("%.1f", yesterdayAvg) else "-",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = when {
-                                    yesterdayAvg >= 8.0 -> Color(0xFF2E7D32)
-                                    yesterdayAvg >= 5.0 -> Color(0xFFF57C00)
-                                    yesterdayAvg > 0.0 -> Color(0xFFC62828)
-                                    else -> Color.Gray
-                                }
-                            )
-                        }
-                    }
-
-                    // Today's Score Card
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = when {
-                                todayAvg >= 8.0 -> Color(0xFF66BB6A).copy(alpha = 0.2f)
-                                todayAvg >= 5.0 -> Color(0xFFFFB300).copy(alpha = 0.2f)
-                                todayAvg > 0.0 -> Color(0xFFB71C1C).copy(alpha = 0.2f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "Today's Average:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                if (todayAvg > 0) String.format("%.1f", todayAvg) else "-",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = when {
-                                    todayAvg >= 8.0 -> Color(0xFF2E7D32)
-                                    todayAvg >= 5.0 -> Color(0xFFF57C00)
-                                    todayAvg > 0.0 -> Color(0xFFC62828)
-                                    else -> Color.Gray
-                                }
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-
-            // Streak Reset Warning - ONLY when streak = 0
-            if (streak == 0 && allRatings.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C))
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "💔 Your streak was reset because you didn't rate your time for more than 2 hours",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+            // Cohesive "Today at a glance": yesterday vs today averages + today's best hour
+            if (todayRatings.isNotEmpty() || yesterdayAvg > 0) {
+                TodayGlanceCard(
+                    yesterdayAvg = yesterdayAvg,
+                    todayAvg = todayAvg,
+                    bestHour = todayBest,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
             }
 
             // When both hours rated, show special message card and hide dial
@@ -295,9 +211,11 @@ fun NowTab(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            onTargetedHourOffsetChange(if (targetedHourOffset == 0) 1 else 0)
-                        }
+                        .then(
+                            if (!isLoggedCurrent) Modifier.clickable {
+                                onTargetedHourOffsetChange(if (targetedHourOffset == 0) 1 else 0)
+                            } else Modifier
+                        )
                         .onGloballyPositioned { coordinates ->
                             onRatingCardYPosition(coordinates.positionInParent().y)
                         },
@@ -325,11 +243,13 @@ fun NowTab(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        Icon(
-                            if (targetedHourOffset == 0) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                            null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        if (!isLoggedCurrent) {
+                            Icon(
+                                if (targetedHourOffset == 0) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 
@@ -436,31 +356,40 @@ fun NowTab(
                 }
             }
 
-            // Tags Section - ALWAYS EDITABLE
-            SoulFuelTagsSection(
-                allRatings = allRatings,
-                availableTags = availableTags,
-                selectedTags = selectedTags,
-                isTagDeleteMode = isTagDeleteMode,
-                isEnabled = true,
-                onTagDeleteModeChange = { isTagDeleteMode = it },
-                onTagsUpdate = {
-                    availableTags = it
-                    viewModel.triggerRefresh()
-                },
-                onShowTagDialog = { showTagDialog = true }
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Notes Section - ONLY visible when there are hours to rate
+            // Tags Section - visible only when the rating circle is visible
             if (!bothHoursRated) {
+                SoulFuelTagsSection(
+                    allRatings = allRatings,
+                    availableTags = availableTags,
+                    selectedTags = selectedTags,
+                    isTagDeleteMode = isTagDeleteMode,
+                    isEnabled = true,
+                    onTagDeleteModeChange = { isTagDeleteMode = it },
+                    onTagsUpdate = {
+                        availableTags = it
+                        viewModel.triggerRefresh()
+                    },
+                    onShowTagDialog = { showTagDialog = true }
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Notes Section
                 NotesSection(
                     noteText = currentNote,
                     onNoteChange = { currentNote = it },
                     enabled = true
                 )
             }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Goals section (set per-tag target averages)
+            GoalsSection(
+                context = context,
+                ratings = allRatings,
+                refreshKey = viewModel.refreshTrigger
+            )
 
             Spacer(Modifier.height(32.dp))
         }
@@ -521,5 +450,119 @@ fun NowTab(
                 }
             )
         }
+
+        // STREAK RULES DIALOG (tap the meter)
+        if (showStreakInfo) {
+            AlertDialog(
+                onDismissRequest = { showStreakInfo = false },
+                title = { Text("🔥 How streaks work") },
+                text = {
+                    Column {
+                        Text("• Rate at least 8 hours in a day to keep your streak going.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Every extra hour beyond 8 grows 🌸 Flowers. Collect 10 Flowers for 1 Streak Saver (hold up to 3).", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Miss a day? A saver is spent automatically to keep your streak alive. No savers left means the streak resets.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• The ring fills as you log today's first 8 hours. The shields show your savers.", fontSize = 14.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "See every streak event in the Streak Log on the Past tab.",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStreakInfo = false }) { Text("Got it!") }
+                }
+            )
+        }
+    }
+}
+
+/**
+ * Cohesive "Today at a glance" card: yesterday vs today averages side by side,
+ * with today's single best hour highlighted beneath.
+ */
+@Composable
+fun TodayGlanceCard(
+    yesterdayAvg: Double,
+    todayAvg: Double,
+    bestHour: RatingEntry?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                AvgStat("Yesterday", yesterdayAvg, Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .height(44.dp)
+                        .width(1.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
+                )
+                AvgStat("Today", todayAvg, Modifier.weight(1f))
+            }
+
+            if (bestHour != null) {
+                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
+                val startH = cal.get(Calendar.HOUR_OF_DAY)
+                val endH = if (startH == 23) 0 else startH + 1
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(getScoreColor(bestHour.score.toDouble())),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "${bestHour.score}",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (bestHour.score >= 5) Color.Black else Color.White,
+                            fontSize = 18.sp
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("⭐ Today's best hour", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            "${formatHour(startH)} - ${formatHour(endH)}" +
+                                    if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvgStat(label: String, avg: Double, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            if (avg > 0) String.format("%.1f", avg) else "–",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = getScoreColor(avg)
+        )
     }
 }

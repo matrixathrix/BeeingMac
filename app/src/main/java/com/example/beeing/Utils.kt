@@ -29,9 +29,8 @@ enum class ChartView { HOURLY, DAY, WEEK, MONTH }
 // --- NOTIFICATIONS ---
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val soundUri = Uri.parse(
-            "android.resource://${context.packageName}/${R.raw.beeping_android_buzz}"
-        )
+        // Custom notification sound: res/raw/beeping_android_buzz.ogg
+        val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.beepingandroidbuzz}")
         val audioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -41,8 +40,19 @@ fun createNotificationChannel(context: Context) {
             "hourly_bee",
             "Hourly Reminders",
             NotificationManager.IMPORTANCE_HIGH
-        )
+        ).apply {
+            setSound(soundUri, audioAttributes)
+        }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+
+        val weeklyChannel = NotificationChannel(
+            "weekly_report",
+            "Weekly Report",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            setSound(soundUri, audioAttributes)
+        }
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(weeklyChannel)
     }
 }
 
@@ -81,6 +91,11 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         when (intent.action) {
             "android.intent.action.BOOT_COMPLETED" -> {
                 scheduleExactHourlyAlarm(context)
+                scheduleWeeklyReport(context)
+            }
+            ACTION_WEEKLY_REPORT -> {
+                showWeeklyReportNotification(context)
+                scheduleWeeklyReport(context) // reschedule for next week
             }
             "ACTION_SELECT_SCORE" -> {
                 // Pass existing timestamp/label through to the next stage
@@ -267,7 +282,11 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
 // --- TAGS MANAGEMENT ---
 fun loadTags(c: Context): List<String> {
     val prefs = c.getSharedPreferences("b", 0)
-    val tagsString = prefs.getString("tags", "Work,Health,Rest,Social") ?: "Work,Health,Rest,Social"
+    val default = "🧠 Deep Work,💬 Meetings,📧 Admin,📚 Learning,🏋️ Exercise," +
+            "🍽️ Eating,😴 Rest,🚗 Commuting,🧘 Mindfulness,🎮 Gaming," +
+            "📱 Social Media,👨‍👩‍👧 Family,🤝 Social,🛒 Errands,🎨 Creative," +
+            "🏠 Chores,💤 Nap,🏃 Outdoors,🎵 Music,💼 Side Project"
+    val tagsString = prefs.getString("tags", default) ?: default
     return tagsString.split(",").filter { it.isNotBlank() }
 }
 

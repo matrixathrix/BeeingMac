@@ -166,7 +166,6 @@ fun HourlyPulseApp() {
         topBar = {
             // Original HeaderSection
             HeaderSection(
-                streak = calculateStreak(viewModel.allRatings),
                 onImport = { importLauncher.launch("text/*") },
                 onExport = { exportLauncher.launch("bee_data.csv") },
                 onMenuClick = { showMenu = true },

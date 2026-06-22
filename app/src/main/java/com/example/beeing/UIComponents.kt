@@ -10,6 +10,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -44,171 +45,111 @@ import java.util.*
 import kotlin.math.cos
 import kotlin.math.sin
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfessionalChart(ratings: List<RatingEntry>, view: ChartView, onToggle: (ChartView) -> Unit) {
+fun ProfessionalChart(ratings: List<RatingEntry>) {
     val isDark = isSystemInDarkTheme()
     val axisTextColor = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
 
-    // Date seeker state — only used for HOURLY view; today = offset 0
-    var selectedDateOffset by remember { mutableIntStateOf(0) }
-    // Reset to today when switching away from HOURLY
-    LaunchedEffect(view) { if (view != ChartView.HOURLY) selectedDateOffset = 0 }
+    var period by remember { mutableStateOf(StatPeriod.DAY) }
+    var pageOffset by remember { mutableIntStateOf(0) }
+    LaunchedEffect(period) { pageOffset = 0 }
 
-    val selectedDate = remember(selectedDateOffset) {
-        Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -selectedDateOffset) }
-    }
-
-    val data = remember(ratings, view, selectedDateOffset) {
-        getChartData(ratings, view, if (view == ChartView.HOURLY) selectedDate else null)
+    val buckets = remember(period, pageOffset) { buildPeriodBuckets(period, pageOffset, 7) }
+    val data = remember(ratings, buckets) {
+        buckets.map { b ->
+            val avg = ratings.filter { it.timestamp in b.startMillis until b.endMillisExclusive }
+                .map { it.score }.average()
+            b.label to (if (avg.isNaN()) 0f else avg.toFloat())
+        }
     }
 
     val textPaint = remember(axisTextColor) {
-        android.graphics.Paint().apply {
-            color = axisTextColor
-            textSize = 26f
-            isAntiAlias = true
-        }
+        android.graphics.Paint().apply { color = axisTextColor; textSize = 26f; isAntiAlias = true }
     }
-
     val goalTextPaint = remember {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.GREEN
-            textSize = 22f
-            isFakeBoldText = true
-            isAntiAlias = true
+            color = android.graphics.Color.GREEN; textSize = 22f; isFakeBoldText = true; isAntiAlias = true
         }
     }
-
     val labelPaint = remember(axisTextColor) {
         android.graphics.Paint().apply {
-            color = axisTextColor
-            textSize = 24f
-            textAlign = android.graphics.Paint.Align.LEFT
-            isAntiAlias = true
+            color = axisTextColor; textSize = 22f
+            textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
         }
     }
 
-    Card(Modifier.padding(16.dp)) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text("Trend Matrix", fontWeight = FontWeight.Bold)
-                Row { ChartView.entries.forEach { v -> TextButton(onClick = { onToggle(v) }) { Text(v.name, color = if(view==v) MaterialTheme.colorScheme.primary else Color.Gray, fontSize = 11.sp) } } }
-            }
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            "Average score over time",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
 
-            // Date seeker — only shown for HOURLY view
-            if (view == ChartView.HOURLY) {
-                val dateLabel = remember(selectedDateOffset) {
-                    SimpleDateFormat("ddMMMyyyy", Locale.getDefault()).format(selectedDate.time)
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { selectedDateOffset++ }) {
-                        Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Previous day")
-                    }
-                    Text(
-                        text = dateLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp)
-                    )
-                    IconButton(
-                        onClick = { if (selectedDateOffset > 0) selectedDateOffset-- },
-                        enabled = selectedDateOffset > 0
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowRight,
-                            contentDescription = "Next day",
-                            tint = if (selectedDateOffset > 0) LocalContentColor.current else Color.Gray
-                        )
-                    }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                StatPeriod.entries.forEachIndexed { i, p ->
+                    SegmentedButton(
+                        selected = period == p,
+                        onClick = { period = p },
+                        shape = SegmentedButtonDefaults.itemShape(i, StatPeriod.entries.size)
+                    ) { Text(p.label, fontSize = 13.sp) }
                 }
             }
 
-            val scrollState = rememberScrollState()
-            val density = LocalDensity.current
-            var viewportWidthPx by remember { mutableIntStateOf(0) }
-
-            LaunchedEffect(data, view, selectedDateOffset, viewportWidthPx) {
-                if (viewportWidthPx == 0) return@LaunchedEffect
-                val lastEntryIndex = data.indexOfLast { it.second > 0f }
-                val chartWidthDp = if (view == ChartView.HOURLY) 1000.dp else 550.dp
-                val totalWidthPx = with(density) { chartWidthDp.toPx() }
-                val barSpacingPx = totalWidthPx / data.size
-                val startPaddingPx = with(density) { 50.dp.toPx() }
-
-                if (lastEntryIndex != -1) {
-                    // Place the right edge of the last-rated bar at the right edge of the viewport:
-                    // scroll offset = barRightEdge - viewportWidth
-                    val barRightEdgePx = startPaddingPx + (lastEntryIndex + 1) * barSpacingPx
-                    val targetScroll = (barRightEdgePx - viewportWidthPx).coerceAtLeast(0f)
-                    scrollState.animateScrollTo(targetScroll.toInt())
-                } else {
-                    scrollState.scrollTo(0)
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .onSizeChanged { viewportWidthPx = it.width }
-                    .horizontalScroll(scrollState)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = { pageOffset++ }) {
+                    Icon(Icons.Default.KeyboardArrowLeft, "Earlier")
+                }
+                Text(
+                    "${buckets.first().label} – ${buckets.last().label}",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                IconButton(onClick = { if (pageOffset > 0) pageOffset-- }, enabled = pageOffset > 0) {
+                    Icon(
+                        Icons.Default.KeyboardArrowRight, "Later",
+                        tint = if (pageOffset > 0) LocalContentColor.current else Color.Gray
+                    )
+                }
+            }
+
+            Box(Modifier.fillMaxWidth().height(260.dp)) {
                 Canvas(
-                    modifier = Modifier
-                        .width(if(view == ChartView.HOURLY) 1000.dp else 550.dp)
-                        .fillMaxHeight()
-                        .padding(top = 40.dp, bottom = 70.dp, start = 50.dp, end = 50.dp)
+                    Modifier.fillMaxSize().padding(top = 30.dp, bottom = 50.dp, start = 40.dp, end = 40.dp)
                 ) {
                     val canvasH = size.height
                     val canvasW = size.width
                     val barSpacing = canvasW / data.size
-                    val barWidth = barSpacing * 0.8f
+                    val barWidth = barSpacing * 0.55f
 
                     (0..10 step 2).forEach { i ->
                         val y = canvasH - (i / 10f) * canvasH
                         drawLine(
                             color = Color.Gray.copy(0.45f),
-                            start = Offset(0f, y),
-                            end = Offset(canvasW, y),
+                            start = Offset(0f, y), end = Offset(canvasW, y),
                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
                         )
-                        drawContext.canvas.nativeCanvas.drawText(
-                            i.toString(),
-                            -40f,
-                            y + 8f,
-                            textPaint
-                        )
-                        drawContext.canvas.nativeCanvas.drawText(
-                            i.toString(),
-                            canvasW + 15f,
-                            y + 8f,
-                            textPaint
-                        )
+                        drawContext.canvas.nativeCanvas.drawText(i.toString(), -34f, y + 8f, textPaint)
                     }
 
                     val goalY = canvasH - (7 / 10f) * canvasH
                     drawLine(
                         color = Color(0xFF4CAF50),
-                        start = Offset(0f, goalY),
-                        end = Offset(canvasW, goalY),
+                        start = Offset(0f, goalY), end = Offset(canvasW, goalY),
                         strokeWidth = 2f,
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f))
                     )
-                    drawContext.canvas.nativeCanvas.drawText(
-                        "Goal",
-                        canvasW - 60f,
-                        goalY - 10f,
-                        goalTextPaint
-                    )
+                    drawContext.canvas.nativeCanvas.drawText("Goal", canvasW - 50f, goalY - 10f, goalTextPaint)
 
                     data.forEachIndexed { i, pair ->
                         val score = pair.second
-                        val leftPos = i * barSpacing + (barSpacing * 0.1f)
-
+                        val center = i * barSpacing + barSpacing / 2
+                        val left = center - barWidth / 2
                         if (score > 0f) {
                             val barHeight = (score / 10f) * canvasH
                             val barColor = when {
@@ -218,26 +159,19 @@ fun ProfessionalChart(ratings: List<RatingEntry>, view: ChartView, onToggle: (Ch
                             }
                             drawRoundRect(
                                 color = barColor,
-                                topLeft = Offset(leftPos, canvasH - barHeight),
+                                topLeft = Offset(left, canvasH - barHeight),
                                 size = Size(barWidth, barHeight),
                                 cornerRadius = CornerRadius(12f, 12f)
                             )
+                            drawContext.canvas.nativeCanvas.drawText(
+                                String.format("%.1f", score), center, canvasH - barHeight - 10f, labelPaint
+                            )
                         }
-
-                        drawContext.canvas.nativeCanvas.save()
-                        drawContext.canvas.nativeCanvas.rotate(90f, leftPos + (barWidth / 2), canvasH + 20f)
-                        drawContext.canvas.nativeCanvas.drawText(
-                            pair.first,
-                            leftPos + (barWidth / 2),
-                            canvasH + 20f,
-                            labelPaint
-                        )
-                        drawContext.canvas.nativeCanvas.restore()
+                        drawContext.canvas.nativeCanvas.drawText(pair.first, center, canvasH + 34f, labelPaint)
                     }
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -332,27 +266,14 @@ fun InsightPanel(ratings: List<RatingEntry>, view: ChartView) {
 
 @Composable
 fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
-    Card(
-        Modifier.padding(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                "Recent History",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
+    Column(Modifier.fillMaxWidth()) {
+        val recentRatings = ratings.toList().take(10)
 
-            val recentRatings = ratings.toList().take(10)
-
-            recentRatings.forEach { item ->
-                key(item.id) {
-                    val cal = Calendar.getInstance().apply { timeInMillis = item.timestamp }
-                    val startH = cal.get(Calendar.HOUR_OF_DAY)
-                    val endH = if (startH == 23) 0 else startH + 1
+        recentRatings.forEach { item ->
+            key(item.id) {
+                val cal = Calendar.getInstance().apply { timeInMillis = item.timestamp }
+                val startH = cal.get(Calendar.HOUR_OF_DAY)
+                val endH = if (startH == 23) 0 else startH + 1
 
                     val displayCal = cal
                     val dateStr = SimpleDateFormat("MMM dd").format(displayCal.time)
@@ -403,12 +324,10 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                 }
             }
         }
-    }
 }
 
 @Composable
 fun HeaderSection(
-    streak: Int,
     onImport: () -> Unit,
     onExport: () -> Unit,
     onMenuClick: () -> Unit,
@@ -427,10 +346,6 @@ fun HeaderSection(
                 "Beeing",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black
-            )
-            Text(
-                "🔥 $streak hour streak",
-                color = MaterialTheme.colorScheme.tertiary
             )
         }
         Row(

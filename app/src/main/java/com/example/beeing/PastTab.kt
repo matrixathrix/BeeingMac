@@ -36,8 +36,6 @@ fun PastTab(
     val allRatings = viewModel.allRatings
 
     // Chart view state
-    var currentChartView by remember { mutableStateOf(ChartView.HOURLY) }
-
     // Edit state
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val sheetState = rememberModalBottomSheetState()
@@ -85,45 +83,27 @@ fun PastTab(
             ) {
                 Spacer(Modifier.height(8.dp))
 
-                // EXPANDED SCORE COMPARISON TABLE
+                // Score Comparison (header-less, collapsible)
                 if (allRatings.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(
-                                "Score Comparison",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Text("", modifier = Modifier.weight(1f))
-                                Text("Previous", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                Text("Current", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-
-                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                            ScoreComparisonRow("Day", scoreStats["Yesterday"] ?: 0.0, scoreStats["Today"] ?: 0.0)
-                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                            ScoreComparisonRow("Month", scoreStats["Last Month"] ?: 0.0, scoreStats["Current Month"] ?: 0.0)
-                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                            ScoreComparisonRow("Year", scoreStats["Last Year"] ?: 0.0, scoreStats["Current Year"] ?: 0.0)
+                    CollapsibleSection(title = "") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Text("", modifier = Modifier.weight(1f))
+                            Text("Previous", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Current", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        ScoreComparisonRow("Day", scoreStats["Yesterday"] ?: 0.0, scoreStats["Today"] ?: 0.0)
+                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        ScoreComparisonRow("Month", scoreStats["Last Month"] ?: 0.0, scoreStats["Current Month"] ?: 0.0)
+                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        ScoreComparisonRow("Year", scoreStats["Last Year"] ?: 0.0, scoreStats["Current Year"] ?: 0.0)
                     }
                 }
 
-                // Chart and Insights Section
+                // Rhythm chart (self-managed Day/Week/Month/Year, 7-unit windows)
                 if (allRatings.isNotEmpty()) {
                     Column(
                         Modifier
@@ -132,24 +112,40 @@ fun PastTab(
                                 onChartYPosition(it.positionInParent().y)
                             }
                     ) {
-                        ProfessionalChart(
-                            ratings = allRatings,
-                            view = currentChartView,
-                            onToggle = { currentChartView = it }
-                        )
+                        CollapsibleSection(title = "Rhythm") {
+                            ProfessionalChart(ratings = allRatings)
+                        }
+                    }
+                }
 
-                        InsightPanel(
+                // Insights: single-period tag correlation (feature 2)
+                if (allRatings.isNotEmpty()) {
+                    CollapsibleSection(title = "Insights") {
+                        InsightsContent(
                             ratings = allRatings,
-                            view = currentChartView
+                            context = context,
+                            refreshKey = viewModel.refreshTrigger
                         )
                     }
                 }
 
-                // History Panel with UNDO Logic
-                HistoryPanel(
-                    ratings = allRatings,
-                    onEdit = { editingEntry = it }
-                )
+                // Exhaustive streak event log
+                if (allRatings.isNotEmpty()) {
+                    CollapsibleSection(title = "Streak Log", initiallyExpanded = false) {
+                        StreakLogContent(
+                            ratings = allRatings,
+                            refreshKey = viewModel.refreshTrigger
+                        )
+                    }
+                }
+
+                // Recent history
+                CollapsibleSection(title = "Recent History", initiallyExpanded = false) {
+                    HistoryPanel(
+                        ratings = allRatings,
+                        onEdit = { editingEntry = it }
+                    )
+                }
 
                 Spacer(Modifier.height(32.dp))
             }
