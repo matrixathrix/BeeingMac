@@ -26,6 +26,13 @@ data class RatingEntry(
 
 enum class ChartView { HOURLY, DAY, WEEK, MONTH }
 
+// Score band colors shared by the dial, history dots and reclaim dialog
+fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
+    score >= 8 -> androidx.compose.ui.graphics.Color(0xFF66BB6A)
+    score >= 5 -> androidx.compose.ui.graphics.Color(0xFFFFB300)
+    else -> androidx.compose.ui.graphics.Color(0xFFB71C1C)
+}
+
 // --- NOTIFICATIONS ---
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

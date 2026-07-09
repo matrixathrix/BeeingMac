@@ -6,17 +6,30 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
@@ -42,8 +55,9 @@ fun HourlyPulseApp() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    // 0 = Streaks, 1 = Now (default), 2 = Past
+    var selectedTab by remember { mutableIntStateOf(1) }
+    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
         pagerState.animateScrollToPage(selectedTab)
     }
@@ -60,6 +74,7 @@ fun HourlyPulseApp() {
     // Separate scroll states for each tab
     val nowScrollState = rememberScrollState()
     val pastScrollState = rememberScrollState()
+    val streaksScrollState = rememberScrollState()
 
     // Menu and dialogs state
     var showMenu by remember { mutableStateOf(false) }
@@ -145,7 +160,7 @@ fun HourlyPulseApp() {
 
                 if (isLatestHourLogged && !isPreviousHourLogged) {
                     targetedHourOffset = 1
-                    selectedTab = 0
+                    selectedTab = 1
                     scope.launch {
                         delay(100)
                         nowScrollState.animateScrollTo(ratingCardYPosition.toInt())
@@ -170,31 +185,11 @@ fun HourlyPulseApp() {
                 onExport = { exportLauncher.launch("bee_data.csv") },
                 onMenuClick = { showMenu = true },
                 onStreakClick = {
-                    selectedTab = 1  // Switch to Past tab
-                    scope.launch {
-                        delay(100)
-                        pastScrollState.animateScrollTo(chartYPosition.toInt())
-                    }
+                    selectedTab = 0  // Switch to Streaks tab
                 },
                 onInfoClick = { showInfoDialog = true }
             )
         },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Now") },
-                    label = { Text("Now") },
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 }
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Past") },
-                    label = { Text("Past") },
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 }
-                )
-            }
-        }
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -206,16 +201,22 @@ fun HourlyPulseApp() {
             modifier = Modifier.fillMaxSize()
         ){ page ->
             when (page) {
-                0 -> NowTab(
+                0 -> StreaksTab(
+                    viewModel = viewModel,
+                    scrollState = streaksScrollState
+                )
+
+                1 -> NowTab(
                     viewModel = viewModel,
                     scrollState = nowScrollState,
                     targetedHourOffset = targetedHourOffset,
                     onTargetedHourOffsetChange = { targetedHourOffset = it },
                     ratingCardYPosition = ratingCardYPosition,
-                    onRatingCardYPosition = { ratingCardYPosition = it }
+                    onRatingCardYPosition = { ratingCardYPosition = it },
+                    onOpenStreaks = { selectedTab = 0 }
                 )
 
-                1 -> PastTab(
+                2 -> PastTab(
                     viewModel = viewModel,
                     scrollState = pastScrollState,
                     chartYPosition = chartYPosition,
@@ -223,6 +224,13 @@ fun HourlyPulseApp() {
                 )
             }
             }
+
+            // Floating translucent nav pill — content scrolls beneath it
+            FloatingPillNavBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
 
         // ORIGINAL SETTINGS MENU
@@ -476,6 +484,99 @@ fun HourlyPulseApp() {
                     }
                 }
             )
+        }
+    }
+}
+
+private data class NavItem(val label: String, val icon: ImageVector)
+
+private val bottomNavItems = listOf(
+    NavItem("Streaks", Icons.Default.Star),
+    NavItem("Now", Icons.Default.Home),
+    NavItem("Past", Icons.Default.DateRange)
+)
+
+/**
+ * Floating pill-shaped bottom navigation bar with a fixed width, centered.
+ * Every item keeps a fixed slot (icon + label); a filled highlight slides
+ * between slots as the selection changes.
+ * Translucent — it floats over the content, which scrolls beneath it.
+ */
+@Composable
+private fun FloatingPillNavBar(
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val slotWidth = 92.dp
+    val slotHeight = 52.dp
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 28.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
+            tonalElevation = 0.dp,
+            shadowElevation = 8.dp
+        ) {
+            Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                // Sliding highlight behind the selected slot
+                val highlightX by animateDpAsState(
+                    targetValue = slotWidth * selectedTab,
+                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    label = "navHighlight"
+                )
+                Box(
+                    Modifier
+                        .offset(x = highlightX)
+                        .size(slotWidth, slotHeight)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+
+                Row {
+                    bottomNavItems.forEachIndexed { index, item ->
+                        val selected = selectedTab == index
+                        val contentColor by animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = tween(250),
+                            label = "navItemContent"
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .size(slotWidth, slotHeight)
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onTabSelected(index) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                item.icon,
+                                contentDescription = item.label,
+                                tint = contentColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                item.label,
+                                color = contentColor,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

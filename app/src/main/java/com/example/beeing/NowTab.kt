@@ -2,12 +2,14 @@ package com.example.beeing
 
 import android.app.NotificationManager
 import android.content.Context
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +48,8 @@ fun NowTab(
     targetedHourOffset: Int,
     onTargetedHourOffsetChange: (Int) -> Unit,
     ratingCardYPosition: Float,
-    onRatingCardYPosition: (Float) -> Unit
+    onRatingCardYPosition: (Float) -> Unit,
+    onOpenStreaks: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -63,7 +67,6 @@ fun NowTab(
     var showTagDialog by remember { mutableStateOf(false) }
     var showCelebration by remember { mutableStateOf(false) }
     var showEpicCelebration by remember { mutableStateOf(false) }
-    var showStreakInfo by remember { mutableStateOf(false) }
 
     // Calculate hour info based on targetedHourOffset
     val displayHourInfo = remember(targetedHourOffset) {
@@ -109,7 +112,10 @@ fun NowTab(
     val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
 
     val bothHoursRated = isLatestHourLogged && isPreviousHourLogged
-    val streakState = remember(allRatings, viewModel.refreshTrigger) { computeStreakState(allRatings) }
+
+    val streakState = remember(allRatings, viewModel.refreshTrigger) {
+        computeStreakState(allRatings, loadReclaimSpends(context))
+    }
 
     // Dismiss notification when both hours are rated
     LaunchedEffect(bothHoursRated) {
@@ -145,16 +151,25 @@ fun NowTab(
         todayRatings.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     }
 
-    // Pulse animation
-    val pulseAlpha = remember { Animatable(0.3f) }
-    LaunchedEffect(targetedHourOffset, isLoggedCurrent) {
-        if (!isLoggedCurrent) {
-            repeat(3) {
-                pulseAlpha.animateTo(0.8f, animationSpec = tween(300))
-                pulseAlpha.animateTo(0.3f, animationSpec = tween(300))
-            }
-        } else {
-            pulseAlpha.snapTo(0.15f)
+    // Ticking clock for the chip expiry countdown (updates twice a minute)
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    val minutesToNextHour = remember(nowMillis) {
+        60 - Calendar.getInstance().apply { timeInMillis = nowMillis }.get(Calendar.MINUTE)
+    }
+
+    // If the targeted hour got rated elsewhere (e.g. from the notification),
+    // retarget to the one still pending.
+    LaunchedEffect(isLatestHourLogged, isPreviousHourLogged) {
+        if (targetedHourOffset == 0 && isLatestHourLogged && !isPreviousHourLogged) {
+            onTargetedHourOffsetChange(1)
+        } else if (targetedHourOffset == 1 && isPreviousHourLogged && !isLatestHourLogged) {
+            onTargetedHourOffsetChange(0)
         }
     }
 
@@ -171,19 +186,10 @@ fun NowTab(
             // Prominent streak meter (core feature)
             StreakMeter(
                 state = streakState,
+                expanded = bothHoursRated,
                 modifier = Modifier.padding(bottom = 16.dp),
-                onClick = { showStreakInfo = true }
+                onClick = onOpenStreaks
             )
-
-            // Cohesive "Today at a glance": yesterday vs today averages + today's best hour
-            if (todayRatings.isNotEmpty() || yesterdayAvg > 0) {
-                TodayGlanceCard(
-                    yesterdayAvg = yesterdayAvg,
-                    todayAvg = todayAvg,
-                    bestHour = todayBest,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-            }
 
             // When both hours rated, show special message card and hide dial
             if (bothHoursRated) {
@@ -205,49 +211,38 @@ fun NowTab(
                     }
                 }
             } else {
-                // Show rating card and dial only when there are hours to rate
+                // Show rating chips and dial only when there are hours to rate
 
-                // SINGLE Rating Card
-                Card(
-                    modifier = Modifier
+                // Both rateable hours as always-visible chips: selected = filled,
+                // the older one carries a quiet expiry countdown.
+                Text(
+                    "How was your…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier
                         .fillMaxWidth()
-                        .then(
-                            if (!isLoggedCurrent) Modifier.clickable {
-                                onTargetedHourOffsetChange(if (targetedHourOffset == 0) 1 else 0)
-                            } else Modifier
-                        )
                         .onGloballyPositioned { coordinates ->
                             onRatingCardYPosition(coordinates.positionInParent().y)
                         },
-                    border = if (!isLoggedCurrent) BorderStroke(2.dp, if (isSystemInDarkTheme()) Color.White else Color(0xFF424242)) else null,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = pulseAlpha.value)
-                    )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            val labelText = when {
-                                isLoggedCurrent -> "Already rated:"
-                                targetedHourOffset == 0 -> "How was your:"
-                                else -> "You also missed rating:"
-                            }
-                            Text(
-                                text = labelText,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (isLoggedCurrent) Color.Gray
-                                else if (targetedHourOffset != 0) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                "${displayHourInfo.first} (${displayHourInfo.third} hour)",
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        if (!isLoggedCurrent) {
-                            Icon(
-                                if (targetedHourOffset == 0) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                                null,
-                                tint = MaterialTheme.colorScheme.primary
+                    // offset 1 (older, expires at the next hour boundary) then offset 0
+                    listOf(1, 0).forEach { offset ->
+                        val logged = if (offset == 0) isLatestHourLogged else isPreviousHourLogged
+                        if (!logged) {
+                            val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
+                            val endH = cal.get(Calendar.HOUR_OF_DAY)
+                            val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
+                            PendingHourChip(
+                                rangeLabel = range,
+                                minutesLeft = if (offset == 1) minutesToNextHour else null,
+                                selected = targetedHourOffset == offset,
+                                onClick = { onTargetedHourOffsetChange(offset) },
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -382,16 +377,18 @@ fun NowTab(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            // Cohesive "Today at a glance": yesterday vs today averages + today's best hour
+            if (todayRatings.isNotEmpty() || yesterdayAvg > 0) {
+                Spacer(Modifier.height(16.dp))
+                TodayGlanceCard(
+                    yesterdayAvg = yesterdayAvg,
+                    todayAvg = todayAvg,
+                    bestHour = todayBest,
+                    modifier = Modifier
+                )
+            }
 
-            // Goals section (set per-tag target averages)
-            GoalsSection(
-                context = context,
-                ratings = allRatings,
-                refreshKey = viewModel.refreshTrigger
-            )
-
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(96.dp))
         }
 
         // CELEBRATION OVERLAYS
@@ -451,33 +448,53 @@ fun NowTab(
             )
         }
 
-        // STREAK RULES DIALOG (tap the meter)
-        if (showStreakInfo) {
-            AlertDialog(
-                onDismissRequest = { showStreakInfo = false },
-                title = { Text("🔥 How streaks work") },
-                text = {
-                    Column {
-                        Text("• Rate at least 8 hours in a day to keep your streak going.", fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("• Every extra hour beyond 8 grows 🌸 Flowers. Collect 10 Flowers for 1 Streak Saver (hold up to 3).", fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("• Miss a day? A saver is spent automatically to keep your streak alive. No savers left means the streak resets.", fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text("• The ring fills as you log today's first 8 hours. The shields show your savers.", fontSize = 14.sp)
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "See every streak event in the Streak Log on the Past tab.",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showStreakInfo = false }) { Text("Got it!") }
-                }
+    }
+}
+
+/**
+ * One rateable hour as a tappable chip. Selected = filled with the primary
+ * container color; the expiring hour shows minutes left, turning amber under 15.
+ */
+@Composable
+private fun PendingHourChip(
+    rangeLabel: String,
+    minutesLeft: Int?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        border = if (selected) null else BorderStroke(
+            1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                rangeLabel,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 15.sp,
+                maxLines = 1
             )
+            if (minutesLeft != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "⏳ ${minutesLeft}m left",
+                    fontSize = 11.sp,
+                    color = if (minutesLeft <= 15) Color(0xFFFFB300)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

@@ -10,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -26,7 +25,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
-import androidx.core.content.edit
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -97,27 +95,6 @@ fun buildPeriodBuckets(period: StatPeriod, pageOffset: Int, window: Int = 7): Li
 }
 
 // ============================================================
-// PER-TAG GOALS  (persistence)
-// ============================================================
-
-fun loadTagGoals(context: Context): Map<String, Int> {
-    val raw = context.getSharedPreferences("b", 0).getString("tag_goals", "") ?: ""
-    if (raw.isBlank()) return emptyMap()
-    return raw.split("|").mapNotNull { part ->
-        val idx = part.lastIndexOf(':')
-        if (idx <= 0) return@mapNotNull null
-        val tag = part.substring(0, idx)
-        val goal = part.substring(idx + 1).toIntOrNull() ?: return@mapNotNull null
-        tag to goal
-    }.toMap()
-}
-
-fun saveTagGoals(context: Context, goals: Map<String, Int>) {
-    val serialized = goals.entries.joinToString("|") { "${it.key}:${it.value}" }
-    context.getSharedPreferences("b", 0).edit { putString("tag_goals", serialized) }
-}
-
-// ============================================================
 // WEEKLY REPORT  (feature 4) — reuses the manifest-registered
 // NotificationReceiver via ACTION_WEEKLY_REPORT.
 // ============================================================
@@ -136,7 +113,7 @@ fun buildWeeklySummaryText(context: Context): String {
     val topTag = week.flatMap { it.tags }
         .groupingBy { it }.eachCount()
         .maxByOrNull { it.value }?.key
-    val streak = computeStreakState(ratings)
+    val streak = computeStreakState(ratings, loadReclaimSpends(context))
 
     val parts = mutableListOf<String>()
     parts.add("Avg score ${String.format("%.1f", avg)} over ${week.size} hours")
@@ -207,7 +184,6 @@ fun cancelWeeklyReport(context: Context) {
 @Composable
 fun InsightsContent(
     ratings: List<RatingEntry>,
-    context: Context,
     refreshKey: Int = 0
 ) {
     var period by remember { mutableStateOf(StatPeriod.DAY) }
@@ -218,7 +194,6 @@ fun InsightsContent(
     val windowEntries = remember(ratings, bucket, refreshKey) {
         ratings.filter { it.timestamp in bucket.startMillis until bucket.endMillisExclusive }
     }
-    val goals = remember(refreshKey) { loadTagGoals(context) }
 
     val periodLabel = if (pageOffset == 0) when (period) {
         StatPeriod.DAY -> "Today"
@@ -265,7 +240,7 @@ fun InsightsContent(
             }
         } else {
             Spacer(Modifier.height(8.dp))
-            TagCorrelationCard(windowEntries, goals)
+            TagCorrelationCard(windowEntries)
         }
     }
 }
@@ -319,60 +294,9 @@ fun CollapsibleSection(
     }
 }
 
-/**
- * Standalone Goals section for the Now tab. Current average is computed over all
- * ratings (your running average for each tag).
- */
-@Composable
-fun GoalsSection(
-    context: Context,
-    ratings: List<RatingEntry>,
-    refreshKey: Int = 0,
-    modifier: Modifier = Modifier
-) {
-    var goalsVersion by remember { mutableIntStateOf(0) }
-    val goals = remember(goalsVersion, refreshKey) { loadTagGoals(context) }
-    val availableTags = remember(goalsVersion, refreshKey) { loadTags(context) }
-    var showGoalDialog by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            GoalsCard(
-                goals = goals,
-                windowEntries = ratings,
-                onAddGoal = { showGoalDialog = true }
-            )
-        }
-    }
-
-    if (showGoalDialog) {
-        SetGoalDialog(
-            availableTags = availableTags,
-            existingGoals = goals,
-            onDismiss = { showGoalDialog = false },
-            onSave = { tag, target ->
-                saveTagGoals(context, goals + (tag to target))
-                goalsVersion++
-                showGoalDialog = false
-            },
-            onRemove = { tag ->
-                saveTagGoals(context, goals - tag)
-                goalsVersion++
-                showGoalDialog = false
-            }
-        )
-    }
-}
-
 // --- Feature 2: tag-score correlation ---
 @Composable
-private fun TagCorrelationCard(windowEntries: List<RatingEntry>, goals: Map<String, Int>) {
+private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
     val tagStats = remember(windowEntries) {
         windowEntries.flatMap { e -> e.tags.map { it to e.score } }
             .groupBy({ it.first }, { it.second })
@@ -387,18 +311,10 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>, goals: Map<Stri
     Text("How tags score", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
     tagStats.forEach { (tag, avg, count) ->
-        val goal = goals[tag]
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(tag, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                if (goal != null) {
-                    Text(
-                        if (avg >= goal) "🎯 ${String.format("%.1f", avg)}/$goal" else "${String.format("%.1f", avg)}/$goal",
-                        color = getScoreColor(avg), fontWeight = FontWeight.Bold, fontSize = 13.sp
-                    )
-                } else {
-                    Text(String.format("%.1f", avg), color = getScoreColor(avg), fontWeight = FontWeight.Bold)
-                }
+                Text(String.format("%.1f", avg), color = getScoreColor(avg), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(6.dp))
                 Text("($count)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -413,107 +329,3 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>, goals: Map<Stri
     }
 }
 
-// --- Feature 5: per-tag goals list + add button ---
-@Composable
-private fun GoalsCard(
-    goals: Map<String, Int>,
-    windowEntries: List<RatingEntry>,
-    onAddGoal: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Goals", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = onAddGoal) {
-            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Set goal")
-        }
-    }
-    if (goals.isEmpty()) {
-        Text(
-            "Set a target average for any tag and track it here.",
-            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        return
-    }
-    goals.entries.sortedByDescending { it.value }.forEach { (tag, target) ->
-        val avg = windowEntries.filter { tag in it.tags }.map { it.score }.average()
-        val hasData = !avg.isNaN()
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(tag, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-            Text("target $target", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                when {
-                    !hasData -> "—"
-                    avg >= target -> "✅ ${String.format("%.1f", avg)}"
-                    else -> "⏳ ${String.format("%.1f", avg)}"
-                },
-                fontWeight = FontWeight.Bold,
-                color = if (hasData) getScoreColor(avg) else Color.Gray
-            )
-        }
-    }
-}
-
-@Composable
-private fun SetGoalDialog(
-    availableTags: List<String>,
-    existingGoals: Map<String, Int>,
-    onDismiss: () -> Unit,
-    onSave: (String, Int) -> Unit,
-    onRemove: (String) -> Unit
-) {
-    var selectedTag by remember { mutableStateOf(availableTags.firstOrNull() ?: "") }
-    var target by remember { mutableIntStateOf(existingGoals[selectedTag] ?: 8) }
-    var expanded by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set a tag goal") },
-        text = {
-            Column {
-                Box {
-                    OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(selectedTag.ifBlank { "Pick a tag" }, modifier = Modifier.weight(1f))
-                        Icon(Icons.Default.KeyboardArrowRight, null)
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        availableTags.forEach { tag ->
-                            DropdownMenuItem(
-                                text = { Text(tag) },
-                                onClick = {
-                                    selectedTag = tag
-                                    target = existingGoals[tag] ?: 8
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Text("Target average: $target", fontWeight = FontWeight.SemiBold)
-                Slider(
-                    value = target.toFloat(),
-                    onValueChange = { target = it.toInt().coerceIn(1, 10) },
-                    valueRange = 1f..10f,
-                    steps = 8
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { if (selectedTag.isNotBlank()) onSave(selectedTag, target) }, enabled = selectedTag.isNotBlank()) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            if (selectedTag in existingGoals) {
-                TextButton(onClick = { onRemove(selectedTag) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
-            } else {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        }
-    )
-}

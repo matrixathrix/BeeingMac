@@ -123,17 +123,6 @@ fun PastTab(
                     CollapsibleSection(title = "Insights") {
                         InsightsContent(
                             ratings = allRatings,
-                            context = context,
-                            refreshKey = viewModel.refreshTrigger
-                        )
-                    }
-                }
-
-                // Exhaustive streak event log
-                if (allRatings.isNotEmpty()) {
-                    CollapsibleSection(title = "Streak Log", initiallyExpanded = false) {
-                        StreakLogContent(
-                            ratings = allRatings,
                             refreshKey = viewModel.refreshTrigger
                         )
                     }
@@ -147,7 +136,7 @@ fun PastTab(
                     )
                 }
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(96.dp))
             }
         }
     }
