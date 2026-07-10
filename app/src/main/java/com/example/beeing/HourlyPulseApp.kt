@@ -59,10 +59,14 @@ fun HourlyPulseApp() {
     var selectedTab by remember { mutableIntStateOf(1) }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
-        pagerState.animateScrollToPage(selectedTab)
+        if (pagerState.currentPage != selectedTab) {
+            pagerState.animateScrollToPage(selectedTab)
+        }
     }
-    LaunchedEffect(pagerState.currentPage) {
-        selectedTab = pagerState.currentPage
+    // settledPage (not currentPage): currentPage updates at every intermediate
+    // page during a multi-tab jump, which would re-target the animation there
+    LaunchedEffect(pagerState.settledPage) {
+        selectedTab = pagerState.settledPage
     }
 
     // Shared ViewModel

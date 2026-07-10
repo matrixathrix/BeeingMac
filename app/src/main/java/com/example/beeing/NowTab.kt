@@ -125,17 +125,7 @@ fun NowTab(
         }
     }
 
-    // Yesterday's & today's average scores, and today's single best hour
-    val yesterdayAvg = remember(allRatings, viewModel.refreshTrigger) {
-        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val ratings = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            cal.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) &&
-                    cal.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
-        }
-        if (ratings.isEmpty()) 0.0 else ratings.map { it.score }.average()
-    }
-
+    // Today's single best hour
     val todayRatings = remember(allRatings, viewModel.refreshTrigger) {
         val today = Calendar.getInstance()
         allRatings.filter { entry ->
@@ -143,9 +133,6 @@ fun NowTab(
             cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) &&
                     cal.get(Calendar.YEAR) == today.get(Calendar.YEAR)
         }
-    }
-    val todayAvg = remember(todayRatings) {
-        if (todayRatings.isEmpty()) 0.0 else todayRatings.map { it.score }.average()
     }
     val todayBest = remember(todayRatings) {
         todayRatings.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
@@ -377,15 +364,10 @@ fun NowTab(
                 )
             }
 
-            // Cohesive "Today at a glance": yesterday vs today averages + today's best hour
-            if (todayRatings.isNotEmpty() || yesterdayAvg > 0) {
+            // Today's single best hour, highlighted
+            if (todayBest != null) {
                 Spacer(Modifier.height(16.dp))
-                TodayGlanceCard(
-                    yesterdayAvg = yesterdayAvg,
-                    todayAvg = todayAvg,
-                    bestHour = todayBest,
-                    modifier = Modifier
-                )
+                BestHourCard(bestHour = todayBest)
             }
 
             Spacer(Modifier.height(96.dp))
@@ -500,16 +482,10 @@ private fun PendingHourChip(
 }
 
 /**
- * Cohesive "Today at a glance" card: yesterday vs today averages side by side,
- * with today's single best hour highlighted beneath.
+ * Today's single best hour, highlighted.
  */
 @Composable
-fun TodayGlanceCard(
-    yesterdayAvg: Double,
-    todayAvg: Double,
-    bestHour: RatingEntry?,
-    modifier: Modifier = Modifier
-) {
+fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -517,69 +493,35 @@ fun TodayGlanceCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                AvgStat("Yesterday", yesterdayAvg, Modifier.weight(1f))
-                Box(
-                    Modifier
-                        .height(44.dp)
-                        .width(1.dp)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
+        val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
+        val startH = cal.get(Calendar.HOUR_OF_DAY)
+        val endH = if (startH == 23) 0 else startH + 1
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(getScoreColor(bestHour.score.toDouble())),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${bestHour.score}",
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (bestHour.score >= 5) Color.Black else Color.White,
+                    fontSize = 18.sp
                 )
-                AvgStat("Today", todayAvg, Modifier.weight(1f))
             }
-
-            if (bestHour != null) {
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
-                val startH = cal.get(Calendar.HOUR_OF_DAY)
-                val endH = if (startH == 23) 0 else startH + 1
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(getScoreColor(bestHour.score.toDouble())),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "${bestHour.score}",
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (bestHour.score >= 5) Color.Black else Color.White,
-                            fontSize = 18.sp
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("⭐ Today's best hour", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(
-                            "${formatHour(startH)} - ${formatHour(endH)}" +
-                                    if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
-                    }
-                }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("⭐ Today's best hour", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(
+                    "${formatHour(startH)} - ${formatHour(endH)}" +
+                            if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun AvgStat(label: String, avg: Double, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            if (avg > 0) String.format("%.1f", avg) else "–",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = getScoreColor(avg)
-        )
     }
 }

@@ -71,7 +71,10 @@ fun PastTab(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        // the app-level header already consumed the status bar inset;
+        // re-applying it here left a band of dead space below the header
+        contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             Column(
@@ -81,11 +84,9 @@ fun PastTab(
                     .padding(horizontal = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(8.dp))
-
-                // Score Comparison (header-less, collapsible)
+                // Score comparison (untitled, always visible)
                 if (allRatings.isNotEmpty()) {
-                    CollapsibleSection(title = "") {
+                    PlainSectionCard {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
@@ -103,7 +104,7 @@ fun PastTab(
                     }
                 }
 
-                // Rhythm chart (self-managed Day/Week/Month/Year, 7-unit windows)
+                // Rhythm chart (untitled, always visible; self-managed Day/Week/Month/Year)
                 if (allRatings.isNotEmpty()) {
                     Column(
                         Modifier
@@ -112,7 +113,7 @@ fun PastTab(
                                 onChartYPosition(it.positionInParent().y)
                             }
                     ) {
-                        CollapsibleSection(title = "Rhythm") {
+                        PlainSectionCard {
                             ProfessionalChart(ratings = allRatings)
                         }
                     }
@@ -120,7 +121,7 @@ fun PastTab(
 
                 // Insights: single-period tag correlation (feature 2)
                 if (allRatings.isNotEmpty()) {
-                    CollapsibleSection(title = "Insights") {
+                    CollapsibleSection(title = "Insights", initiallyExpanded = false) {
                         InsightsContent(
                             ratings = allRatings,
                             refreshKey = viewModel.refreshTrigger
@@ -178,6 +179,23 @@ fun PastTab(
                 }
             )
         }
+    }
+}
+
+/**
+ * Non-collapsible, untitled sibling of CollapsibleSection — same card look,
+ * no header row.
+ */
+@Composable
+private fun PlainSectionCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        )
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), content = content)
     }
 }
 

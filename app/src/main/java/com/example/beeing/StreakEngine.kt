@@ -27,6 +27,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 
 // ============================================================
 // STREAK ENGINE  (pure logic — fully derived from ratings)
@@ -296,9 +298,19 @@ fun StreakMeter(
                             val topLeft = Offset(inset, inset)
                             val a0 = -90f + gapDeg / 2
 
-                            // Filled hours merge into ONE arc: flat (butt) start at the
-                            // top marks where filling began; drawn first so the track's
-                            // round cap can bite a concave notch at the leading end only.
+                            // Track: all segments drawn FIRST so the fill always sits on top
+                            for (i in 0 until STREAK_HOURS_REQUIRED) {
+                                drawArc(
+                                    color = track,
+                                    startAngle = a0 + i * slotDeg, sweepAngle = segSweep, useCenter = false,
+                                    topLeft = topLeft, size = arcSize,
+                                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                )
+                            }
+
+                            // Filled hours merge into ONE arc over the track. Butt cap keeps
+                            // the 12-o'clock starting edge a straight line; a half-disc at the
+                            // leading end makes it convex, pointing in the fill direction.
                             val whole = animatedFill.toInt().coerceIn(0, STREAK_HOURS_REQUIRED)
                             val frac = animatedFill - whole
                             val fillSweep = when {
@@ -313,23 +325,16 @@ fun StreakMeter(
                                     topLeft = topLeft, size = arcSize,
                                     style = Stroke(width = stroke, cap = StrokeCap.Butt)
                                 )
-                            }
-
-                            // Unfilled hours stay as separate segments with round caps;
-                            // the first one starts at the fill's leading edge and its
-                            // round cap carves the concave notch into the fill.
-                            for (i in whole until STREAK_HOURS_REQUIRED) {
-                                val segStart = a0 + i * slotDeg
-                                val from = if (i == whole && frac > 0f) segStart + segSweep * frac else segStart
-                                val sweep = segStart + segSweep - from
-                                if (sweep > 0f) {
-                                    drawArc(
-                                        color = track,
-                                        startAngle = from, sweepAngle = sweep, useCenter = false,
-                                        topLeft = topLeft, size = arcSize,
-                                        style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                val tipRad = Math.toRadians((a0 + fillSweep).toDouble())
+                                val ringRadius = (size.minDimension - stroke) / 2f
+                                drawCircle(
+                                    color = ringColor,
+                                    radius = stroke / 2f,
+                                    center = Offset(
+                                        size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
+                                        size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
                                     )
-                                }
+                                )
                             }
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
