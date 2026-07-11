@@ -39,8 +39,7 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 // --- NOTIFICATIONS ---
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        // Custom notification sound: res/raw/beeping_android_buzz.ogg
-        val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.beepingandroidbuzz}")
+        val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
         val audioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
