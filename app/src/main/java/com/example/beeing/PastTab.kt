@@ -40,35 +40,6 @@ fun PastTab(
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
-    // Calculate time period averages
-    val scoreStats = remember(allRatings, viewModel.refreshTrigger) {
-        val now = Calendar.getInstance()
-
-        // Helper to filter safely
-        fun getAvgFor(field: Int, amount: Int): Double {
-            val target = Calendar.getInstance().apply { add(field, amount) }
-            val relevant = allRatings.filter { entry ->
-                val c = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-                when (field) {
-                    Calendar.DAY_OF_YEAR -> isSameDay(c, target)
-                    Calendar.MONTH -> c.get(Calendar.MONTH) == target.get(Calendar.MONTH) && c.get(Calendar.YEAR) == target.get(Calendar.YEAR)
-                    Calendar.YEAR -> c.get(Calendar.YEAR) == target.get(Calendar.YEAR)
-                    else -> false
-                }
-            }
-            return if (relevant.isEmpty()) 0.0 else relevant.map { it.score }.average()
-        }
-
-        mapOf(
-            "Yesterday" to getAvgFor(Calendar.DAY_OF_YEAR, -1),
-            "Today" to getAvgFor(Calendar.DAY_OF_YEAR, 0),
-            "Last Month" to getAvgFor(Calendar.MONTH, -1),
-            "Current Month" to getAvgFor(Calendar.MONTH, 0),
-            "Last Year" to getAvgFor(Calendar.YEAR, -1),
-            "Current Year" to getAvgFor(Calendar.YEAR, 0)
-        )
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent,
@@ -84,26 +55,6 @@ fun PastTab(
                     .padding(horizontal = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Score comparison (untitled, always visible)
-                if (allRatings.isNotEmpty()) {
-                    PlainSectionCard {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Text("", modifier = Modifier.weight(1f))
-                            Text("Previous", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text("Current", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        ScoreComparisonRow("Day", scoreStats["Yesterday"] ?: 0.0, scoreStats["Today"] ?: 0.0)
-                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                        ScoreComparisonRow("Month", scoreStats["Last Month"] ?: 0.0, scoreStats["Current Month"] ?: 0.0)
-                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                        ScoreComparisonRow("Year", scoreStats["Last Year"] ?: 0.0, scoreStats["Current Year"] ?: 0.0)
-                    }
-                }
-
                 // Rhythm chart (untitled, always visible; self-managed Day/Week/Month/Year)
                 if (allRatings.isNotEmpty()) {
                     Column(
@@ -196,53 +147,6 @@ private fun PlainSectionCard(content: @Composable ColumnScope.() -> Unit) {
         )
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), content = content)
-    }
-}
-
-@Composable
-fun ScoreComparisonRow(label: String, previousScore: Double, currentScore: Double) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium
-        )
-        Text(
-            if (previousScore > 0) String.format("%.1f", previousScore) else "-",
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = getScoreColor(previousScore)
-        )
-        Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (currentScore > 0) String.format("%.1f", currentScore) else "-",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = getScoreColor(currentScore)
-            )
-            if (previousScore > 0 && currentScore > 0) {
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    when {
-                        currentScore > previousScore -> "↗"
-                        currentScore < previousScore -> "↘"
-                        else -> "→"
-                    },
-                    fontSize = 16.sp,
-                    color = getScoreColor(currentScore)
-                )
-            }
-        }
     }
 }
 

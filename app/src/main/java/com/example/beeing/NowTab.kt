@@ -49,7 +49,10 @@ fun NowTab(
     onTargetedHourOffsetChange: (Int) -> Unit,
     ratingCardYPosition: Float,
     onRatingCardYPosition: (Float) -> Unit,
-    onOpenStreaks: () -> Unit = {}
+    onOpenStreaks: () -> Unit = {},
+    pendingScore: Int? = null,
+    onPendingScoreConsumed: () -> Unit = {},
+    onRingClosed: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -65,8 +68,15 @@ fun NowTab(
     var availableTags by remember { mutableStateOf(loadTags(context)) }
     var isTagDeleteMode by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
-    var showCelebration by remember { mutableStateOf(false) }
-    var showEpicCelebration by remember { mutableStateOf(false) }
+    var showWindowInfo by remember { mutableStateOf(false) }
+
+    // Score chosen on the notification arrives pre-selected
+    LaunchedEffect(pendingScore) {
+        pendingScore?.let {
+            selectedScore = it
+            onPendingScoreConsumed()
+        }
+    }
 
     // Calculate hour info based on targetedHourOffset
     val displayHourInfo = remember(targetedHourOffset) {
@@ -115,6 +125,16 @@ fun NowTab(
 
     val streakState = remember(allRatings, viewModel.refreshTrigger) {
         computeStreakState(allRatings, loadReclaimSpends(context))
+    }
+
+    // Fire the full-screen celebration exactly when today flips to qualified
+    var wasQualified by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(streakState.todayQualified) {
+        val prev = wasQualified
+        wasQualified = streakState.todayQualified
+        if (prev == false && streakState.todayQualified) {
+            onRingClosed(streakState.currentStreak)
+        }
     }
 
     // Dismiss notification when both hours are rated
@@ -166,8 +186,8 @@ fun NowTab(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(16.dp)
-                .padding(top = 24.dp), // EXTRA padding for status bar
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Prominent streak meter (core feature)
@@ -189,7 +209,7 @@ fun NowTab(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Great job rating your past hours, now go make your current hour amazing!",
+                            "All caught up! Now go make this hour count 🐝",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -202,12 +222,25 @@ fun NowTab(
 
                 // Both rateable hours as always-visible chips: selected = filled,
                 // the older one carries a quiet expiry countdown.
-                Text(
-                    "How was your…",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Start)
-                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "How was your…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Why only these hours?",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 Row(
                     Modifier
@@ -235,21 +268,10 @@ fun NowTab(
                     }
                 }
 
-                Text(
-                    text = "You can only rate the immediate past hour and the hour before that, to ensure you are constantly mindful of your day.",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
-                    ),
-                    color = Color.Gray.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp)
-                )
-
                 // Rating Dial - 7 is now YELLOW (8-10 GREEN)
                 Box(
                     Modifier
-                        .padding(vertical = 32.dp)
+                        .padding(vertical = 20.dp)
                         .height(300.dp)
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
@@ -311,13 +333,6 @@ fun NowTab(
                             )
                             viewModel.saveRating(context, entry)
 
-                            // Show celebration for 8-10 (GREEN scores)
-                            if (selectedScore == 10) {
-                                showEpicCelebration = true
-                            } else if (selectedScore >= 8) {
-                                showCelebration = true
-                            }
-
                             selectedScore = 1
                             selectedTags.clear()
                             currentNote = ""
@@ -329,12 +344,23 @@ fun NowTab(
                                 onTargetedHourOffsetChange(0)
                             }
                         },
-                        enabled = !isLoggedCurrent,
+                        // A rating needs at least one tag
+                        enabled = !isLoggedCurrent && selectedTags.isNotEmpty(),
                         modifier = Modifier.size(100.dp),
                         shape = CircleShape
                     ) {
                         Icon(Icons.Default.Check, null, Modifier.size(32.dp))
                     }
+                }
+
+                if (selectedTags.isEmpty() && !isLoggedCurrent) {
+                    Text(
+                        "Pick at least one tag below to save this hour",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
                 }
             }
 
@@ -373,13 +399,23 @@ fun NowTab(
             Spacer(Modifier.height(96.dp))
         }
 
-        // CELEBRATION OVERLAYS
-        if (showCelebration) {
-            CelebrationOverlay { showCelebration = false }
-        }
-
-        if (showEpicCelebration) {
-            EpicCelebrationOverlay { showEpicCelebration = false }
+        // Why-only-two-hours explainer
+        if (showWindowInfo) {
+            AlertDialog(
+                onDismissRequest = { showWindowInfo = false },
+                title = { Text("Why only these hours?") },
+                text = {
+                    Text(
+                        "You can rate the last completed hour and the one before it. " +
+                                "Rating close to the moment keeps you honest — and mindful of your day as it happens.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showWindowInfo = false }) { Text("Got it") }
+                }
+            )
         }
 
         // Tag Dialog

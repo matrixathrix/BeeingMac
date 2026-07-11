@@ -72,6 +72,8 @@ fun StreaksTab(
     var showRules by remember { mutableStateOf(false) }
     // (title, body) of the currently open quick explainer, if any
     var infoDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Day tapped on the calendar (start-of-day millis) → stats popup
+    var statsDayMillis by remember { mutableStateOf<Long?>(null) }
 
     // Today's expired unrated hours (start hours 0..H-3), most recent first
     val missedHoursToday = remember(allRatings, viewModel.refreshTrigger) {
@@ -92,8 +94,8 @@ fun StreaksTab(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(16.dp)
-            .padding(top = 24.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // ---- Monthly calendar (info) ----
@@ -125,7 +127,11 @@ fun StreaksTab(
                     },
                     label = "monthSlide"
                 ) { offset ->
-                    MonthGrid(monthOffset = offset, outcomes = outcomes)
+                    MonthGrid(
+                        monthOffset = offset,
+                        outcomes = outcomes,
+                        onDayClick = { statsDayMillis = it }
+                    )
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(
@@ -159,9 +165,9 @@ fun StreaksTab(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     infoDialog = "🛡️ Savers" to
-                            "Miss a day and a saver is spent automatically — your streak survives.\n\n" +
-                            "No savers left means a missed day resets the streak.\n\n" +
-                            "Every $HOURS_PER_SAVER 🌸 auto-forge a new saver."
+                            "Miss a day and one saver is used automatically — your streak continues.\n\n" +
+                            "No savers left? The streak resets.\n\n" +
+                            "Every $HOURS_PER_SAVER 🌸 make a new saver."
                 }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -175,32 +181,41 @@ fun StreaksTab(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "${streakState.savers} of $MAX_SAVERS",
+                    "${streakState.savers} / $MAX_SAVERS",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 18.sp
                 )
                 InfoMiniCaption("Savers")
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "used if you miss a day",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
 
             InfoMiniCard(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     infoDialog = "🌸 Flowers" to
-                            "Every hour you rate beyond 8 in a day grows one flower (you can hold up to $FLOWER_CAP).\n\n" +
-                            "Every $HOURS_PER_SAVER flowers auto-forge a 🛡️ saver.\n\n" +
-                            "Spend $RECLAIM_COST to reclaim an hour of today that slipped past unrated."
+                            "Each hour you rate beyond 8 in a day gives you a flower (max $FLOWER_CAP).\n\n" +
+                            "$HOURS_PER_SAVER flowers automatically become a 🛡️ saver.\n\n" +
+                            "Spend $RECLAIM_COST to rate an hour you missed today."
                 }
             ) {
                 Text("🌸", fontSize = 20.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "${streakState.bankProgress} of $FLOWER_CAP",
+                    "${streakState.bankProgress} / $FLOWER_CAP",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 18.sp
                 )
                 InfoMiniCaption("Flowers")
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(8.dp))
                 if (streakState.savers < MAX_SAVERS) {
-                    Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
                         progress = {
                             (streakState.bankProgress / HOURS_PER_SAVER.toFloat()).coerceAtMost(1f)
@@ -212,9 +227,17 @@ fun StreaksTab(
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        "${(HOURS_PER_SAVER - streakState.bankProgress).coerceAtLeast(0)} more → 🛡️",
+                        "${(HOURS_PER_SAVER - streakState.bankProgress).coerceAtLeast(0)} more for a 🛡️",
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        "savers are full",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -255,7 +278,7 @@ fun StreaksTab(
                     )
                     Spacer(Modifier.height(2.dp))
                     val subtitle = when {
-                        missedHoursToday.isEmpty() -> "No missed hours today — nothing to reclaim 🎉"
+                        missedHoursToday.isEmpty() -> "No missed hours today 🎉"
                         !canAfford -> "Needs $RECLAIM_COST 🌸 — you have ${streakState.bankProgress}"
                         else -> "${missedHoursToday.size} missed hour${if (missedHoursToday.size == 1) "" else "s"} · $RECLAIM_COST 🌸 each"
                     }
@@ -332,7 +355,7 @@ fun StreaksTab(
             text = {
                 Column {
                     Text(
-                        "Each costs $RECLAIM_COST 🌸. You'll be asked what you were absorbed in.",
+                        "Each costs $RECLAIM_COST 🌸. You'll add a score and a short note.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -394,6 +417,18 @@ fun StreaksTab(
         )
     }
 
+    // ---- Stats popup for a tapped calendar day ----
+    statsDayMillis?.let { dayMillis ->
+        val dayCal = Calendar.getInstance().apply { timeInMillis = dayMillis }
+        val key = dayCal.get(Calendar.YEAR) * 1000L + dayCal.get(Calendar.DAY_OF_YEAR)
+        DayStatsDialog(
+            dayMillis = dayMillis,
+            outcome = outcomes[key],
+            ratings = allRatings,
+            onDismiss = { statsDayMillis = null }
+        )
+    }
+
     // ---- Quick explainer for a tapped info card ----
     infoDialog?.let { (title, body) ->
         AlertDialog(
@@ -410,16 +445,16 @@ fun StreaksTab(
     if (showRules) {
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text("🔥 How streaks work") },
+            title = { Text("How streaks work") },
             text = {
                 Column {
-                    Text("• Rate at least 8 hours in a day to keep your streak going.", fontSize = 14.sp)
+                    Text("• Rate at least 8 hours in a day to keep your streak.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Every extra hour beyond 8 grows a 🌸 flower (you can hold up to $FLOWER_CAP). Every $HOURS_PER_SAVER flowers auto-forge a 🛡️ Streak Saver (hold up to $MAX_SAVERS).", fontSize = 14.sp)
+                    Text("• Each extra hour beyond 8 gives you a 🌸 flower (max $FLOWER_CAP). $HOURS_PER_SAVER flowers become a 🛡️ saver (max $MAX_SAVERS).", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Miss a day? A saver is spent automatically to keep your streak alive. No savers left means the streak resets.", fontSize = 14.sp)
+                    Text("• Miss a day and one saver is used automatically. With no savers left, the streak resets.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Spend $RECLAIM_COST 🌸 to rate an hour of today that slipped past while you were absorbed in something. Reclaimed hours count toward the 8 but never grow flowers.", fontSize = 14.sp)
+                    Text("• Spend $RECLAIM_COST 🌸 to rate an hour you missed today. Those hours count toward the 8 but don't earn flowers.", fontSize = 14.sp)
                 }
             },
             confirmButton = {
@@ -453,7 +488,11 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
 }
 
 @Composable
-private fun MonthGrid(monthOffset: Int, outcomes: Map<Long, DayOutcome>) {
+private fun MonthGrid(
+    monthOffset: Int,
+    outcomes: Map<Long, DayOutcome>,
+    onDayClick: (Long) -> Unit
+) {
     val monthStart = Calendar.getInstance().apply {
         add(Calendar.MONTH, -monthOffset)
         set(Calendar.DAY_OF_MONTH, 1)
@@ -470,7 +509,7 @@ private fun MonthGrid(monthOffset: Int, outcomes: Map<Long, DayOutcome>) {
                     d,
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -483,16 +522,19 @@ private fun MonthGrid(monthOffset: Int, outcomes: Map<Long, DayOutcome>) {
                     // leading blanks only apply on the first row
                     val inLead = day == 1 && col < leadingBlanks
                     if (inLead || day > daysInMonth) {
-                        Box(Modifier.weight(1f).height(44.dp))
+                        Box(Modifier.weight(1f).height(58.dp))
                     } else {
                         val cellCal = (monthStart.clone() as Calendar).apply {
                             set(Calendar.DAY_OF_MONTH, day)
                         }
                         val key = cellCal.get(Calendar.YEAR) * 1000L + cellCal.get(Calendar.DAY_OF_YEAR)
+                        val dayMillis = cellCal.timeInMillis
                         DayCell(
                             dayNumber = day,
                             outcome = outcomes[key],
                             isToday = key == todayKey,
+                            enabled = key <= todayKey,
+                            onClick = { onDayClick(dayMillis) },
                             modifier = Modifier.weight(1f)
                         )
                         day++
@@ -508,12 +550,15 @@ private fun DayCell(
     dayNumber: Int,
     outcome: DayOutcome?,
     isToday: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
-            .height(44.dp)
+            .height(58.dp)
             .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
             .then(
                 if (isToday) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
                 else Modifier
@@ -523,7 +568,7 @@ private fun DayCell(
     ) {
         Text(
             "$dayNumber",
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
         )
@@ -534,7 +579,7 @@ private fun DayCell(
                 DayOutcome.MISSED -> "🥀"
                 null -> " "
             },
-            fontSize = 16.sp
+            fontSize = 24.sp
         )
     }
 }
@@ -559,7 +604,7 @@ private fun InfoMiniCard(
     ) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(vertical = 14.dp, horizontal = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             content = content
@@ -579,6 +624,95 @@ private fun InfoMiniCaption(label: String) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier.size(12.dp)
         )
+    }
+}
+
+/** Stats popup for a tapped calendar day. */
+@Composable
+private fun DayStatsDialog(
+    dayMillis: Long,
+    outcome: DayOutcome?,
+    ratings: List<RatingEntry>,
+    onDismiss: () -> Unit
+) {
+    val dayCal = remember(dayMillis) { Calendar.getInstance().apply { timeInMillis = dayMillis } }
+    val entries = remember(dayMillis, ratings) {
+        ratings.filter {
+            val c = Calendar.getInstance().apply { timeInMillis = it.timestamp }
+            isSameDay(c, dayCal)
+        }
+    }
+    val distinctHours = remember(entries) {
+        entries.map {
+            Calendar.getInstance().apply { timeInMillis = it.timestamp }.get(Calendar.HOUR_OF_DAY)
+        }.distinct().size
+    }
+    val avg = if (entries.isEmpty()) 0.0 else entries.map { it.score }.average()
+    val best = entries.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
+    val reclaimed = entries.count { RECLAIM_TAG in it.tags }
+    val flowers = (distinctHours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
+    val isToday = isSameDay(Calendar.getInstance(), dayCal)
+
+    val title = remember(dayMillis) {
+        SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
+    }
+    val outcomeLine = when {
+        outcome == DayOutcome.QUALIFIED -> "💐 Streak day"
+        outcome == DayOutcome.SAVED -> "🛡️ Missed, but a saver covered it"
+        outcome == DayOutcome.MISSED -> "🥀 Missed"
+        isToday -> "⏳ In progress"
+        else -> "No ratings"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(outcomeLine, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                if (entries.isEmpty()) {
+                    Text(
+                        "Nothing was rated this day.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    StatRow("Hours rated", "$distinctHours / 24")
+                    StatRow("Average score", String.format("%.1f", avg), valueColor = getScoreColor(avg))
+                    best?.let {
+                        val h = Calendar.getInstance().apply { timeInMillis = it.timestamp }
+                            .get(Calendar.HOUR_OF_DAY)
+                        StatRow("Best hour", "${formatHour(h)} - ${formatHour((h + 1) % 24)} · ${it.score}")
+                    }
+                    if (flowers > 0) StatRow("Flowers earned", "+$flowers 🌸")
+                    if (reclaimed > 0) StatRow("Reclaimed hours", "$reclaimed 💧")
+                    val topTags = entries.flatMap { it.tags }
+                        .filter { it != RECLAIM_TAG }
+                        .groupingBy { it }.eachCount()
+                        .entries.sortedByDescending { it.value }
+                        .take(3)
+                    if (topTags.isNotEmpty()) {
+                        StatRow("Top tags", topTags.joinToString(", ") { it.key })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+private fun StatRow(label: String, value: String, valueColor: Color = Color.Unspecified) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
     }
 }
 
@@ -609,16 +743,16 @@ fun ReclaimHourDialog(
         title = { Text("💧 Reclaim ${formatHour(startHour)} - ${formatHour(startHour + 1)}") },
         text = {
             Column {
-                Text("What were you absorbed in?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text("What were you doing?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
-                    label = { Text("Take a moment — this is required") },
+                    label = { Text("A short note is required") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(16.dp))
-                Text("How did that hour feel?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text("How was that hour?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier

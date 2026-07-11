@@ -26,6 +26,9 @@ data class RatingEntry(
 
 enum class ChartView { HOURLY, DAY, WEEK, MONTH }
 
+/** A score chosen on the hourly notification, waiting to be finished in-app. */
+data class PendingRating(val score: Int, val targetTs: Long, val label: String)
+
 // Score band colors shared by the dial, history dots and reclaim dialog
 fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
     score >= 8 -> androidx.compose.ui.graphics.Color(0xFF66BB6A)
@@ -104,35 +107,6 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 showWeeklyReportNotification(context)
                 scheduleWeeklyReport(context) // reschedule for next week
             }
-            "ACTION_SELECT_SCORE" -> {
-                // Pass existing timestamp/label through to the next stage
-                val score = intent.getIntExtra("SCORE", 1)
-                val ts = intent.getLongExtra("TARGET_TS", 0L)
-                val label = intent.getStringExtra("TARGET_LABEL") ?: ""
-
-                showCustomNotification(context, manager, score, ts, label)
-            }
-            "ACTION_SUBMIT_SCORE" -> {
-                val score = intent.getIntExtra("SCORE", 1)
-                val ts = intent.getLongExtra("TARGET_TS", 0L)
-                val label = intent.getStringExtra("TARGET_LABEL") ?: ""
-
-                // Double-check we have valid data
-                if (ts > 0) {
-                    val entry = RatingEntry(
-                        id = System.currentTimeMillis(),
-                        score = score,
-                        timestamp = ts,
-                        hourLabel = label,
-                        note = "",
-                        tags = emptyList()
-                    )
-                    saveRating(context, entry)
-                    Toast.makeText(context, "Saved score $score for $label!", Toast.LENGTH_SHORT).show()
-                }
-
-                manager.cancel(1)
-            }
             else -> {
                 // STANDARD TRIGGER (Start of a new hour)
                 // Calculate the "Previous Hour" NOW and freeze it
@@ -154,7 +128,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                showCustomNotification(context, manager, null, targetTimestamp, ordinal)
+                showCustomNotification(context, manager, targetTimestamp, ordinal)
                 scheduleExactHourlyAlarm(context)
             }
         }
@@ -163,7 +137,6 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
     private fun showCustomNotification(
         context: Context,
         manager: NotificationManager,
-        selectedScore: Int?,
         targetTs: Long,
         targetLabel: String
     ) {
@@ -186,35 +159,25 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         buttonIds.forEachIndexed { index, id ->
             val score = index + 1
 
-            // Logic to colorize the selected button
-            if (selectedScore == score) {
-                // SELECTED: Solid Color Background, White Text
-                val bgRes = when {
-                    score >= 8 -> R.drawable.rounded_notif_btn_green
-                    score >= 5 -> R.drawable.rounded_notif_btn_yellow
-                    else -> R.drawable.rounded_notif_btn_red
-                }
-                remoteViews.setInt(id, "setBackgroundResource", bgRes)
-                remoteViews.setTextColor(id, android.graphics.Color.WHITE)
-            } else {
-                // UNSELECTED: Neutral Background, Colored Text
-                remoteViews.setInt(id, "setBackgroundResource", R.drawable.rounded_notif_btn_neutral)
-                val textColor = when {
-                    score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
-                    score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
-                    else -> android.graphics.Color.parseColor("#B71C1C") // Red
-                }
-                remoteViews.setTextColor(id, textColor)
+            remoteViews.setInt(id, "setBackgroundResource", R.drawable.rounded_notif_btn_neutral)
+            val textColor = when {
+                score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
+                score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
+                else -> android.graphics.Color.parseColor("#B71C1C") // Red
             }
+            remoteViews.setTextColor(id, textColor)
 
-            // Click Intent
-            val selectIntent = Intent(context, NotificationReceiver::class.java).apply {
-                action = "ACTION_SELECT_SCORE"
-                putExtra("SCORE", score)
+            // Tapping a score opens the app with that score pre-selected for
+            // this hour — tags are mandatory, so rating finishes in the app.
+            val selectIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("PENDING_SCORE", score)
                 putExtra("TARGET_TS", targetTs)
                 putExtra("TARGET_LABEL", targetLabel)
             }
-            val pendingIntent = PendingIntent.getBroadcast(
+            val pendingIntent = PendingIntent.getActivity(
                 context, score, selectIntent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
@@ -238,28 +201,9 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         remoteViews.setOnClickPendingIntent(R.id.btn_open_app, pendingIntent)
         remoteViews.setTextColor(R.id.btn_open_app, themeTextColor)
 
-        // 4. Toggle Submit Button
-        if (selectedScore != null) {
-            remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.GONE)
-            remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.VISIBLE)
-            remoteViews.setTextViewText(R.id.btn_submit, "Submit score $selectedScore")
-            remoteViews.setTextColor(R.id.btn_submit, themeTextColor)
-
-            val submitIntent = Intent(context, NotificationReceiver::class.java).apply {
-                action = "ACTION_SUBMIT_SCORE"
-                putExtra("SCORE", selectedScore)
-                putExtra("TARGET_TS", targetTs)
-                putExtra("TARGET_LABEL", targetLabel)
-            }
-            val submitPendingIntent = PendingIntent.getBroadcast(
-                context, 100, submitIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            remoteViews.setOnClickPendingIntent(R.id.btn_submit, submitPendingIntent)
-        } else {
-            remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.VISIBLE)
-            remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.GONE)
-        }
+        // 4. Rating always finishes in the app — no in-notification submit
+        remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.VISIBLE)
+        remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.GONE)
 
         // 5. Build
         val notification = NotificationCompat.Builder(context, "hourly_bee")
@@ -287,19 +231,22 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
 }
 
 // --- TAGS MANAGEMENT ---
+// The 10 default tags. Stored under a fresh key ("tags_v2") so tag lists
+// clobbered by old backup imports are abandoned and everyone starts from these.
+val DEFAULT_TAGS = listOf(
+    "💼 Work", "📚 Learning", "🏋️ Exercise", "🍽️ Food", "😴 Rest",
+    "👨‍👩‍👧 Family", "🤝 Social", "📱 Scrolling", "🏠 Chores", "🎨 Hobby"
+)
+
 fun loadTags(c: Context): List<String> {
     val prefs = c.getSharedPreferences("b", 0)
-    val default = "🧠 Deep Work,💬 Meetings,📧 Admin,📚 Learning,🏋️ Exercise," +
-            "🍽️ Eating,😴 Rest,🚗 Commuting,🧘 Mindfulness,🎮 Gaming," +
-            "📱 Social Media,👨‍👩‍👧 Family,🤝 Social,🛒 Errands,🎨 Creative," +
-            "🏠 Chores,💤 Nap,🏃 Outdoors,🎵 Music,💼 Side Project"
-    val tagsString = prefs.getString("tags", default) ?: default
+    val tagsString = prefs.getString("tags_v2", null) ?: return DEFAULT_TAGS
     return tagsString.split(",").filter { it.isNotBlank() }
 }
 
 fun saveTags(c: Context, tags: List<String>) {
     val prefs = c.getSharedPreferences("b", 0)
-    prefs.edit { putString("tags", tags.joinToString(",")) }
+    prefs.edit { putString("tags_v2", tags.joinToString(",")) }
 }
 
 // --- DATA PERSISTENCE ---
@@ -350,75 +297,106 @@ fun deleteRating(context: Context, id: Long) {
 }
 
 // --- BACKUP/RESTORE ---
+// Exports stay plain CSV (opens directly in Excel / Sheets) but carry an HMAC
+// signature over the data rows. Import rejects files whose signature is
+// missing or wrong — except in debuggable builds, so fabricated test data can
+// still be imported during development.
+private const val EXPORT_SIGN_KEY = "beeing-export-hmac-v1-7c4a1f"
+
+private fun signRows(rows: List<String>): String {
+    val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+    mac.init(javax.crypto.spec.SecretKeySpec(EXPORT_SIGN_KEY.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+    return mac.doFinal(rows.joinToString("\n").toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+}
+
+private fun isDebuggableBuild(c: Context): Boolean =
+    (c.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
 fun saveToCsv(c: Context, u: Uri, r: List<RatingEntry>) {
     c.contentResolver.openOutputStream(u)?.use { stream ->
         val writer = stream.bufferedWriter(Charsets.UTF_8)
         val availableTags = loadTags(c)
         writer.write("# AVAILABLE_TAGS: ${availableTags.joinToString("|")}\n")
         writer.write("ID,Score,Timestamp,Recording_Time,Hour_Label,Note,Tags\n")
-        r.forEach {
+        val rows = r.map {
             val recordingTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.id))
-            val line = "${it.id},${it.score},${it.timestamp},\"$recordingTime\",\"${it.hourLabel}\",\"${it.note}\",\"${it.tags.joinToString("|")}\"\n"
-            writer.write(line)
+            "${it.id},${it.score},${it.timestamp},\"$recordingTime\",\"${it.hourLabel}\",\"${it.note}\",\"${it.tags.joinToString("|")}\""
         }
+        rows.forEach { row ->
+            writer.write(row)
+            writer.write("\n")
+        }
+        writer.write("# SIG: ${signRows(rows)}\n")
         writer.flush()
     }
 }
 
 fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
     val entries = mutableListOf<RatingEntry>()
+    val dataRows = mutableListOf<String>()
+    var signature: String? = null
     try {
-        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-            var lineNumber = 0
-            reader.forEachLine { line ->
-                try {
-                    if (lineNumber == 0 && line.startsWith("# AVAILABLE_TAGS:")) {
-                        val tagsString = line.substringAfter("# AVAILABLE_TAGS:").trim()
-                        if (tagsString.isNotBlank()) {
-                            val tags = tagsString.split("|").filter { it.isNotBlank() }
-                            saveTags(context, tags)
-                        }
-                        lineNumber++
-                        return@forEachLine
+        val lines = context.contentResolver.openInputStream(uri)
+            ?.bufferedReader(Charsets.UTF_8)?.readLines() ?: return emptyList()
+
+        for (line in lines) {
+            try {
+                when {
+                    // Importing data must never replace the user's own
+                    // selectable tag list — skip the header.
+                    line.startsWith("# AVAILABLE_TAGS:") -> continue
+                    line.startsWith("ID,Score,Timestamp") -> continue
+                    line.startsWith("# SIG:") -> {
+                        signature = line.substringAfter("# SIG:").trim()
+                        continue
                     }
-                    if (line.startsWith("ID,Score,Timestamp")) {
-                        lineNumber++
-                        return@forEachLine
-                    }
-                    val parts = mutableListOf<String>()
-                    var currentPart = StringBuilder()
-                    var inQuotes = false
-                    for (char in line) {
-                        when {
-                            char == '"' -> inQuotes = !inQuotes
-                            char == ',' && !inQuotes -> {
-                                parts.add(currentPart.toString())
-                                currentPart = StringBuilder()
-                            }
-                            else -> currentPart.append(char)
-                        }
-                    }
-                    parts.add(currentPart.toString())
-                    if (parts.size >= 7) {
-                        entries.add(
-                            RatingEntry(
-                                id = parts[0].toLongOrNull() ?: 0L,
-                                score = parts[1].toIntOrNull() ?: 0,
-                                timestamp = parts[2].toLongOrNull() ?: 0L,
-                                hourLabel = parts[4],
-                                note = parts[5],
-                                tags = if (parts[6].isNotBlank()) parts[6].split("|").filter { it.isNotEmpty() } else emptyList()
-                            )
-                        )
-                    }
-                    lineNumber++
-                } catch (e: Exception) {
-                    lineNumber++
+                    line.isBlank() -> continue
                 }
+                dataRows.add(line)
+                val parts = mutableListOf<String>()
+                var currentPart = StringBuilder()
+                var inQuotes = false
+                for (char in line) {
+                    when {
+                        char == '"' -> inQuotes = !inQuotes
+                        char == ',' && !inQuotes -> {
+                            parts.add(currentPart.toString())
+                            currentPart = StringBuilder()
+                        }
+                        else -> currentPart.append(char)
+                    }
+                }
+                parts.add(currentPart.toString())
+                if (parts.size >= 7) {
+                    entries.add(
+                        RatingEntry(
+                            id = parts[0].toLongOrNull() ?: 0L,
+                            score = parts[1].toIntOrNull() ?: 0,
+                            timestamp = parts[2].toLongOrNull() ?: 0L,
+                            hourLabel = parts[4],
+                            note = parts[5],
+                            tags = if (parts[6].isNotBlank()) parts[6].split("|").filter { it.isNotEmpty() } else emptyList()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                // skip malformed line
             }
         }
     } catch (e: Exception) {
         e.printStackTrace()
+        return emptyList()
+    }
+
+    // Tamper check (release builds only)
+    if (!isDebuggableBuild(context) && signature != signRows(dataRows)) {
+        Toast.makeText(
+            context,
+            "Import rejected: this file was modified or wasn't exported by Beeing.",
+            Toast.LENGTH_LONG
+        ).show()
+        return emptyList()
     }
     return entries
 }

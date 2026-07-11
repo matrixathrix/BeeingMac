@@ -1,7 +1,15 @@
 package com.example.beeing
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -19,7 +27,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp as lerpColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
@@ -248,28 +260,57 @@ fun StreakMeter(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val filled = state.todayHours.coerceAtMost(STREAK_HOURS_REQUIRED)
     val animatedFill by animateFloatAsState(
         targetValue = filled.toFloat(),
         animationSpec = tween(700),
         label = "streakFill"
     )
-    // 0 = compact (ring left, text right); 1 = ring fills the card, text below
-    val expandFraction by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(600, easing = FastOutSlowInEasing),
-        label = "streakExpand"
+    // Hours beyond 8 grow the pointy overflow head past 12 o'clock
+    val extraHours = (state.todayHours - STREAK_HOURS_REQUIRED).coerceAtLeast(0)
+    val animatedExtra by animateFloatAsState(
+        targetValue = extraHours.toFloat(),
+        animationSpec = tween(700),
+        label = "extraFill"
     )
-
-    val accent = MaterialTheme.colorScheme.primary
+    // Long double throb + a small buzz for EVERY rated hour, incl. beyond 8
+    val ringScale = remember { Animatable(1f) }
+    var lastHours by remember { mutableIntStateOf(state.todayHours) }
+    LaunchedEffect(state.todayHours) {
+        if (state.todayHours > lastHours) {
+            val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(
+                    android.os.VibrationEffect.createWaveform(
+                        longArrayOf(0, 35, 110, 70), intArrayOf(0, 120, 0, 200), -1
+                    )
+                )
+            }
+            repeat(2) {
+                ringScale.animateTo(1.09f, tween(260, easing = FastOutSlowInEasing))
+                ringScale.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+            }
+            ringScale.animateTo(1.05f, tween(200, easing = FastOutSlowInEasing))
+            ringScale.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+            )
+        }
+        lastHours = state.todayHours
+    }
+    val accent = Color(0xFFFFE082) // pastel honey yellow
     val done = Color(0xFF66BB6A)
     val track = MaterialTheme.colorScheme.surfaceVariant
     val ringColor = if (state.todayQualified) done else accent
 
-    val statusText = if (state.todayQualified) "Today secured ✓"
-    else "${state.todayHours} / $STREAK_HOURS_REQUIRED hours today"
-    val promiseText = if (state.todayQualified) "See your month on the Streaks tab"
-    else "Fill the ring → day ${state.currentStreak + 1}"
+    // The ring shows TODAY's hours, so the count inside is hours; the streak
+    // day count lives outside the ring.
+    val streakTitle = if (state.currentStreak > 0)
+        "${state.currentStreak} day streak" else "No streak yet"
+    val remaining = (STREAK_HOURS_REQUIRED - state.todayHours).coerceAtLeast(0)
+    val statusText = if (state.todayQualified) "Today is secured ✓"
+    else "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
 
     val card = Modifier
         .fillMaxWidth()
@@ -277,127 +318,217 @@ fun StreakMeter(
         .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
 
     Card(modifier = modifier.then(card), shape = RoundedCornerShape(20.dp)) {
-        BoxWithConstraints(Modifier.padding(16.dp)) {
-            val ringSize = lerp(116.dp, maxWidth.coerceAtMost(260.dp), expandFraction)
-
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = if (expandFraction > 0.5f) Arrangement.Center
-                    else Arrangement.spacedBy(20.dp)
-                ) {
-                    Box(Modifier.size(ringSize), contentAlignment = Alignment.Center) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            val stroke = lerp(16.dp, 32.dp, expandFraction).toPx()
-                            val gapDeg = 6f
-                            val slotDeg = 360f / STREAK_HOURS_REQUIRED
-                            val segSweep = slotDeg - gapDeg
-                            val inset = stroke / 2
-                            val arcSize = Size(size.width - stroke, size.height - stroke)
-                            val topLeft = Offset(inset, inset)
-                            val a0 = -90f + gapDeg / 2
-
-                            // Track: all segments drawn FIRST so the fill always sits on top
-                            for (i in 0 until STREAK_HOURS_REQUIRED) {
-                                drawArc(
-                                    color = track,
-                                    startAngle = a0 + i * slotDeg, sweepAngle = segSweep, useCenter = false,
-                                    topLeft = topLeft, size = arcSize,
-                                    style = Stroke(width = stroke, cap = StrokeCap.Round)
-                                )
-                            }
-
-                            // Filled hours merge into ONE arc over the track. Butt cap keeps
-                            // the 12-o'clock starting edge a straight line; a half-disc at the
-                            // leading end makes it convex, pointing in the fill direction.
-                            val whole = animatedFill.toInt().coerceIn(0, STREAK_HOURS_REQUIRED)
-                            val frac = animatedFill - whole
-                            val fillSweep = when {
-                                frac > 0f -> whole * slotDeg + segSweep * frac
-                                whole > 0 -> (whole - 1) * slotDeg + segSweep
-                                else -> 0f
-                            }
-                            if (fillSweep > 0f) {
-                                drawArc(
-                                    color = ringColor,
-                                    startAngle = a0, sweepAngle = fillSweep, useCenter = false,
-                                    topLeft = topLeft, size = arcSize,
-                                    style = Stroke(width = stroke, cap = StrokeCap.Butt)
-                                )
-                                val tipRad = Math.toRadians((a0 + fillSweep).toDouble())
-                                val ringRadius = (size.minDimension - stroke) / 2f
-                                drawCircle(
-                                    color = ringColor,
-                                    radius = stroke / 2f,
-                                    center = Offset(
-                                        size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
-                                        size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
-                                    )
-                                )
-                            }
-                        }
+        // Two fixed layouts with an animated size change between them: nothing
+        // is re-measured per frame, so the grow/shrink stays smooth to the end
+        // (the old per-frame size/font lerp dropped frames as it settled).
+        AnimatedContent(
+            targetState = expanded,
+            transitionSpec = {
+                (fadeIn(tween(260, delayMillis = 130)) togetherWith fadeOut(tween(130)))
+                    .using(SizeTransform(clip = false) { _, _ ->
+                        tween(500, easing = FastOutSlowInEasing)
+                    })
+            },
+            label = "meterLayout",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) { isExpanded ->
+            if (isExpanded) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    StreakRing(
+                        animatedFill = animatedFill,
+                        animatedExtra = animatedExtra,
+                        ringColor = ringColor,
+                        trackColor = track,
+                        ringSize = 240.dp,
+                        strokeWidth = 30.dp,
+                        scale = ringScale.value
+                    ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "${state.currentStreak}",
-                                fontSize = androidx.compose.ui.unit.lerp(34.sp, 56.sp, expandFraction),
+                                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                                fontSize = 44.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "day streak",
-                                fontSize = androidx.compose.ui.unit.lerp(11.sp, 14.sp, expandFraction),
+                                "hours today",
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-
-                    // Compact state: status to the right of the ring
-                    if (expandFraction < 1f) {
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .alpha(1f - expandFraction),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                statusText,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (state.todayQualified) done else MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp
-                            )
-                            Text(
-                                promiseText,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        statusText,
+                        fontSize = 13.sp,
+                        color = if (state.todayQualified) done
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-
-                // Expanded state: the same status slides in below the ring
-                if (expandFraction > 0f) {
-                    Column(
-                        Modifier
-                            .padding(top = lerp(0.dp, 12.dp, expandFraction))
-                            .alpha(expandFraction),
-                        horizontalAlignment = Alignment.CenterHorizontally
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    StreakRing(
+                        animatedFill = animatedFill,
+                        animatedExtra = animatedExtra,
+                        ringColor = ringColor,
+                        trackColor = track,
+                        ringSize = 112.dp,
+                        strokeWidth = 15.dp,
+                        scale = ringScale.value
                     ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "hours",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(
                             statusText,
-                            fontWeight = FontWeight.Bold,
-                            color = if (state.todayQualified) done else MaterialTheme.colorScheme.onSurface,
-                            fontSize = 17.sp
-                        )
-                        Text(
-                            promiseText,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 12.sp,
+                            color = if (state.todayQualified) done
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * The 8-segment hour ring: flat start edge at 12 o'clock, convex leading tip
+ * while filling. Once closed it becomes one seamless circle, and hours beyond
+ * 8 grow a pointy head past 12 o'clock (toward 1 o'clock), its color darkening
+ * toward the tip.
+ */
+@Composable
+private fun StreakRing(
+    animatedFill: Float,
+    animatedExtra: Float,
+    ringColor: Color,
+    trackColor: Color,
+    ringSize: Dp,
+    strokeWidth: Dp,
+    scale: Float,
+    centerContent: @Composable () -> Unit
+) {
+    Box(
+        Modifier
+            .size(ringSize)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = strokeWidth.toPx()
+            val gapDeg = 6f
+            val slotDeg = 360f / STREAK_HOURS_REQUIRED
+            val segSweep = slotDeg - gapDeg
+            val inset = stroke / 2
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            val topLeft = Offset(inset, inset)
+            val a0 = -90f + gapDeg / 2
+            val ringRadius = (size.minDimension - stroke) / 2f
+            val complete = animatedFill >= STREAK_HOURS_REQUIRED - 0.001f
+
+            // Track: all segments drawn FIRST so the fill always sits on top
+            for (i in 0 until STREAK_HOURS_REQUIRED) {
+                drawArc(
+                    color = trackColor,
+                    startAngle = a0 + i * slotDeg, sweepAngle = segSweep, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            }
+
+            if (complete) {
+                // Closed ring: one seamless circle, no seam at 12 o'clock
+                drawCircle(
+                    color = ringColor,
+                    radius = ringRadius,
+                    center = Offset(size.width / 2f, size.height / 2f),
+                    style = Stroke(width = stroke)
+                )
+
+                // Overflow head: each hour beyond 8 pushes a tapering point
+                // further past 12 o'clock, darkening toward the tip
+                val headSweep = (animatedExtra * 4f).coerceAtMost(32f)
+                if (headSweep > 0.1f) {
+                    val tipColor = Color(0xFF1B5E20)
+                    val steps = 20
+                    val stepSweep = headSweep / steps
+                    for (s in 0 until steps) {
+                        val t = s / steps.toFloat()
+                        drawArc(
+                            color = lerpColor(ringColor, tipColor, t),
+                            startAngle = -90f + s * stepSweep - 0.2f,
+                            sweepAngle = stepSweep + 0.4f,
+                            useCenter = false,
+                            topLeft = topLeft, size = arcSize,
+                            style = Stroke(width = stroke * (1f - 0.82f * t), cap = StrokeCap.Butt)
+                        )
+                    }
+                    // round off the very tip
+                    val tipRad = Math.toRadians((-90f + headSweep).toDouble())
+                    drawCircle(
+                        color = tipColor,
+                        radius = stroke * 0.09f,
+                        center = Offset(
+                            size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
+                            size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
+                        )
+                    )
+                }
+            } else {
+                // Filling: ONE merged arc over the track. Butt cap keeps the
+                // 12-o'clock starting edge a straight line; a half-disc at the
+                // leading end makes it convex, pointing in the fill direction.
+                val whole = animatedFill.toInt().coerceIn(0, STREAK_HOURS_REQUIRED)
+                val frac = animatedFill - whole
+                val fillSweep = when {
+                    frac > 0f -> whole * slotDeg + segSweep * frac
+                    whole > 0 -> (whole - 1) * slotDeg + segSweep
+                    else -> 0f
+                }
+                if (fillSweep > 0f) {
+                    drawArc(
+                        color = ringColor,
+                        startAngle = a0, sweepAngle = fillSweep, useCenter = false,
+                        topLeft = topLeft, size = arcSize,
+                        style = Stroke(width = stroke, cap = StrokeCap.Butt)
+                    )
+                    val tipRad = Math.toRadians((a0 + fillSweep).toDouble())
+                    drawCircle(
+                        color = ringColor,
+                        radius = stroke / 2f,
+                        center = Offset(
+                            size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
+                            size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
+                        )
+                    )
+                }
+            }
+        }
+        centerContent()
     }
 }
 
@@ -538,12 +669,14 @@ fun computeStreakLog(
 fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val events = remember(ratings, refreshKey) {
-        computeStreakLog(ratings, loadReclaimSpends(context))
+        // Only the last 3 months of history
+        val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
+        computeStreakLog(ratings, loadReclaimSpends(context)).filter { it.timestamp >= cutoff }
     }
     val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
 
     if (events.isEmpty()) {
-        Text("No streak events yet — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Nothing in the last 3 months — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
             events.take(60).forEach { ev ->

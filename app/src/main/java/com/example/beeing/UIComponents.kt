@@ -12,6 +12,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -80,13 +81,6 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Text(
-            "Average score over time",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(8.dp))
-
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 StatPeriod.entries.forEachIndexed { i, p ->
                     SegmentedButton(
@@ -98,7 +92,7 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
             }
 
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -108,6 +102,7 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
                 Text(
                     "${buckets.first().label} – ${buckets.last().label}",
                     fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
                 IconButton(onClick = { if (pageOffset > 0) pageOffset-- }, enabled = pageOffset > 0) {
@@ -118,9 +113,9 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
                 }
             }
 
-            Box(Modifier.fillMaxWidth().height(260.dp)) {
+            Box(Modifier.fillMaxWidth().height(230.dp)) {
                 Canvas(
-                    Modifier.fillMaxSize().padding(top = 30.dp, bottom = 50.dp, start = 40.dp, end = 40.dp)
+                    Modifier.fillMaxSize().padding(top = 18.dp, bottom = 34.dp, start = 26.dp, end = 8.dp)
                 ) {
                     val canvasH = size.height
                     val canvasW = size.width
@@ -283,26 +278,27 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onEdit(item) }
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 5.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 "$dateStr, $range (${item.hourLabel} hour)",
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             if (item.tags.isNotEmpty()) {
                                 Text(
                                     item.tags.joinToString(", "),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
                                 )
                             }
                         }
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(34.dp)
                                 .background(
                                     when {
                                         item.score >= 8 -> Color(0xFF66BB6A)
@@ -316,7 +312,7 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                             Text(
                                 "${item.score}",
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 20.sp,
+                                fontSize = 15.sp,
                                 color = if (item.score >= 5) Color.Black else Color.White
                             )
                         }
@@ -358,118 +354,6 @@ fun HeaderSection(
             IconButton(onClick = onMenuClick) {
                 Icon(Icons.Default.MoreVert, "Menu", tint = Color.Gray)
             }
-        }
-    }
-}
-
-@Composable
-fun CelebrationOverlay(onDismiss: () -> Unit)
-{
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val pattern = longArrayOf(0, 150, 100, 200, 100, 150, 100)
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(longArrayOf(0, 150, 100, 200, 100, 150, 100), -1)
-        }
-
-        delay(3000)
-        onDismiss()
-    }
-
-    data class ConfettiEmoji(val emoji: String, val angle: Float, val speed: Float, val delay: Long)
-    val confettiEmojis = remember {
-        listOf(
-            "🎊", "⭐", "🚀", "✨", "🎉", "⭐", "🚀", "💫", "🎊", "⭐",
-            "🚀", "✨", "🎉", "⭐", "🚀", "💫", "🎊", "⭐", "🚀", "✨"
-        ).mapIndexed { index, emoji ->
-            ConfettiEmoji(
-                emoji = emoji,
-                angle = (index * 18f) - 90f,
-                speed = (200..300).random().toFloat(),
-                delay = (0..300).random().toLong()
-            )
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .clickable { onDismiss() },
-        contentAlignment = Alignment.Center
-    ) {
-        confettiEmojis.forEach { confetti ->
-            val offsetX = remember { Animatable(0f) }
-            val offsetY = remember { Animatable(0f) }
-            val alpha = remember { Animatable(1f) }
-            val rotation = remember { Animatable(0f) }
-
-            LaunchedEffect(Unit) {
-                delay(confetti.delay)
-                launch {
-                    val angleRad = Math.toRadians(confetti.angle.toDouble())
-                    val targetX = (cos(angleRad) * confetti.speed).toFloat()
-                    offsetX.animateTo(
-                        targetValue = targetX,
-                        animationSpec = tween(1500, easing = FastOutSlowInEasing)
-                    )
-                }
-                launch {
-                    val angleRad = Math.toRadians(confetti.angle.toDouble())
-                    val targetY = (sin(angleRad) * confetti.speed).toFloat()
-                    offsetY.animateTo(
-                        targetValue = targetY,
-                        animationSpec = tween(1500, easing = FastOutSlowInEasing)
-                    )
-                }
-                launch {
-                    delay(1000)
-                    alpha.animateTo(0f, animationSpec = tween(500))
-                }
-                launch {
-                    rotation.animateTo(
-                        360f,
-                        animationSpec = tween(1500, easing = LinearEasing)
-                    )
-                }
-            }
-
-            Text(
-                text = confetti.emoji,
-                fontSize = 32.sp,
-                modifier = Modifier
-                    .offset(offsetX.value.dp, offsetY.value.dp)
-                    .alpha(alpha.value)
-                    .rotate(rotation.value)
-            )
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Text(
-                "🚀",
-                fontSize = 100.sp
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Way to go!",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Keep living in the now!",
-                fontSize = 20.sp,
-                color = Color.White.copy(alpha = 0.8f)
-            )
         }
     }
 }
@@ -659,339 +543,6 @@ fun EditEntrySheet(
 }
 
 @Composable
-fun EpicCelebrationOverlay(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val pattern = longArrayOf(0, 200, 150, 250, 150, 300, 150, 200, 100)
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(longArrayOf(0, 200, 150, 250, 150, 300, 150, 200, 100), -1)
-        }
-        delay(4000)
-        onDismiss()
-    }
-
-    data class ConfettiEmoji(
-        val emoji: String,
-        val angle: Float,
-        val speed: Float,
-        val delay: Long,
-        val size: Float
-    )
-
-    val confettiEmojis = remember {
-        val emojis = listOf(
-            "🌟", "✨", "💫", "⭐", "🎆", "🎇", "🎉", "🎊", "🏆", "👑",
-            "🌟", "✨", "💫", "⭐", "🎆", "🎇", "🎉", "🎊", "🏆", "👑",
-            "🌟", "✨", "💫", "⭐", "🎆", "🎇", "🎉", "🎊", "🏆", "👑",
-            "💎", "💰", "🔥", "⚡", "🌈", "🦄", "🚀", "🌠", "💥", "✨"
-        )
-        emojis.mapIndexed { index, emoji ->
-            ConfettiEmoji(
-                emoji = emoji,
-                angle = (index * 9f) - 90f,
-                speed = (250..400).random().toFloat(),
-                delay = (0..400).random().toLong(),
-                size = (28..40).random().toFloat()
-            )
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f))
-            .clickable { onDismiss() },
-        contentAlignment = Alignment.Center
-    ) {
-        confettiEmojis.forEach { confetti ->
-            val offsetX = remember { Animatable(0f) }
-            val offsetY = remember { Animatable(0f) }
-            val alpha = remember { Animatable(1f) }
-            val rotation = remember { Animatable(0f) }
-            val scale = remember { Animatable(0.5f) }
-
-            LaunchedEffect(Unit) {
-                delay(confetti.delay)
-                launch {
-                    scale.animateTo(
-                        1.2f,
-                        animationSpec = tween(400, easing = FastOutSlowInEasing)
-                    )
-                }
-                launch {
-                    val angleRad = Math.toRadians(confetti.angle.toDouble())
-                    val targetX = (cos(angleRad) * confetti.speed).toFloat()
-                    offsetX.animateTo(
-                        targetValue = targetX,
-                        animationSpec = tween(2000, easing = FastOutSlowInEasing)
-                    )
-                }
-                launch {
-                    val angleRad = Math.toRadians(confetti.angle.toDouble())
-                    val targetY = (sin(angleRad) * confetti.speed).toFloat()
-                    offsetY.animateTo(
-                        targetValue = targetY,
-                        animationSpec = tween(2000, easing = FastOutSlowInEasing)
-                    )
-                }
-                launch {
-                    delay(1500)
-                    alpha.animateTo(0f, animationSpec = tween(500))
-                }
-                launch {
-                    rotation.animateTo(
-                        720f,
-                        animationSpec = tween(2000, easing = LinearEasing)
-                    )
-                }
-            }
-
-            Text(
-                text = confetti.emoji,
-                fontSize = confetti.size.sp,
-                modifier = Modifier
-                    .offset(offsetX.value.dp, offsetY.value.dp)
-                    .alpha(alpha.value)
-                    .rotate(rotation.value)
-                    .graphicsLayer(scaleX = scale.value, scaleY = scale.value)
-            )
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Text(
-                "👑",
-                fontSize = 120.sp
-            )
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "PERFECT!",
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Black,
-                color = Color(0xFFFFD700)
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "You just lived a very special moment of your life, congratulations!",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                lineHeight = 28.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun RatingCard(
-    hourOffset: Int,
-    allRatings: List<RatingEntry>,
-    onSave: (score: Int, hourLabel: String, tags: List<String>, note: String) -> Unit,
-    isTargeted: Boolean = false
-) {
-    val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
-
-    var selectedScore by remember { mutableIntStateOf(1) }
-    val selectedTags = remember { mutableStateListOf<String>() }
-    var currentNote by remember { mutableStateOf("") }
-    var availableTags by remember { mutableStateOf(loadTags(context)) }
-    var isTagDeleteMode by remember { mutableStateOf(false) }
-    var showTagDialog by remember { mutableStateOf(false) }
-
-    val displayHourInfo = remember(hourOffset) {
-        val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -hourOffset) }
-        val startH = cal.get(Calendar.HOUR_OF_DAY)
-
-        // FIX: Range is Start -> Start+1 (e.g. 5:00 is 5-6)
-        val endH = if (startH == 23) 0 else startH + 1
-
-        val range = "${formatHour(startH)} - ${formatHour(endH)}"
-        val label = "${if (endH == 0) 24 else endH}${getOrdinalSuffix(if (endH == 0) 24 else endH)}"
-        Triple(range, endH, label)
-    }
-
-    val isLogged = remember(allRatings, hourOffset) {
-        val targetDayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
-            Date(System.currentTimeMillis() - (hourOffset * 3600000L))
-        )
-        allRatings.any {
-            it.hourLabel == displayHourInfo.third &&
-                    SimpleDateFormat(
-                        "yyyyMMdd",
-                        Locale.getDefault()
-                    ).format(Date(it.timestamp)) == targetDayKey
-        }
-    }
-
-    val pulseAlpha = remember { Animatable(0.3f) }
-    LaunchedEffect(isLogged) {
-        if (!isLogged) {
-            repeat(3) {
-                pulseAlpha.animateTo(0.8f, animationSpec = tween(300))
-                pulseAlpha.animateTo(0.3f, animationSpec = tween(300))
-            }
-        } else {
-            pulseAlpha.snapTo(0.15f)
-        }
-    }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            border = if (!isLogged) BorderStroke(
-                2.dp,
-                if (isSystemInDarkTheme()) Color.White else Color(0xFF424242)
-            ) else null,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = pulseAlpha.value)
-            )
-        ) {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    val labelText = when {
-                        isLogged -> "Already rated:"
-                        hourOffset == 0 -> "How was your:"
-                        else -> "You also missed rating:"
-                    }
-                    Text(
-                        text = labelText,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (isLogged) Color.Gray
-                        else if (hourOffset != 0) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "${displayHourInfo.first} (${displayHourInfo.third} hour)",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Box(
-            Modifier
-                .padding(vertical = 32.dp)
-                .height(300.dp)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            (1..10).forEach { s ->
-                val angle = (s - 1) * 36f - 90f
-                val x = (120f * cos(Math.toRadians(angle.toDouble()))).toFloat()
-                val y = (120f * sin(Math.toRadians(angle.toDouble()))).toFloat()
-
-                FilledTonalButton(
-                    onClick = {
-                        selectedScore = s
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    },
-                    modifier = Modifier.offset(x.dp, y.dp).size(70.dp),
-                    shape = CircleShape,
-                    enabled = !isLogged,
-                    contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (selectedScore == s) {
-                            when {
-                                s >= 8 -> Color(0xFF66BB6A)
-                                s >= 5 -> Color(0xFFFFB300)
-                                else -> Color(0xFFB71C1C)
-                            }
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    )
-                ) {
-                    Text(
-                        text = s.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (selectedScore == s && s < 5) Color.White else Color.Unspecified
-                    )
-                }
-            }
-
-            Button(
-                onClick = {
-                    onSave(selectedScore, displayHourInfo.third, selectedTags.toList(), currentNote)
-                    selectedScore = 1
-                    selectedTags.clear()
-                    currentNote = ""
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                },
-                enabled = !isLogged,
-                modifier = Modifier.size(100.dp),
-                shape = CircleShape
-            ) {
-                Text(
-                    if (isLogged) "Rated" else "Rate",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isLogged) Color.Gray else Color.White
-                )
-            }
-        }
-
-        if (showTagDialog) {
-            var newTag by remember { mutableStateOf("") }
-            AlertDialog(
-                onDismissRequest = { showTagDialog = false },
-                title = { Text("Add new tag") },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            newTag,
-                            onValueChange = { newTag = it },
-                            label = { Text("Tag name") }
-                        )
-                        if (availableTags.size >= 30) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Maximum of 30 tags reached",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        } else {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "${availableTags.size}/30 tags",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (newTag.isNotBlank() && availableTags.size < 30) {
-                                availableTags = (availableTags + newTag.trim()).distinct()
-                                saveTags(context, availableTags)
-                                selectedTags.add(newTag.trim())
-                            }
-                            showTagDialog = false
-                        },
-                        enabled = newTag.isNotBlank() && availableTags.size < 30
-                    ) {
-                        Text("Add")
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun SoulFuelTagsSection(
     allRatings: List<RatingEntry>,
@@ -1005,26 +556,23 @@ fun SoulFuelTagsSection(
 ) {
     val context = LocalContext.current
 
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Tags",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-
+    // Centered chips that read as part of the rating dial above; a single
+    // pencil toggles edit mode (delete existing tags / add new ones).
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         FlowRow(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
             if (isTagDeleteMode) {
+                AssistChip(
+                    onClick = onShowTagDialog,
+                    enabled = isEnabled && availableTags.size < 30,
+                    label = { Text("New tag") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
+                    }
+                )
                 availableTags.forEach { tag ->
                     InputChip(
                         selected = false,
@@ -1062,34 +610,16 @@ fun SoulFuelTagsSection(
                 }
             }
 
-            if (availableTags.isNotEmpty()) {
-                IconButton(
-                    onClick = { onTagDeleteModeChange(!isTagDeleteMode) },
-                    enabled = isEnabled,
-                    modifier = Modifier.size(32.dp).align(Alignment.CenterVertically)
-                ) {
-                    Icon(
-                        if (isTagDeleteMode) Icons.Default.Check else Icons.Default.Delete,
-                        contentDescription = if (isTagDeleteMode) "Done deleting" else "Delete tags",
-                        modifier = Modifier.size(18.dp),
-                        tint = if (isTagDeleteMode) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             IconButton(
-                onClick = onShowTagDialog,
-                enabled = isEnabled && availableTags.size < 30,
+                onClick = { onTagDeleteModeChange(!isTagDeleteMode) },
+                enabled = isEnabled,
                 modifier = Modifier.size(32.dp).align(Alignment.CenterVertically)
             ) {
                 Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Add tag",
+                    if (isTagDeleteMode) Icons.Default.Check else Icons.Default.Edit,
+                    contentDescription = if (isTagDeleteMode) "Done editing" else "Edit tags",
                     modifier = Modifier.size(18.dp),
-                    tint = if (availableTags.size >= 30)
-                        Color.Gray.copy(alpha = 0.3f)
-                    else
-                        MaterialTheme.colorScheme.primary
+                    tint = if (isTagDeleteMode) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1106,9 +636,11 @@ fun NotesSection(
         OutlinedTextField(
             value = noteText,
             onValueChange = onNoteChange,
-            label = { Text("Note (optional)") },
+            label = { Text("Add a note (optional)") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = enabled
+            enabled = enabled,
+            shape = RoundedCornerShape(16.dp),
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
         )
     }
 }

@@ -51,7 +51,10 @@ import java.util.*
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HourlyPulseApp() {
+fun HourlyPulseApp(
+    pendingRating: PendingRating? = null,
+    onPendingRatingConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -60,7 +63,10 @@ fun HourlyPulseApp() {
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
         if (pagerState.currentPage != selectedTab) {
-            pagerState.animateScrollToPage(selectedTab)
+            pagerState.animateScrollToPage(
+                selectedTab,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            )
         }
     }
     // settledPage (not currentPage): currentPage updates at every intermediate
@@ -91,6 +97,30 @@ fun HourlyPulseApp() {
     var targetedHourOffset by remember { mutableIntStateOf(0) }
     var ratingCardYPosition by remember { mutableFloatStateOf(0f) }
     var chartYPosition by remember { mutableFloatStateOf(0f) }
+
+    // Score picked on the notification: jump to Now with it pre-selected
+    var pendingScore by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pendingRating) {
+        pendingRating?.let { pr ->
+            val currentHourStart = Calendar.getInstance().apply {
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            // targetTs is the START of the rated hour; offset 0 = most recent
+            // completed hour, 1 = the grace-period hour before it
+            val offset = ((currentHourStart - pr.targetTs) / 3_600_000L).toInt() - 1
+            if (offset in 0..1) {
+                targetedHourOffset = offset
+                pendingScore = pr.score
+                selectedTab = 1
+            }
+            onPendingRatingConsumed()
+        }
+    }
+
+    // Full-screen celebration when the daily ring closes (streak day secured)
+    var ringCelebrationDays by remember { mutableStateOf<Int?>(null) }
 
     // Back press handling (double tap to exit)
     var lastBackPress by remember { mutableLongStateOf(0L) }
@@ -181,6 +211,7 @@ fun HourlyPulseApp() {
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             // Original HeaderSection
@@ -202,7 +233,10 @@ fun HourlyPulseApp() {
         )
         { HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            // keep all three tabs composed so page switches never stutter on
+            // composing an intermediate/destination page mid-animation
+            beyondViewportPageCount = 2
         ){ page ->
             when (page) {
                 0 -> StreaksTab(
@@ -217,7 +251,10 @@ fun HourlyPulseApp() {
                     onTargetedHourOffsetChange = { targetedHourOffset = it },
                     ratingCardYPosition = ratingCardYPosition,
                     onRatingCardYPosition = { ratingCardYPosition = it },
-                    onOpenStreaks = { selectedTab = 0 }
+                    onOpenStreaks = { selectedTab = 0 },
+                    pendingScore = pendingScore,
+                    onPendingScoreConsumed = { pendingScore = null },
+                    onRingClosed = { ringCelebrationDays = it }
                 )
 
                 2 -> PastTab(
@@ -489,6 +526,16 @@ fun HourlyPulseApp() {
                 }
             )
         }
+    }
+
+    // Duolingo-style full-screen takeover when today's ring closes —
+    // drawn above everything, header and nav pill included
+    ringCelebrationDays?.let { days ->
+        RingClosedCelebration(
+            streakDays = days,
+            onDone = { ringCelebrationDays = null }
+        )
+    }
     }
 }
 
