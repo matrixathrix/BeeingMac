@@ -1,12 +1,6 @@
 package com.example.beeing
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,8 +56,8 @@ fun StreaksTab(
     val streakState = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
         computeStreakState(allRatings, reclaimSpends)
     }
-    val outcomes = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
-        computeDayOutcomes(allRatings, reclaimSpends)
+    val dayDetails = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
+        computeDayDetails(allRatings, reclaimSpends)
     }
 
     var monthOffset by remember { mutableIntStateOf(0) } // 0 = current month
@@ -101,38 +95,39 @@ fun StreaksTab(
         // ---- Monthly calendar (info) ----
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            )
+            colors = CardDefaults.cardColors(containerColor = appCardColor())
         ) {
             Column(Modifier.padding(16.dp)) {
+                val monthController = rememberSwipeScrubController(
+                    onEarlier = { monthOffset++ },
+                    onLater = { if (monthOffset > 0) monthOffset-- }
+                )
                 MonthHeader(
                     monthOffset = monthOffset,
-                    onPrev = { monthOffset++ },
-                    onNext = { if (monthOffset > 0) monthOffset-- }
+                    onPrev = { monthController.stepEarlier() },
+                    onNext = { monthController.stepLater() }
                 )
                 Spacer(Modifier.height(8.dp))
-                // Slide toward the direction of travel: earlier months enter
-                // from the left, later months from the right
-                AnimatedContent(
-                    targetState = monthOffset,
-                    transitionSpec = {
-                        if (targetState > initialState) {
-                            (slideInHorizontally { -it } + fadeIn()) togetherWith
-                                    (slideOutHorizontally { it } + fadeOut())
-                        } else {
-                            (slideInHorizontally { it } + fadeIn()) togetherWith
-                                    (slideOutHorizontally { -it } + fadeOut())
-                        }
+                // Live finger-tracking: the current month and whichever
+                // neighbor is being dragged toward both move with the touch.
+                SwipeScrubStack(
+                    controller = monthController,
+                    canEarlier = true,
+                    canLater = monthOffset > 0,
+                    current = {
+                        MonthGrid(monthOffset = monthOffset, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
                     },
-                    label = "monthSlide"
-                ) { offset ->
-                    MonthGrid(
-                        monthOffset = offset,
-                        outcomes = outcomes,
-                        onDayClick = { statsDayMillis = it }
-                    )
-                }
+                    earlierPreview = {
+                        MonthGrid(monthOffset = monthOffset + 1, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
+                    },
+                    laterPreview = {
+                        if (monthOffset > 0) {
+                            MonthGrid(monthOffset = monthOffset - 1, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
+                        } else {
+                            Box(Modifier.fillMaxWidth())
+                        }
+                    }
+                )
                 Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier.fillMaxWidth(),
@@ -167,7 +162,7 @@ fun StreaksTab(
                     infoDialog = "🛡️ Savers" to
                             "Miss a day and one saver is used automatically — your streak continues.\n\n" +
                             "No savers left? The streak resets.\n\n" +
-                            "Every $HOURS_PER_SAVER 🌸 make a new saver."
+                            "Every $HOURS_PER_SAVER 🌸 automatically becomes a new saver as soon as you have room for one."
                 }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -186,14 +181,6 @@ fun StreaksTab(
                     fontSize = 18.sp
                 )
                 InfoMiniCaption("Savers")
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "used if you miss a day",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
             }
 
             InfoMiniCard(
@@ -201,8 +188,8 @@ fun StreaksTab(
                 onClick = {
                     infoDialog = "🌸 Flowers" to
                             "Each hour you rate beyond 8 in a day gives you a flower (max $FLOWER_CAP).\n\n" +
-                            "$HOURS_PER_SAVER flowers automatically become a 🛡️ saver.\n\n" +
-                            "Spend $RECLAIM_COST to rate an hour you missed today."
+                            "Spend $RECLAIM_COST to rate an hour you missed today.\n\n" +
+                            "Whenever you have no saver and $HOURS_PER_SAVER+ flowers banked, they're automatically spent on a new one."
                 }
             ) {
                 Text("🌸", fontSize = 20.sp)
@@ -213,33 +200,6 @@ fun StreaksTab(
                     fontSize = 18.sp
                 )
                 InfoMiniCaption("Flowers")
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(8.dp))
-                if (streakState.savers < MAX_SAVERS) {
-                    LinearProgressIndicator(
-                        progress = {
-                            (streakState.bankProgress / HOURS_PER_SAVER.toFloat()).coerceAtMost(1f)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "${(HOURS_PER_SAVER - streakState.bankProgress).coerceAtLeast(0)} more for a 🛡️",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    Text(
-                        "savers are full",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
             }
         }
 
@@ -311,9 +271,7 @@ fun StreaksTab(
         val logChevron by animateFloatAsState(if (logExpanded) 180f else 0f, label = "logChevron")
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            )
+            colors = CardDefaults.cardColors(containerColor = appCardColor())
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(
@@ -394,7 +352,6 @@ fun StreaksTab(
             startHour = startHour,
             onDismiss = { reclaimStartHour = null },
             onReclaim = { score, note ->
-                val endHour = startHour + 1
                 val entry = RatingEntry(
                     System.currentTimeMillis(),
                     score,
@@ -404,7 +361,7 @@ fun StreaksTab(
                         set(Calendar.SECOND, 0)
                         set(Calendar.MILLISECOND, 0)
                     }.timeInMillis,
-                    "$endHour${getOrdinalSuffix(endHour)}",
+                    ordinalHourLabel(startHour),
                     note,
                     listOf(RECLAIM_TAG)
                 )
@@ -423,7 +380,7 @@ fun StreaksTab(
         val key = dayCal.get(Calendar.YEAR) * 1000L + dayCal.get(Calendar.DAY_OF_YEAR)
         DayStatsDialog(
             dayMillis = dayMillis,
-            outcome = outcomes[key],
+            detail = dayDetails[key],
             ratings = allRatings,
             onDismiss = { statsDayMillis = null }
         )
@@ -490,7 +447,7 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
 @Composable
 private fun MonthGrid(
     monthOffset: Int,
-    outcomes: Map<Long, DayOutcome>,
+    dayDetails: Map<Long, DayDetail>,
     onDayClick: (Long) -> Unit
 ) {
     val monthStart = Calendar.getInstance().apply {
@@ -531,7 +488,7 @@ private fun MonthGrid(
                         val dayMillis = cellCal.timeInMillis
                         DayCell(
                             dayNumber = day,
-                            outcome = outcomes[key],
+                            outcome = dayDetails[key]?.outcome,
                             isToday = key == todayKey,
                             enabled = key <= todayKey,
                             onClick = { onDayClick(dayMillis) },
@@ -598,9 +555,7 @@ private fun InfoMiniCard(
     Card(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        colors = CardDefaults.cardColors(containerColor = appCardColor())
     ) {
         Column(
             Modifier
@@ -631,7 +586,7 @@ private fun InfoMiniCaption(label: String) {
 @Composable
 private fun DayStatsDialog(
     dayMillis: Long,
-    outcome: DayOutcome?,
+    detail: DayDetail?,
     ratings: List<RatingEntry>,
     onDismiss: () -> Unit
 ) {
@@ -650,26 +605,40 @@ private fun DayStatsDialog(
     val avg = if (entries.isEmpty()) 0.0 else entries.map { it.score }.average()
     val best = entries.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     val reclaimed = entries.count { RECLAIM_TAG in it.tags }
-    val flowers = (distinctHours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
+    // Reclaims only ever apply to today's own missed hours, so this is exact
+    // without needing the raw spend log threaded down here.
+    val flowersSpent = reclaimed * RECLAIM_COST
     val isToday = isSameDay(Calendar.getInstance(), dayCal)
 
     val title = remember(dayMillis) {
         SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
     }
     val outcomeLine = when {
-        outcome == DayOutcome.QUALIFIED -> "💐 Streak day"
-        outcome == DayOutcome.SAVED -> "🛡️ Missed, but a saver covered it"
-        outcome == DayOutcome.MISSED -> "🥀 Missed"
+        detail?.outcome == DayOutcome.QUALIFIED -> "💐 Streak day ${detail.streakDay}"
+        detail?.outcome == DayOutcome.SAVED -> "🛡️ Missed, but a saver covered it"
+        detail?.outcome == DayOutcome.MISSED -> "🥀 Missed"
         isToday -> "⏳ In progress"
         else -> "No ratings"
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(outcomeLine, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+
+                if ((detail?.flowersEarned ?: 0) > 0) {
+                    StatRow("Flowers earned", "+${detail!!.flowersEarned} 🌸")
+                }
+                if ((detail?.saversEarned ?: 0) > 0) {
+                    val n = detail!!.saversEarned
+                    StatRow("Saver${if (n == 1) "" else "s"} earned", "+$n 🛡️")
+                }
+                if (detail?.saverUsed == true) StatRow("Saver used", "-1 🛡️")
+                if (flowersSpent > 0) StatRow("Flowers spent", "-$flowersSpent 🌸 (reclaimed an hour)")
+
                 if (entries.isEmpty()) {
                     Text(
                         "Nothing was rated this day.",
@@ -684,8 +653,6 @@ private fun DayStatsDialog(
                             .get(Calendar.HOUR_OF_DAY)
                         StatRow("Best hour", "${formatHour(h)} - ${formatHour((h + 1) % 24)} · ${it.score}")
                     }
-                    if (flowers > 0) StatRow("Flowers earned", "+$flowers 🌸")
-                    if (reclaimed > 0) StatRow("Reclaimed hours", "$reclaimed 💧")
                     val topTags = entries.flatMap { it.tags }
                         .filter { it != RECLAIM_TAG }
                         .groupingBy { it }.eachCount()

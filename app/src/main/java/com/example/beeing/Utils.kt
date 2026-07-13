@@ -26,6 +26,19 @@ data class RatingEntry(
 
 enum class ChartView { HOURLY, DAY, WEEK, MONTH }
 
+/**
+ * The ordinal label ("2nd", "17th"...) for the hour that STARTS at
+ * [startHourOfDay], on a 24-hour/military clock: 1am-2am (starts at hour 1)
+ * is the 2nd hour of the day, 11pm-12am (starts at hour 23) is the 24th.
+ * Always derive this fresh from an entry's own timestamp — a value computed
+ * separately (e.g. cached from a different Calendar instant) can silently
+ * drift out of sync with it.
+ */
+fun ordinalHourLabel(startHourOfDay: Int): String {
+    val endHour = if (startHourOfDay == 23) 24 else startHourOfDay + 1
+    return "$endHour${getOrdinalSuffix(endHour)}"
+}
+
 /** A score chosen on the hourly notification, waiting to be finished in-app. */
 data class PendingRating(val score: Int, val targetTs: Long, val label: String)
 
@@ -39,8 +52,7 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 // --- NOTIFICATIONS ---
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        // Custom notification sound: res/raw/beeping_android_buzz.ogg
-        val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.beepingandroidbuzz}")
+        val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
         val audioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -102,6 +114,12 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             "android.intent.action.BOOT_COMPLETED" -> {
                 scheduleExactHourlyAlarm(context)
                 scheduleWeeklyReport(context)
+                // Reboot clears all alarms — auto-backup needs re-arming too,
+                // or it silently stops until the user happens to reopen the
+                // settings menu and re-toggle the checkbox.
+                if (context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) {
+                    scheduleAutoBackup(context)
+                }
             }
             ACTION_WEEKLY_REPORT -> {
                 showWeeklyReportNotification(context)
@@ -160,9 +178,11 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             val score = index + 1
 
             remoteViews.setInt(id, "setBackgroundResource", R.drawable.rounded_notif_btn_neutral)
+            // Same red/amber/green bands as scoreBandColor() — kept as literal
+            // hex here since this is an android.graphics.Color, not Compose's.
             val textColor = when {
-                score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
-                score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
+                score >= 8 -> android.graphics.Color.parseColor("#66BB6A") // Green
+                score >= 5 -> android.graphics.Color.parseColor("#FFB300") // Amber
                 else -> android.graphics.Color.parseColor("#B71C1C") // Red
             }
             remoteViews.setTextColor(id, textColor)
@@ -313,15 +333,19 @@ private fun signRows(rows: List<String>): String {
 private fun isDebuggableBuild(c: Context): Boolean =
     (c.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-fun saveToCsv(c: Context, u: Uri, r: List<RatingEntry>) {
-    c.contentResolver.openOutputStream(u)?.use { stream ->
-        val writer = stream.bufferedWriter(Charsets.UTF_8)
+/** Returns false (without throwing) if the target URI can no longer be
+ * opened for writing — e.g. the backup file was deleted or access revoked —
+ * so callers can tell a silent no-op apart from an actual write. */
+fun saveToCsv(c: Context, u: Uri, r: List<RatingEntry>): Boolean {
+    val stream = c.contentResolver.openOutputStream(u) ?: return false
+    stream.use {
+        val writer = it.bufferedWriter(Charsets.UTF_8)
         val availableTags = loadTags(c)
         writer.write("# AVAILABLE_TAGS: ${availableTags.joinToString("|")}\n")
         writer.write("ID,Score,Timestamp,Recording_Time,Hour_Label,Note,Tags\n")
-        val rows = r.map {
-            val recordingTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.id))
-            "${it.id},${it.score},${it.timestamp},\"$recordingTime\",\"${it.hourLabel}\",\"${it.note}\",\"${it.tags.joinToString("|")}\""
+        val rows = r.map { entry ->
+            val recordingTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(entry.id))
+            "${entry.id},${entry.score},${entry.timestamp},\"$recordingTime\",\"${entry.hourLabel}\",\"${entry.note}\",\"${entry.tags.joinToString("|")}\""
         }
         rows.forEach { row ->
             writer.write(row)
@@ -330,6 +354,7 @@ fun saveToCsv(c: Context, u: Uri, r: List<RatingEntry>) {
         writer.write("# SIG: ${signRows(rows)}\n")
         writer.flush()
     }
+    return true
 }
 
 fun loadFromCsv(context: Context, uri: Uri): List<RatingEntry> {
@@ -420,10 +445,12 @@ fun scheduleAutoBackup(context: Context) {
         }
     }
     alarmManager.cancel(pendingIntent)
-    alarmManager.setRepeating(
+    // setRepeating is inexact regardless of the exact-alarm permission above —
+    // this receiver reschedules its own next firing instead, same pattern as
+    // the hourly notification, so it isn't silently batched/drifted by Doze.
+    alarmManager.setExactAndAllowWhileIdle(
         android.app.AlarmManager.RTC_WAKEUP,
         calendar.timeInMillis,
-        24 * 60 * 60 * 1000L,
         pendingIntent
     )
 }
@@ -440,26 +467,40 @@ fun cancelAutoBackup(context: Context) {
 class BackupReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val prefs = context.getSharedPreferences("b", 0)
-        val backupUriString = prefs.getString("backup_uri", null) ?: return
-        try {
-            val backupUri = Uri.parse(backupUriString)
-            val ratings = loadRatings(context)
-            val fileName = "bee_backup.csv"
-            val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
-                backupUri,
-                android.provider.DocumentsContract.getTreeDocumentId(backupUri)
-            )
-            val resolver = context.contentResolver
-            val childUri = android.provider.DocumentsContract.createDocument(
-                resolver, docUri, "text/csv", fileName
-            )
-            childUri?.let {
-                saveToCsv(context, it, ratings)
-                prefs.edit { putLong("last_backup", System.currentTimeMillis()) }
+        val backupUriString = prefs.getString("backup_uri", null)
+        if (backupUriString != null) {
+            try {
+                val ratings = loadRatings(context)
+                val resolver = context.contentResolver
+
+                // Reuse the same document across days (overwrite in place) —
+                // creating a fresh "bee_backup.csv" every time doesn't replace
+                // the old one, it just piles up auto-renamed duplicates.
+                val existingFileUri = prefs.getString("backup_file_uri", null)?.let { Uri.parse(it) }
+                var wroteOk = existingFileUri != null &&
+                        try { saveToCsv(context, existingFileUri, ratings) } catch (e: Exception) { false }
+
+                if (!wroteOk) {
+                    val treeUri = Uri.parse(backupUriString)
+                    val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                        treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+                    )
+                    val newFileUri = android.provider.DocumentsContract.createDocument(
+                        resolver, docUri, "text/csv", "bee_backup.csv"
+                    )
+                    if (newFileUri != null && saveToCsv(context, newFileUri, ratings)) {
+                        prefs.edit { putString("backup_file_uri", newFileUri.toString()) }
+                        wroteOk = true
+                    }
+                }
+                if (wroteOk) {
+                    prefs.edit { putLong("last_backup", System.currentTimeMillis()) }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
+        // Always reschedule for tomorrow, whether or not this run succeeded
         scheduleAutoBackup(context)
     }
 }

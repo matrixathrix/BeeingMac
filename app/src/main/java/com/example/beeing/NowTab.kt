@@ -5,9 +5,18 @@ import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +37,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.cos
 import kotlin.math.sin
@@ -61,14 +69,19 @@ fun NowTab(
     // Load ratings from ViewModel
     val allRatings = viewModel.allRatings
 
-    // UI state
-    var selectedScore by remember { mutableIntStateOf(1) }
+    // UI state — no score is pre-selected; the user must explicitly pick one
+    // (mirrors the existing "tags are mandatory" rule).
+    var selectedScore by remember { mutableStateOf<Int?>(null) }
     val selectedTags = remember { mutableStateListOf<String>() }
     var currentNote by remember { mutableStateOf("") }
     var availableTags by remember { mutableStateOf(loadTags(context)) }
     var isTagDeleteMode by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
     var showWindowInfo by remember { mutableStateOf(false) }
+    // Sticky once the user taps Save while incomplete; cleared on a
+    // successful save or when the targeted hour changes, so it never
+    // bleeds into a fresh hour.
+    var attemptedSubmit by remember { mutableStateOf(false) }
 
     // Score chosen on the notification arrives pre-selected
     LaunchedEffect(pendingScore) {
@@ -78,50 +91,49 @@ fun NowTab(
         }
     }
 
-    // Calculate hour info based on targetedHourOffset
-    val displayHourInfo = remember(targetedHourOffset) {
-        val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -targetedHourOffset) }
-        val endH = cal.get(Calendar.HOUR_OF_DAY)
-        val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
-        val label = "${if(endH == 0) 24 else endH}${getOrdinalSuffix(if(endH == 0) 24 else endH)}"
-        Triple(range, endH, label)
-    }
-
-    // Check if current targeted hour is logged
-    val isLoggedCurrent by remember(allRatings, displayHourInfo, targetedHourOffset, viewModel.refreshTrigger) {
-        derivedStateOf {
-            // dayKey is based on the START of the rated hour (offset+1 hours back)
-            val targetDayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
-                Date(System.currentTimeMillis() - ((targetedHourOffset + 1) * 3600000L))
-            )
-            allRatings.any {
-                it.hourLabel == displayHourInfo.third &&
-                        SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(it.timestamp)) == targetDayKey
-            }
-        }
-    }
-
     // Helper: check if a given hour-slot is already logged.
     // offset=0 → the most-recent completed hour (e.g. 12PM-1PM when it's 1PM)
     // offset=1 → the grace-period hour before that
-    // timestamp is stored at the START of the rated hour, so the dayKey uses (offset+1) hours back.
+    // Matches on the entry's own timestamp falling in that real calendar hour —
+    // never on a separately-computed label, which can drift stale if this
+    // composable sits open across an hour boundary without recomposing.
     fun isHourLogged(offset: Int): Boolean {
-        val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
-        val endH = cal.get(Calendar.HOUR_OF_DAY)
-        val label = "${if (endH == 0) 24 else endH}${getOrdinalSuffix(if (endH == 0) 24 else endH)}"
-        val dayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
-            Date(System.currentTimeMillis() - ((offset + 1) * 3600000L))
-        )
-        return allRatings.any {
-            it.hourLabel == label &&
-                    SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(it.timestamp)) == dayKey
+        val target = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -(offset + 1)) }
+        val targetHour = target.get(Calendar.HOUR_OF_DAY)
+        val targetDoy = target.get(Calendar.DAY_OF_YEAR)
+        val targetYear = target.get(Calendar.YEAR)
+        return allRatings.any { entry ->
+            val c = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
+            c.get(Calendar.HOUR_OF_DAY) == targetHour &&
+                    c.get(Calendar.DAY_OF_YEAR) == targetDoy &&
+                    c.get(Calendar.YEAR) == targetYear
         }
     }
 
     val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(0) }
     val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
 
+    // The hour actually being rated: prefers the caller's/user's choice, but
+    // falls back the instant that choice stops being valid — synchronously,
+    // every recomposition, with no async round-trip to get wrong. This is
+    // what used to require a manual chip tap to un-stick.
+    val effectiveOffset = remember(targetedHourOffset, isLatestHourLogged, isPreviousHourLogged) {
+        when {
+            targetedHourOffset == 0 && !isLatestHourLogged -> 0
+            targetedHourOffset == 1 && !isPreviousHourLogged -> 1
+            !isLatestHourLogged -> 0
+            !isPreviousHourLogged -> 1
+            else -> targetedHourOffset
+        }
+    }
+    val isLoggedCurrent = remember(allRatings, effectiveOffset, viewModel.refreshTrigger) {
+        isHourLogged(effectiveOffset)
+    }
+
     val bothHoursRated = isLatestHourLogged && isPreviousHourLogged
+
+    // A fresh hour context starts with a clean slate
+    LaunchedEffect(effectiveOffset) { attemptedSubmit = false }
 
     val streakState = remember(allRatings, viewModel.refreshTrigger) {
         computeStreakState(allRatings, loadReclaimSpends(context))
@@ -169,16 +181,9 @@ fun NowTab(
     val minutesToNextHour = remember(nowMillis) {
         60 - Calendar.getInstance().apply { timeInMillis = nowMillis }.get(Calendar.MINUTE)
     }
-
-    // If the targeted hour got rated elsewhere (e.g. from the notification),
-    // retarget to the one still pending.
-    LaunchedEffect(isLatestHourLogged, isPreviousHourLogged) {
-        if (targetedHourOffset == 0 && isLatestHourLogged && !isPreviousHourLogged) {
-            onTargetedHourOffsetChange(1)
-        } else if (targetedHourOffset == 1 && isPreviousHourLogged && !isLatestHourLogged) {
-            onTargetedHourOffsetChange(0)
-        }
-    }
+    // Offset 1 expires at the next hour boundary; offset 0 doesn't expire
+    // until the boundary after that (it slides into offset 1's slot first).
+    fun minutesLeftFor(offset: Int) = minutesToNextHour + if (offset == 0) 60 else 0
 
     // IMPORTANT: Use Box to layer celebration overlay on top
     Box(modifier = Modifier.fillMaxSize()) {
@@ -202,7 +207,9 @@ fun NowTab(
             if (bothHoursRated) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF66BB6A))
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = appCardColor()),
+                    border = BorderStroke(1.5.dp, Color(0xFF66BB6A).copy(alpha = 0.5f))
                 ) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -212,7 +219,7 @@ fun NowTab(
                             "All caught up! Now go make this hour count 🐝",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = Color(0xFF66BB6A),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -259,8 +266,8 @@ fun NowTab(
                             val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
                             PendingHourChip(
                                 rangeLabel = range,
-                                minutesLeft = if (offset == 1) minutesToNextHour else null,
-                                selected = targetedHourOffset == offset,
+                                minutesLeft = minutesLeftFor(offset),
+                                selected = effectiveOffset == offset,
                                 onClick = { onTargetedHourOffsetChange(offset) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -291,15 +298,8 @@ fun NowTab(
                             enabled = !isLoggedCurrent,
                             contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (selectedScore == s) {
-                                    when {
-                                        s >= 8 -> Color(0xFF66BB6A)  // 8-10 GREEN
-                                        s >= 5 -> Color(0xFFFFB300)  // 5-7 YELLOW
-                                        else -> Color(0xFFB71C1C)     // 1-4 RED
-                                    }
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                }
+                                containerColor = if (selectedScore == s) scoreBandColor(s)
+                                else MaterialTheme.colorScheme.surfaceVariant
                             )
                         ) {
                             Text(
@@ -314,52 +314,77 @@ fun NowTab(
                         }
                     }
 
-                    // Save Button
+                    // Save Button — stays tappable even when incomplete (just
+                    // styled to look inert), so tapping it while missing a
+                    // score/tag is what actually surfaces the warning below.
+                    val canSave = selectedScore != null && selectedTags.isNotEmpty()
                     Button(
                         onClick = {
+                            val score = selectedScore
+                            if (!canSave || score == null) {
+                                attemptedSubmit = true
+                                return@Button
+                            }
+                            // timestamp = START of the rated hour (one hour before the end);
+                            // the label is derived from that SAME instant so it can never
+                            // drift out of sync with its own timestamp.
+                            val ratedHourStart = Calendar.getInstance().apply {
+                                add(Calendar.HOUR_OF_DAY, -(effectiveOffset + 1))
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
                             val entry = RatingEntry(
                                 System.currentTimeMillis(),
-                                selectedScore,
-                                // timestamp = START of the rated hour (one hour before the end)
-                                Calendar.getInstance().apply {
-                                    add(Calendar.HOUR_OF_DAY, -(targetedHourOffset + 1))
-                                    set(Calendar.MINUTE, 0)
-                                    set(Calendar.SECOND, 0)
-                                    set(Calendar.MILLISECOND, 0)
-                                }.timeInMillis,
-                                displayHourInfo.third,
+                                score,
+                                ratedHourStart.timeInMillis,
+                                ordinalHourLabel(ratedHourStart.get(Calendar.HOUR_OF_DAY)),
                                 currentNote,
                                 selectedTags.toList()
                             )
                             viewModel.saveRating(context, entry)
 
-                            selectedScore = 1
+                            selectedScore = null
                             selectedTags.clear()
                             currentNote = ""
-
-                            // Auto-switch logic
-                            if (targetedHourOffset == 0 && !isPreviousHourLogged) {
-                                onTargetedHourOffsetChange(1)
-                            } else if (targetedHourOffset == 1 && !isLatestHourLogged) {
-                                onTargetedHourOffsetChange(0)
-                            }
+                            attemptedSubmit = false
                         },
-                        // A rating needs at least one tag
-                        enabled = !isLoggedCurrent && selectedTags.isNotEmpty(),
-                        modifier = Modifier.size(100.dp),
-                        shape = CircleShape
+                        enabled = !isLoggedCurrent,
+                        modifier = Modifier.size(100.dp).alpha(if (canSave) 1f else 0.5f),
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (canSave) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
                     ) {
-                        Icon(Icons.Default.Check, null, Modifier.size(32.dp))
+                        Icon(
+                            Icons.Default.Check, null, Modifier.size(32.dp),
+                            tint = if (canSave) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
-                if (selectedTags.isEmpty() && !isLoggedCurrent) {
+                val warningMessage = when {
+                    selectedScore == null && selectedTags.isEmpty() ->
+                        "Pick a rating and at least one tag to save this hour"
+                    selectedScore == null -> "Pick a rating above to save this hour"
+                    selectedTags.isEmpty() -> "Pick at least one tag below to save this hour"
+                    else -> null
+                }
+                AnimatedVisibility(
+                    visible = attemptedSubmit && !isLoggedCurrent && warningMessage != null,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(220)) +
+                            slideInVertically(tween(220)) { -it / 2 },
+                    exit = fadeOut(tween(220)) + shrinkVertically(tween(220)) +
+                            slideOutVertically(tween(220)) { -it / 2 }
+                ) {
                     Text(
-                        "Pick at least one tag below to save this hour",
+                        warningMessage ?: "",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
                 }
             }
@@ -471,7 +496,8 @@ fun NowTab(
 
 /**
  * One rateable hour as a tappable chip. Selected = filled with the primary
- * container color; the expiring hour shows minutes left, turning amber under 15.
+ * container color; each chip shows its own time-left-to-rate, turning amber
+ * under 15 minutes.
  */
 @Composable
 private fun PendingHourChip(
@@ -506,8 +532,13 @@ private fun PendingHourChip(
             )
             if (minutesLeft != null) {
                 Spacer(Modifier.height(2.dp))
+                val timeText = if (minutesLeft >= 60) {
+                    "⏳ ${minutesLeft / 60}h ${minutesLeft % 60}m left"
+                } else {
+                    "⏳ ${minutesLeft}m left"
+                }
                 Text(
-                    "⏳ ${minutesLeft}m left",
+                    timeText,
                     fontSize = 11.sp,
                     color = if (minutesLeft <= 15) Color(0xFFFFB300)
                     else MaterialTheme.colorScheme.onSurfaceVariant
@@ -525,9 +556,7 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        colors = CardDefaults.cardColors(containerColor = appCardColor(0.5f))
     ) {
         val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
         val startH = cal.get(Calendar.HOUR_OF_DAY)

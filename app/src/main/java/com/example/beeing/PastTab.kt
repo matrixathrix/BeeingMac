@@ -38,10 +38,21 @@ fun PastTab(
     // Chart view state
     // Edit state
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+    // Full height on open — the sheet's content is taller than the default
+    // partially-expanded stop, which left it needing a manual swipe-up.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                // Lifted clear of the floating nav pill (which draws on top
+                // of this tab's content) and restyled to be easy to read
+                // and to actually tap "Undo" on.
+                Box(Modifier.fillMaxWidth().padding(bottom = 104.dp, start = 16.dp, end = 16.dp)) {
+                    UndoSnackbar(data)
+                }
+            }
+        },
         containerColor = Color.Transparent,
         // the app-level header already consumed the status bar inset;
         // re-applying it here left a band of dead space below the header
@@ -119,7 +130,7 @@ fun PastTab(
                             val result = snackbarHostState.showSnackbar(
                                 message = "Rating deleted",
                                 actionLabel = "Undo",
-                                duration = SnackbarDuration.Short // Persists for ~4 seconds
+                                duration = SnackbarDuration.Long // more time to react to the undo
                             )
                             if (result == SnackbarResult.ActionPerformed) {
                                 // 4. Restore if Undo clicked
@@ -142,19 +153,56 @@ private fun PlainSectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        colors = CardDefaults.cardColors(containerColor = appCardColor())
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), content = content)
     }
 }
 
+/** Friendlier, easier-to-tap replacement for the plain Material Snackbar. */
+@Composable
+private fun UndoSnackbar(data: SnackbarData) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 6.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🗑️", fontSize = 18.sp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                data.visuals.message,
+                modifier = Modifier.weight(1f),
+                fontSize = 14.sp
+            )
+            data.visuals.actionLabel?.let { label ->
+                TextButton(
+                    onClick = { data.performAction() },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.inversePrimary
+                    )
+                ) {
+                    Text(label, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+// Same red/amber/green bands as scoreBandColor() (Utils.kt) — this one just
+// also handles a fractional average and the "no data" gray case.
 fun getScoreColor(score: Double): Color {
     return when {
-        score >= 8.0 -> Color(0xFF2E7D32)
-        score >= 5.0 -> Color(0xFFF57C00)
-        score > 0.0 -> Color(0xFFC62828)
+        score >= 8.0 -> Color(0xFF66BB6A)
+        score >= 5.0 -> Color(0xFFFFB300)
+        score > 0.0 -> Color(0xFFB71C1C)
         else -> Color.Gray
     }
 }

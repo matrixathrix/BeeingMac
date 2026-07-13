@@ -5,11 +5,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -191,9 +194,9 @@ fun InsightsContent(
     LaunchedEffect(period) { pageOffset = 0 }
 
     val bucket = remember(period, pageOffset) { buildPeriodBuckets(period, pageOffset, window = 1).first() }
-    val windowEntries = remember(ratings, bucket, refreshKey) {
-        ratings.filter { it.timestamp in bucket.startMillis until bucket.endMillisExclusive }
-    }
+    // Nothing before the earliest rating — don't let "Previous" scroll into empty history
+    val earliestRatingTs = remember(ratings) { ratings.minOfOrNull { it.timestamp } }
+    val canGoEarlier = earliestRatingTs != null && bucket.startMillis > earliestRatingTs
 
     val periodLabel = if (pageOffset == 0) when (period) {
         StatPeriod.DAY -> "Today"
@@ -202,43 +205,78 @@ fun InsightsContent(
         StatPeriod.YEAR -> "This year"
     } else bucket.label
 
+    val controller = rememberSwipeScrubController(
+        onEarlier = { if (canGoEarlier) pageOffset++ },
+        onLater = { if (pageOffset > 0) pageOffset-- }
+    )
+
     Column(Modifier.fillMaxWidth()) {
-        // --- Granularity selector (one unit at a time) ---
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            StatPeriod.entries.forEachIndexed { i, p ->
-                SegmentedButton(
-                    selected = period == p,
-                    onClick = { period = p },
-                    shape = SegmentedButtonDefaults.itemShape(i, StatPeriod.entries.size)
-                ) { Text(p.label, fontSize = 13.sp) }
-            }
-        }
+        // Prev/next scrubber + granularity selector share one line
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.Center,
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { pageOffset++ }) {
-                Icon(Icons.Default.KeyboardArrowLeft, "Previous")
+            IconButton(onClick = { controller.stepEarlier() }, enabled = canGoEarlier) {
+                Icon(
+                    Icons.Default.KeyboardArrowLeft, "Previous",
+                    tint = if (canGoEarlier) LocalContentColor.current else Color.Gray
+                )
             }
             Text(
                 periodLabel,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
-            IconButton(onClick = { if (pageOffset > 0) pageOffset-- }, enabled = pageOffset > 0) {
+            IconButton(onClick = { controller.stepLater() }, enabled = pageOffset > 0) {
                 Icon(
                     Icons.Default.KeyboardArrowRight, "Next",
                     tint = if (pageOffset > 0) LocalContentColor.current else Color.Gray
                 )
             }
+            Spacer(Modifier.weight(1f))
+            PeriodDropdown(selected = period, onSelect = { period = it })
         }
 
-        if (windowEntries.isEmpty()) {
-            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text("No ratings in this period.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
+        // Switching granularity still crossfades; scrubbing through pageOffset
+        // (button or drag) is handled by the stack, which tracks the finger
+        // live instead of only animating after release.
+        Crossfade(targetState = period, animationSpec = tween(200), label = "insightsPeriodFade") { animPeriod ->
+            SwipeScrubStack(
+                controller = controller,
+                canEarlier = canGoEarlier,
+                canLater = pageOffset > 0,
+                current = { InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset, window = 1).first(), ratings, refreshKey) },
+                earlierPreview = {
+                    if (canGoEarlier) {
+                        InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset + 1, window = 1).first(), ratings, refreshKey)
+                    } else {
+                        Box(Modifier.fillMaxWidth())
+                    }
+                },
+                laterPreview = {
+                    if (pageOffset > 0) {
+                        InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset - 1, window = 1).first(), ratings, refreshKey)
+                    } else {
+                        Box(Modifier.fillMaxWidth())
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightsWindow(bucket: PeriodBucket, ratings: List<RatingEntry>, refreshKey: Int) {
+    val windowEntries = remember(ratings, bucket, refreshKey) {
+        ratings.filter { it.timestamp in bucket.startMillis until bucket.endMillisExclusive }
+    }
+    if (windowEntries.isEmpty()) {
+        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text("No ratings in this period.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    } else {
+        Column {
             Spacer(Modifier.height(8.dp))
             TagCorrelationCard(windowEntries)
         }
@@ -261,9 +299,7 @@ fun CollapsibleSection(
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        colors = CardDefaults.cardColors(containerColor = appCardColor())
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(
@@ -297,6 +333,7 @@ fun CollapsibleSection(
 // --- Feature 2: tag-score correlation ---
 @Composable
 private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
+    var showInfo by remember { mutableStateOf(false) }
     val tagStats = remember(windowEntries) {
         windowEntries.flatMap { e -> e.tags.map { it to e.score } }
             .groupBy({ it.first }, { it.second })
@@ -308,7 +345,22 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
         return
     }
 
-    Text("How tags score", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "How tags score",
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = { showInfo = true }, modifier = Modifier.size(24.dp)) {
+            Icon(
+                Icons.Default.Info,
+                contentDescription = "How this is calculated",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
     Spacer(Modifier.height(8.dp))
     tagStats.forEach { (tag, avg, count) ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -326,6 +378,24 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
+    }
+
+    if (showInfo) {
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text("How tags score") },
+            text = {
+                Text(
+                    "Each tag's score is the average rating across every hour tagged with it in this period.\n\n" +
+                            "The number in parentheses is how many hours contributed — small counts can swing a lot with just one more rating.",
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showInfo = false }) { Text("Got it") }
+            }
+        )
     }
 }
 

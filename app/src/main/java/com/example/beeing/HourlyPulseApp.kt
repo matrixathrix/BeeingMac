@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -19,6 +18,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,6 +93,7 @@ fun HourlyPulseApp(
     var autoBackupEnabled by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) }
     var lastBackupTime by remember { mutableStateOf(context.getSharedPreferences("b", 0).getLong("last_backup", 0L)) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var missingTagsAfterImport by remember { mutableStateOf<List<String>?>(null) }
 
     // Notification handling state
     var targetedHourOffset by remember { mutableIntStateOf(0) }
@@ -268,129 +270,129 @@ fun HourlyPulseApp(
 
             // Floating translucent nav pill — content scrolls beneath it
             FloatingPillNavBar(
+                pagerState = pagerState,
                 selectedTab = selectedTab,
                 onTabSelected = { selectedTab = it },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
 
-        // ORIGINAL SETTINGS MENU
+        // Data & Backup sheet
         if (showMenu) {
-            AlertDialog(
+            val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            // The last-backup time can change in the background (auto-backup
+            // fires whether or not this sheet is open) — refresh it on open
+            // rather than trusting whatever was true back at app launch.
+            LaunchedEffect(Unit) {
+                lastBackupTime = context.getSharedPreferences("b", 0).getLong("last_backup", 0L)
+            }
+            ModalBottomSheet(
                 onDismissRequest = { showMenu = false },
-                title = { Text("Data options") },
-                text = {
-                    Column {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    importLauncher.launch("text/*")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("IMPORT")
-                            }
+                sheetState = menuSheetState
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp)
+                ) {
+                    Text("Data & Backup", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(16.dp))
 
-                            Button(
-                                onClick = {
-                                    exportLauncher.launch("bee_data.csv")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("EXPORT")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        DataActionCard(
+                            emoji = "📥",
+                            label = "Import",
+                            caption = "Restore from a CSV file",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                importLauncher.launch("text/*")
+                                showMenu = false
                             }
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        )
+                        DataActionCard(
+                            emoji = "📤",
+                            label = "Export",
+                            caption = "Save a CSV file",
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                exportLauncher.launch("bee_data.csv")
+                                showMenu = false
+                            }
+                        )
+                    }
 
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                autoBackupEnabled = !autoBackupEnabled
-                                context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", autoBackupEnabled).apply()
-                                if (autoBackupEnabled) {
-                                    scheduleAutoBackup(context)
-                                } else {
-                                    cancelAutoBackup(context)
+                    Spacer(Modifier.height(20.dp))
+
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = appCardColor()
+                        )
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Auto-backup", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "Daily at 12:05 AM",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            }.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Auto-backup (Daily 12:05 AM)")
-                            Checkbox(
-                                checked = autoBackupEnabled,
-                                onCheckedChange = {
-                                    autoBackupEnabled = it
-                                    context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
-                                    if (it) {
-                                        scheduleAutoBackup(context)
-                                    } else {
-                                        cancelAutoBackup(context)
+                                Switch(
+                                    checked = autoBackupEnabled,
+                                    onCheckedChange = {
+                                        autoBackupEnabled = it
+                                        context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
+                                        if (it) scheduleAutoBackup(context) else cancelAutoBackup(context)
                                     }
-                                }
-                            )
-                        }
-
-                        if (autoBackupEnabled) {
-                            OutlinedButton(
-                                onClick = { folderPickerLauncher.launch(null) },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Settings, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Set Backup Location", fontSize = 12.sp)
-                            }
-
-                            if (lastBackupTime > 0) {
-                                val backupDate = SimpleDateFormat("hh:mma, dd-MMM-yyyy", Locale.getDefault())
-                                    .format(Date(lastBackupTime))
-                                Text(
-                                    "Last backed up: $backupDate",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray,
-                                    modifier = Modifier.padding(top = 4.dp)
                                 )
                             }
-                        }
 
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        // Author information
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "🐝 Beeing",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Developed by AthrixMatrix",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                            Text(
-                                "Version 1.0",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
+                            AnimatedVisibility(visible = autoBackupEnabled) {
+                                Column {
+                                    Spacer(Modifier.height(12.dp))
+                                    OutlinedButton(
+                                        onClick = { folderPickerLauncher.launch(null) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("📁", fontSize = 15.sp)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Set backup location", fontSize = 13.sp)
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    val statusText = if (lastBackupTime > 0) {
+                                        "Last backed up " + SimpleDateFormat("h:mm a, d MMM", Locale.getDefault())
+                                            .format(Date(lastBackupTime))
+                                    } else {
+                                        "Not backed up yet — pick a folder above"
+                                    }
+                                    Text(
+                                        statusText,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showMenu = false }) {
-                        Text("Close")
+
+                    Spacer(Modifier.height(20.dp))
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🐝 Beeing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Developed by AthrixMatrix · v1.0",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
                     }
                 }
-            )
+            }
         }
 
         // ORIGINAL INFO DIALOG
@@ -404,84 +406,29 @@ fun HourlyPulseApp(
                     )
                 },
                 text = {
-                    Column(
-                        Modifier.verticalScroll(rememberScrollState())
-                    ) {
+                    // Kept deliberately short — the deeper explanations (savers,
+                    // flowers, tag scoring, ...) live next to the features
+                    // themselves via their own ⓘ buttons, where the context
+                    // that makes them worth reading actually is.
+                    Column {
                         Text(
-                            "Welcome to your journey of intentional living!",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp
+                            "⏰ Rate the last hour, 1–10 — a quick, honest check-in.",
+                            fontSize = 14.sp, lineHeight = 20.sp
                         )
-                        Spacer(Modifier.height(12.dp))
-
+                        Spacer(Modifier.height(10.dp))
                         Text(
-                            "⏰ The Rating System",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            "🏆 Do it consistently to build a streak — miss too long and it resets.",
+                            fontSize = 14.sp, lineHeight = 20.sp
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
-                            "Every hour, Beeing asks you to rate how well you spent your time on a scale of 1-10. This simple practice brings awareness to each hour of your day.",
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
+                            "🏷️ Tag what you were doing, and Insights will show what actually boosts or drags your score.",
+                            fontSize = 14.sp, lineHeight = 20.sp
                         )
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            "🏆 Build Your Streak",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Rate consistently and watch your streak grow! Missing ratings for more than 2 hours resets your streak, encouraging you to stay mindful.",
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            "🏷️ Tag Your Activities",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Add tags to track what you're doing—work, exercise, reading, family time.",
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            "📊 Discover Patterns",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Your charts reveal trends. Soul Fuel Tags show what boosts your score, while Vibe Killer Tags highlight what brings you down. Use these insights to design better days.",
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            "✨ The Impact",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "By tracking each hour, you're not just logging time—you're taking ownership of how you live. Small adjustments compound into a more intentional, fulfilling life.",
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-
+                        Spacer(Modifier.height(14.dp))
                         Text(
                             text = buildAnnotatedString {
-                                append("Remember: To live is to pass through hours. To ")
+                                append("To live is to pass through hours. To ")
                                 withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
                                     append("Bee")
                                 }
@@ -489,7 +436,6 @@ fun HourlyPulseApp(
                             },
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
-                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -513,6 +459,18 @@ fun HourlyPulseApp(
                         val imported = loadFromCsv(context, pendingImportUri!!)
                         if (imported.isNotEmpty()) {
                             imported.forEach { viewModel.saveRating(context, it) }
+                            // Tags on the imported ratings are never used to modify
+                            // the user's own selectable tag list — flag any that
+                            // aren't already in it, once, instead of silently
+                            // leaving them un-selectable for future ratings.
+                            val currentTags = loadTags(context).toSet()
+                            val missing = imported.flatMap { it.tags }
+                                .filter { it != RECLAIM_TAG }
+                                .distinct()
+                                .filterNot { it in currentTags }
+                            if (missing.isNotEmpty()) {
+                                missingTagsAfterImport = missing
+                            }
                         }
                         pendingImportUri = null
                     }) {
@@ -523,6 +481,28 @@ fun HourlyPulseApp(
                     TextButton(onClick = { pendingImportUri = null }) {
                         Text("Cancel")
                     }
+                }
+            )
+        }
+
+        // One-time heads-up: custom tags on the import that aren't selectable yet
+        missingTagsAfterImport?.let { missing ->
+            AlertDialog(
+                onDismissRequest = { missingTagsAfterImport = null },
+                title = { Text("Heads up about tags") },
+                text = {
+                    Text(
+                        "${missing.size} tag${if (missing.size == 1) "" else "s"} on the imported ratings " +
+                                "${if (missing.size == 1) "isn't" else "aren't"} in your current tag list: " +
+                                "${missing.joinToString(", ")}.\n\n" +
+                                "They'll still show correctly on those entries — but add them again from " +
+                                "the + button if you want to select them for new ratings.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { missingTagsAfterImport = null }) { Text("Got it") }
                 }
             )
         }
@@ -539,6 +519,41 @@ fun HourlyPulseApp(
     }
 }
 
+/** Import/Export tile: emoji + label + short caption, whole card tappable. */
+@Composable
+private fun DataActionCard(
+    emoji: String,
+    label: String,
+    caption: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = appCardColor()
+        )
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(emoji, fontSize = 24.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(label, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(
+                caption,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
 private data class NavItem(val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(
@@ -549,12 +564,14 @@ private val bottomNavItems = listOf(
 
 /**
  * Floating pill-shaped bottom navigation bar with a fixed width, centered.
- * Every item keeps a fixed slot (icon + label); a filled highlight slides
- * between slots as the selection changes.
+ * Every item keeps a fixed slot (icon + label); a filled highlight tracks
+ * the pager's live scroll position — including mid-swipe drag — instead of
+ * animating separately after the fact once a page settles.
  * Translucent — it floats over the content, which scrolls beneath it.
  */
 @Composable
 private fun FloatingPillNavBar(
+    pagerState: PagerState,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -576,12 +593,11 @@ private fun FloatingPillNavBar(
             shadowElevation = 8.dp
         ) {
             Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                // Sliding highlight behind the selected slot
-                val highlightX by animateDpAsState(
-                    targetValue = slotWidth * selectedTab,
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    label = "navHighlight"
-                )
+                // Sliding highlight behind the selected slot — a direct function
+                // of the pager's own (already-smooth, whether dragged or
+                // programmatically animated) scroll position, not a separate
+                // animation chasing the settled page after the swipe lands.
+                val highlightX = slotWidth * (pagerState.currentPage + pagerState.currentPageOffsetFraction)
                 Box(
                     Modifier
                         .offset(x = highlightX)
