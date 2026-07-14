@@ -50,6 +50,12 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 }
 
 // --- NOTIFICATIONS ---
+
+/** In-app broadcast fired alongside each hourly notification, so an already
+ * open app refreshes immediately (dial animates in) instead of waiting for
+ * the next ON_RESUME. */
+const val ACTION_HOUR_TICKED = "com.example.beeing.ACTION_HOUR_TICKED"
+
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
@@ -147,6 +153,11 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
                 showCustomNotification(context, manager, targetTimestamp, ordinal)
+                // Nudge the app if it's currently open so the fresh hour's
+                // dial animates in without waiting for a pause/resume cycle.
+                context.sendBroadcast(
+                    Intent(ACTION_HOUR_TICKED).setPackage(context.packageName)
+                )
                 scheduleExactHourlyAlarm(context)
             }
         }

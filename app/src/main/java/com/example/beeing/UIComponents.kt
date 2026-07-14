@@ -9,8 +9,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -38,16 +36,25 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 //import androidx.compose.ui.layout.onGloballyPositioned
 //import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -113,8 +120,10 @@ class SwipeScrubController internal constructor(
     }
 
     private fun springBack() {
+        // Rubber-band release: eases back to rest in one smooth motion —
+        // deliberately NOT a bouncy spring, which oscillated back and forth.
         scope.launch {
-            offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
+            offset.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
         }
     }
 }
@@ -205,6 +214,88 @@ fun SwipeScrubStack(
     }
 }
 
+/**
+ * Scrubber center label that slides sideways with the live drag offset —
+ * clipped to its own box so it never crosses the chevrons flanking it.
+ */
+@Composable
+fun ScrubLabel(
+    controller: SwipeScrubController,
+    text: String,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 13.sp,
+    fontWeight: FontWeight = FontWeight.SemiBold
+) {
+    Box(modifier.clipToBounds()) {
+        Text(
+            text,
+            Modifier.graphicsLayer { translationX = controller.offset.value * 0.35f },
+            fontWeight = fontWeight,
+            fontSize = fontSize,
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * A floating pointer-tip: a small bubble with a caret, hovering just above
+ * whatever composable it's placed inside. Auto-dismisses after a moment.
+ */
+@Composable
+fun TapTip(
+    text: String,
+    visible: Boolean,
+    onDismiss: () -> Unit
+) {
+    if (!visible) return
+    val bubbleColor = MaterialTheme.colorScheme.inverseSurface
+    val positionProvider = remember {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize
+            ): IntOffset {
+                val x = (anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2)
+                    .coerceIn(8, (windowSize.width - popupContentSize.width - 8).coerceAtLeast(8))
+                val y = (anchorBounds.top - popupContentSize.height - 10).coerceAtLeast(8)
+                return IntOffset(x, y)
+            }
+        }
+    }
+    Popup(popupPositionProvider = positionProvider, onDismissRequest = onDismiss) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = bubbleColor,
+                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                shadowElevation = 6.dp
+            ) {
+                Text(
+                    text,
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Canvas(Modifier.size(16.dp, 7.dp)) {
+                val caret = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width / 2f, size.height)
+                    close()
+                }
+                drawPath(caret, bubbleColor)
+            }
+        }
+    }
+    LaunchedEffect(text) {
+        delay(2600)
+        onDismiss()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfessionalChart(ratings: List<RatingEntry>) {
@@ -252,10 +343,9 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
                         tint = if (canGoEarlier) LocalContentColor.current else Color.Gray
                     )
                 }
-                Text(
+                ScrubLabel(
+                    controller,
                     "${buckets.first().label} – ${buckets.last().label}",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
                 IconButton(onClick = { controller.stepLater() }, enabled = pageOffset > 0) {
@@ -491,6 +581,77 @@ fun InsightPanel(ratings: List<RatingEntry>, view: ChartView) {
     }
 }
 
+/**
+ * One rated hour, Recent-History style: time range + tags + note on the left,
+ * score dot on the right. Shared by the Recent History list and the
+ * calendar's tapped-day breakdown so a day always reads the same everywhere.
+ */
+@Composable
+fun RatedHourRow(
+    item: RatingEntry,
+    showDate: Boolean = true,
+    onClick: (() -> Unit)? = null
+) {
+    val cal = Calendar.getInstance().apply { timeInMillis = item.timestamp }
+    val startH = cal.get(Calendar.HOUR_OF_DAY)
+    val endH = if (startH == 23) 0 else startH + 1
+    val range = "${formatHour(startH)} - ${formatHour(endH)}"
+    // Derived fresh from the timestamp — never trust the stored hourLabel
+    // string, which can be stale on entries saved before this was fixed.
+    val title = if (showDate)
+        "${SimpleDateFormat("MMM dd").format(cal.time)}, $range (${ordinalHourLabel(startH)} hour)"
+    else "$range (${ordinalHourLabel(startH)} hour)"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            if (item.tags.isNotEmpty()) {
+                Text(
+                    item.tags.joinToString(", "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            if (item.note.isNotBlank()) {
+                Text(
+                    "“${item.note}”",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(scoreBandColor(item.score), shape = CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "${item.score}",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                color = if (item.score >= 5) Color.Black else Color.White
+            )
+        }
+    }
+}
+
 @Composable
 fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
@@ -498,56 +659,7 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
 
         recentRatings.forEachIndexed { index, item ->
             key(item.id) {
-                val cal = Calendar.getInstance().apply { timeInMillis = item.timestamp }
-                val startH = cal.get(Calendar.HOUR_OF_DAY)
-                val endH = if (startH == 23) 0 else startH + 1
-                val dateStr = SimpleDateFormat("MMM dd").format(cal.time)
-                val range = "${formatHour(startH)} - ${formatHour(endH)}"
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onEdit(item) }
-                        .padding(vertical = 12.dp, horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            // Derived fresh from the timestamp — never trust the
-                            // stored hourLabel string, which can be stale on
-                            // entries saved before this was fixed.
-                            "$dateStr, $range (${ordinalHourLabel(startH)} hour)",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (item.tags.isNotEmpty()) {
-                            Text(
-                                item.tags.joinToString(", "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(scoreBandColor(item.score), shape = CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "${item.score}",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            color = if (item.score >= 5) Color.Black else Color.White
-                        )
-                    }
-                }
+                RatedHourRow(item, showDate = true, onClick = { onEdit(item) })
                 if (index < recentRatings.lastIndex) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
                 }
@@ -566,8 +678,8 @@ fun HeaderSection(
 ) {
     Row(Modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp)
-        .padding(top = 48.dp),
+        .statusBarsPadding()
+        .padding(horizontal = 16.dp, vertical = 8.dp),
         Arrangement.SpaceBetween,
         Alignment.CenterVertically
     ) {
@@ -795,14 +907,6 @@ fun SoulFuelTagsSection(
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
             if (isTagDeleteMode) {
-                AssistChip(
-                    onClick = onShowTagDialog,
-                    enabled = isEnabled && availableTags.size < 30,
-                    label = { Text("New tag") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
-                    }
-                )
                 availableTags.forEach { tag ->
                     InputChip(
                         selected = false,
@@ -823,6 +927,16 @@ fun SoulFuelTagsSection(
                         }
                     )
                 }
+                // After the existing tags, right next to the done-editing
+                // tick — adding sits at the end of the flow, not before it.
+                AssistChip(
+                    onClick = onShowTagDialog,
+                    enabled = isEnabled && availableTags.size < 30,
+                    label = { Text("New tag") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
+                    }
+                )
             } else {
                 availableTags.forEach { tag ->
                     InputChip(

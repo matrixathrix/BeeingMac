@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -50,7 +52,7 @@ import kotlin.math.sin
 
 const val STREAK_HOURS_REQUIRED = 8   // distinct rated hours for a day to count
 const val HOURS_PER_SAVER = 10        // banked extra hours per streak saver
-const val MAX_SAVERS = 3              // max savers a user can hold
+const val MAX_SAVERS = 5              // max savers a user can hold
 const val GIFTED_SAVERS = 1           // day-one gift so the first stumble doesn't reset
 const val RECLAIM_COST = 5            // flowers to rate one expired hour from today
 const val FLOWER_CAP = 20             // max flowers the bank can hold
@@ -327,8 +329,6 @@ fun StreakMeter(
     }
 
     val remaining = (STREAK_HOURS_REQUIRED - state.todayHours).coerceAtLeast(0)
-    val statusText = if (state.todayQualified) "Today is secured ✓"
-    else "Rate $remaining more hour${if (remaining == 1) "" else "s"} to secure today"
     // The streak's own accent — deliberately not the red/amber/green hour
     // bands (that's a status color), so it reads as this card's second
     // "hero" stat rather than a variant of the ring's meaning. A fixed warm
@@ -340,151 +340,194 @@ fun StreakMeter(
         else -> Color(0xFFEF6C00)
     }
 
-    val card = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(20.dp))
-        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+    val cardShape = RoundedCornerShape(20.dp)
+    fun Modifier.tappable(onTap: (() -> Unit)?) = this
+        .clip(cardShape)
+        .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
 
-    Card(
-        modifier = modifier.then(card),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = appCardColor())
-    ) {
-        // Two fixed layouts with an animated size change between them: nothing
-        // is re-measured per frame, so the grow/shrink stays smooth to the end
-        // (the old per-frame size/font lerp dropped frames as it settled).
-        AnimatedContent(
-            targetState = expanded,
-            transitionSpec = {
-                (fadeIn(tween(260, delayMillis = 130)) togetherWith fadeOut(tween(130)))
-                    .using(SizeTransform(clip = false) { _, _ ->
-                        tween(500, easing = FastOutSlowInEasing)
-                    })
-            },
-            label = "meterLayout",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) { isExpanded ->
-            if (isExpanded) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+    // Which twin card's pointer-tip is showing (0 = none, 1 = hours, 2 = streak)
+    var activeTip by remember { mutableIntStateOf(0) }
+    val hoursTip = when {
+        state.todayQualified -> "Streak extended today 🎉"
+        state.currentStreak > 0 ->
+            "Rate $remaining more hour${if (remaining == 1) "" else "s"} to extend streak today"
+        else ->
+            "Rate $remaining more hour${if (remaining == 1) "" else "s"} today to start a streak"
+    }
+
+    // Two states, one motion: while hours are still open, today's ring and
+    // the streak sit as twin equal cards; once both rateable hours are done
+    // the pair merges into a single full-width hero card that carries the
+    // "streak extended" moment. SizeTransform morphs the container while the
+    // content slides gently, so the merge/split reads as one sliding motion.
+    AnimatedContent(
+        targetState = expanded,
+        transitionSpec = {
+            ((fadeIn(tween(300, delayMillis = 120)) +
+                    slideInVertically(tween(300, delayMillis = 120)) { it / 8 }) togetherWith
+                    (fadeOut(tween(140)) + slideOutVertically(tween(140)) { -it / 8 }))
+                .using(SizeTransform(clip = false) { _, _ ->
+                    tween(500, easing = FastOutSlowInEasing)
+                })
+        },
+        label = "meterLayout",
+        modifier = modifier.fillMaxWidth()
+    ) { isExpanded ->
+        if (isExpanded) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .tappable(onClick),
+                shape = cardShape,
+                colors = CardDefaults.cardColors(containerColor = appCardColor())
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Row(
-                        Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.spacedBy(32.dp)
                     ) {
                         StreakRing(
                             animatedFill = animatedFill,
                             animatedExtra = animatedExtra,
                             ringColor = ringColor,
                             trackColor = track,
-                            ringSize = 176.dp,
-                            strokeWidth = 24.dp,
+                            ringSize = 150.dp,
+                            strokeWidth = 18.dp,
                             scale = ringScale.value
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                    fontSize = 34.sp,
+                                    fontSize = 30.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    "hours rated today",
+                                    "hours",
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        // Twin hero stat: same big-number-over-caption structure
-                        // as the ring, so the streak reads with equal weight
-                        // instead of as a caption underneath it.
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (state.currentStreak > 0) "🔥" else "🌱", fontSize = 26.sp)
+                            Text(if (state.currentStreak > 0) "🔥" else "🌱", fontSize = 30.sp)
                             Text(
-                                if (state.currentStreak > 0) "${state.currentStreak}" else "0",
-                                fontSize = 44.sp,
+                                "${state.currentStreak}",
+                                fontSize = 46.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = streakColor
                             )
                             Text(
-                                if (state.currentStreak > 0) "day streak" else "start today",
-                                fontSize = 13.sp,
+                                "day streak",
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                     Spacer(Modifier.height(14.dp))
-                    Text(
-                        statusText,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = if (state.todayQualified) ringColor
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (state.todayQualified) {
+                        Text(
+                            "Streak extended today! 🎉",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = ringColor
+                        )
+                    } else {
+                        Text(
+                            hoursTip,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+            }
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .tappable { activeTip = 1 },
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = appCardColor())
                 ) {
-                    StreakRing(
-                        animatedFill = animatedFill,
-                        animatedExtra = animatedExtra,
-                        ringColor = ringColor,
-                        trackColor = track,
-                        ringSize = 100.dp,
-                        strokeWidth = 13.dp,
-                        scale = ringScale.value
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 16.dp, horizontal = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        StreakRing(
+                            animatedFill = animatedFill,
+                            animatedExtra = animatedExtra,
+                            ringColor = ringColor,
+                            trackColor = track,
+                            ringSize = 96.dp,
+                            strokeWidth = 12.dp,
+                            scale = ringScale.value
+                        ) {
                             Text(
                                 "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                fontSize = 18.sp,
+                                fontSize = 19.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Text(
-                                "hours",
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
-                    }
-                    // Streak stat and status message now share one centered
-                    // block filling the rest of the row, instead of a narrow
-                    // number column followed by left-hugging text — that used
-                    // to leave a dead gutter on the right when the status line
-                    // was short.
-                    Column(
-                        Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                if (state.currentStreak > 0) "🔥" else "🌱",
-                                fontSize = 18.sp
-                            )
-                            Text(
-                                if (state.currentStreak > 0)
-                                    "${state.currentStreak} day streak" else "No streak yet",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = streakColor
-                            )
-                        }
+                        Spacer(Modifier.height(10.dp))
                         Text(
-                            statusText,
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center,
-                            color = if (state.todayQualified) ringColor
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            "hours today",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TapTip(
+                            text = hoursTip,
+                            visible = activeTip == 1,
+                            onDismiss = { activeTip = 0 }
+                        )
+                    }
+                }
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .tappable { activeTip = 2 },
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = appCardColor())
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 16.dp, horizontal = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(if (state.currentStreak > 0) "🔥" else "🌱", fontSize = 26.sp)
+                        Text(
+                            "${state.currentStreak}",
+                            fontSize = 42.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = streakColor
+                        )
+                        Text(
+                            "day streak",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TapTip(
+                            text = "You can check Streak logs in the Streaks tab",
+                            visible = activeTip == 2,
+                            onDismiss = { activeTip = 0 }
                         )
                     }
                 }
@@ -623,7 +666,10 @@ data class StreakEvent(
     val timestamp: Long,
     val type: StreakEventType,
     val title: String,
-    val detail: String
+    val detail: String,
+    // True for day-outcome events stamped at 23:59 — the log shows these as
+    // "End of day" rather than a misleading clock time.
+    val endOfDay: Boolean = false
 )
 
 private fun StreakEventType.emoji(): String = when (this) {
@@ -693,14 +739,15 @@ fun computeStreakLog(
         val n = orderedTs.size
 
         if (n >= STREAK_HOURS_REQUIRED) {
-            // 8th distinct hour -> start/extend
+            // 8th distinct hour -> start/extend. The log is grouped by day in
+            // the UI, so details never need to repeat the date.
             val qualifyTs = orderedTs[STREAK_HOURS_REQUIRED - 1]
             if (streak == 0) {
                 streak = 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Streak started", "Day 1 — reached 8 hours on $dayLabel"))
+                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Streak started", "Rated 8 hours — day 1 of your streak"))
             } else {
                 streak += 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Streak extended", "Day $streak — reached 8 hours on $dayLabel"))
+                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Streak extended to day $streak", "Rated 8 hours this day"))
             }
             // extra hours -> bank flowers one by one (reclaimed hours never earn)
             val reclaimed = reclaimedByDay[key]?.size ?: 0
@@ -709,15 +756,17 @@ fun computeStreakLog(
                 if (bank < FLOWER_CAP) bank += 1
                 if (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
                     bank -= HOURS_PER_SAVER; savers += 1
-                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "Streak saver earned 🛡️", "Collected 10 🌸 flowers · savers now $savers"))
+                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "New saver forged", "10 🌸 became a 🛡️ — you now have $savers"))
                 }
             }
             // end-of-day balance — only when extra hours were actually banked
             if (eligible > 0) {
                 events.add(
                     StreakEvent(
-                        endOfDay, StreakEventType.BANKED, "End of day",
-                        "$dayLabel: +$eligible 🌸 flowers · balance ${bank} 🌸 · $savers saver${if (savers == 1) "" else "s"}"
+                        endOfDay, StreakEventType.BANKED,
+                        "+$eligible 🌸 earned",
+                        "Extra hours beyond 8 · now ${bank} 🌸 and $savers 🛡️",
+                        endOfDay = true
                     )
                 )
             }
@@ -725,10 +774,10 @@ fun computeStreakLog(
             // missed past day
             if (savers > 0) {
                 savers -= 1
-                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Streak saver used 🛟", "$dayLabel had under 8 hours — streak saved · $savers saver${if (savers == 1) "" else "s"} left"))
+                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Saver spent — streak protected", "Under 8 hours this day · $savers 🛡️ left", endOfDay = true))
             } else if (streak > 0) {
                 streak = 0; bank = 0
-                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Streak reset 💔", "$dayLabel had under 8 hours and no savers left"))
+                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Streak ended", "Under 8 hours with no savers left", endOfDay = true))
             }
         }
         // today with <8 hours: in progress, no event
@@ -736,7 +785,7 @@ fun computeStreakLog(
         // reclaims spend from the bank on the day they happen
         spendsByDay[key]?.forEach { ts ->
             bank = (bank - RECLAIM_COST).coerceAtLeast(0)
-            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Hour reclaimed 💧", "Rated a missed hour · −$RECLAIM_COST 🌸 · balance $bank 🌸"))
+            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Missed hour reclaimed", "Spent $RECLAIM_COST 🌸 · $bank 🌸 left"))
         }
 
         if (key == todayKey) break
@@ -754,23 +803,49 @@ fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
         val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
         computeStreakLog(ratings, loadReclaimSpends(context)).filter { it.timestamp >= cutoff }
     }
-    val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
+    // Grouped by day (newest day first), events inside a day in the order
+    // they happened — reads as a diary rather than a flat event dump.
+    val grouped = remember(events) {
+        val cal = Calendar.getInstance()
+        events.take(60).groupBy {
+            cal.timeInMillis = it.timestamp
+            cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
+        }
+    }
+    val dayFmt = remember { SimpleDateFormat("EEEE, d MMM", Locale.getDefault()) }
+    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     if (events.isEmpty()) {
         Text("Nothing in the last 3 months — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
-            events.take(60).forEach { ev ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(ev.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            fmt.format(java.util.Date(ev.timestamp)),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+            grouped.entries.forEachIndexed { groupIndex, (_, dayEvents) ->
+                Text(
+                    dayFmt.format(Date(dayEvents.first().timestamp)),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = if (groupIndex == 0) 0.dp else 14.dp, bottom = 2.dp)
+                )
+                dayEvents.sortedBy { it.timestamp }.forEach { ev ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    ev.title,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    if (ev.endOfDay) "End of day" else timeFmt.format(Date(ev.timestamp)),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                            Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))

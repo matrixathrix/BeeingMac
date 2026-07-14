@@ -193,7 +193,7 @@ fun RingClosedCelebration(streakDays: Int, onDone: () -> Unit) {
         // Caption slides up beneath the ring once everything has landed
         val captionIn = ((progress - 0.35f) / 0.2f).coerceIn(0f, 1f)
         Text(
-            "Ring closed — day secured! 🐝",
+            "Ring closed — streak extended! 🐝",
             fontSize = 19.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,

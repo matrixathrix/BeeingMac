@@ -88,6 +88,9 @@ fun StreaksTab(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
+            // No app header on this tab — it clears the status bar itself
+            // and keeps every reclaimed pixel for its own content.
+            .statusBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -104,6 +107,7 @@ fun StreaksTab(
                 )
                 MonthHeader(
                     monthOffset = monthOffset,
+                    controller = monthController,
                     onPrev = { monthController.stepEarlier() },
                     onNext = { monthController.stepLater() }
                 )
@@ -422,7 +426,12 @@ fun StreaksTab(
 }
 
 @Composable
-private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit) {
+private fun MonthHeader(
+    monthOffset: Int,
+    controller: SwipeScrubController,
+    onPrev: () -> Unit,
+    onNext: () -> Unit
+) {
     val cal = Calendar.getInstance().apply {
         add(Calendar.MONTH, -monthOffset)
         set(Calendar.DAY_OF_MONTH, 1)
@@ -434,7 +443,12 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onPrev) { Icon(Icons.Default.KeyboardArrowLeft, "Earlier month") }
-        Text(fmt.format(cal.time), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        ScrubLabel(
+            controller,
+            fmt.format(cal.time),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
         IconButton(onClick = onNext, enabled = monthOffset > 0) {
             Icon(
                 Icons.Default.KeyboardArrowRight, "Later month",
@@ -603,7 +617,6 @@ private fun DayStatsDialog(
         }.distinct().size
     }
     val avg = if (entries.isEmpty()) 0.0 else entries.map { it.score }.average()
-    val best = entries.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     val reclaimed = entries.count { RECLAIM_TAG in it.tags }
     // Reclaims only ever apply to today's own missed hours, so this is exact
     // without needing the raw spend log threaded down here.
@@ -648,18 +661,21 @@ private fun DayStatsDialog(
                 } else {
                     StatRow("Hours rated", "$distinctHours / 24")
                     StatRow("Average score", String.format("%.1f", avg), valueColor = getScoreColor(avg))
-                    best?.let {
-                        val h = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                            .get(Calendar.HOUR_OF_DAY)
-                        StatRow("Best hour", "${formatHour(h)} - ${formatHour((h + 1) % 24)} · ${it.score}")
-                    }
-                    val topTags = entries.flatMap { it.tags }
-                        .filter { it != RECLAIM_TAG }
-                        .groupingBy { it }.eachCount()
-                        .entries.sortedByDescending { it.value }
-                        .take(3)
-                    if (topTags.isNotEmpty()) {
-                        StatRow("Top tags", topTags.joinToString(", ") { it.key })
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
+                    // The day's rated hours in the same layout Recent History
+                    // uses — time range, tags, note, score dot.
+                    Column(
+                        Modifier
+                            .heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        val ordered = entries.sortedBy { it.timestamp }
+                        ordered.forEachIndexed { i, entry ->
+                            RatedHourRow(entry, showDate = false)
+                            if (i < ordered.lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
+                            }
+                        }
                     }
                 }
             }

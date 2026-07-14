@@ -222,10 +222,9 @@ fun InsightsContent(
                     tint = if (canGoEarlier) LocalContentColor.current else Color.Gray
                 )
             }
-            Text(
+            ScrubLabel(
+                controller,
                 periodLabel,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
             IconButton(onClick = { controller.stepLater() }, enabled = pageOffset > 0) {
@@ -236,6 +235,42 @@ fun InsightsContent(
             }
             Spacer(Modifier.weight(1f))
             PeriodDropdown(selected = period, onSelect = { period = it })
+        }
+
+        // Title + ⓘ pinned here, outside the swipeable window below, so they
+        // stay put while the tag rows slide between periods.
+        var showInfo by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "How tags score",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = { showInfo = true }, modifier = Modifier.size(24.dp)) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "How this is calculated",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        if (showInfo) {
+            AlertDialog(
+                onDismissRequest = { showInfo = false },
+                title = { Text("How tags score") },
+                text = {
+                    Text(
+                        "A tag's score is the average of every hour it was on in this period. (n) = hours counted — small n swings easily.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showInfo = false }) { Text("Got it") }
+                }
+            )
         }
 
         // Switching granularity still crossfades; scrubbing through pageOffset
@@ -331,9 +366,10 @@ fun CollapsibleSection(
 }
 
 // --- Feature 2: tag-score correlation ---
+// The "How tags score" title + ⓘ live in InsightsContent, pinned outside the
+// swipeable window — this composable is only the sliding rows.
 @Composable
 private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
-    var showInfo by remember { mutableStateOf(false) }
     val tagStats = remember(windowEntries) {
         windowEntries.flatMap { e -> e.tags.map { it to e.score } }
             .groupBy({ it.first }, { it.second })
@@ -345,23 +381,6 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
         return
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "How tags score",
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = { showInfo = true }, modifier = Modifier.size(24.dp)) {
-            Icon(
-                Icons.Default.Info,
-                contentDescription = "How this is calculated",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-    }
-    Spacer(Modifier.height(8.dp))
     tagStats.forEach { (tag, avg, count) ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -378,24 +397,6 @@ private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
-    }
-
-    if (showInfo) {
-        AlertDialog(
-            onDismissRequest = { showInfo = false },
-            title = { Text("How tags score") },
-            text = {
-                Text(
-                    "Each tag's score is the average rating across every hour tagged with it in this period.\n\n" +
-                            "The number in parentheses is how many hours contributed — small counts can swing a lot with just one more rating.",
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showInfo = false }) { Text("Got it") }
-            }
-        )
     }
 }
 

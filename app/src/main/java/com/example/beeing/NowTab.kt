@@ -5,7 +5,10 @@ import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -13,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -60,7 +64,8 @@ fun NowTab(
     onOpenStreaks: () -> Unit = {},
     pendingScore: Int? = null,
     onPendingScoreConsumed: () -> Unit = {},
-    onRingClosed: (Int) -> Unit = {}
+    onRingClosed: (Int) -> Unit = {},
+    header: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -110,8 +115,20 @@ fun NowTab(
         }
     }
 
-    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(0) }
-    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
+    // Ticking clock (updates twice a minute) — drives the chip expiry
+    // countdown AND acts as the fallback that rolls the rateable-hour state
+    // over an hour boundary even if the alarm broadcast never arrives.
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    val hourKey = nowMillis / 3_600_000L
+
+    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger, hourKey) { isHourLogged(0) }
+    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger, hourKey) { isHourLogged(1) }
 
     // The hour actually being rated: prefers the caller's/user's choice, but
     // falls back the instant that choice stops being valid — synchronously,
@@ -126,7 +143,7 @@ fun NowTab(
             else -> targetedHourOffset
         }
     }
-    val isLoggedCurrent = remember(allRatings, effectiveOffset, viewModel.refreshTrigger) {
+    val isLoggedCurrent = remember(allRatings, effectiveOffset, viewModel.refreshTrigger, hourKey) {
         isHourLogged(effectiveOffset)
     }
 
@@ -170,14 +187,6 @@ fun NowTab(
         todayRatings.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     }
 
-    // Ticking clock for the chip expiry countdown (updates twice a minute)
-    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000)
-            nowMillis = System.currentTimeMillis()
-        }
-    }
     val minutesToNextHour = remember(nowMillis) {
         60 - Calendar.getInstance().apply { timeInMillis = nowMillis }.get(Calendar.MINUTE)
     }
@@ -187,9 +196,14 @@ fun NowTab(
 
     // IMPORTANT: Use Box to layer celebration overlay on top
     Box(modifier = Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+        // This tab owns the app header — it lives inside the page so tab
+        // swipes carry it along horizontally.
+        header()
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
                 .padding(top = 8.dp),
@@ -203,8 +217,23 @@ fun NowTab(
                 onClick = onOpenStreaks
             )
 
-            // When both hours rated, show special message card and hide dial
-            if (bothHoursRated) {
+            // When both hours are rated, the whole rating flow (chips, dial,
+            // tags, notes) smoothly collapses down to the caught-up message;
+            // when a fresh hour opens it grows back into existence the same way.
+            AnimatedContent(
+                targetState = bothHoursRated,
+                transitionSpec = {
+                    ((fadeIn(tween(320, delayMillis = 140)) +
+                            slideInVertically(tween(320, delayMillis = 140)) { it / 8 }) togetherWith
+                            (fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 8 }))
+                        .using(SizeTransform(clip = false) { _, _ ->
+                            tween(550, easing = FastOutSlowInEasing)
+                        })
+                },
+                label = "dialCollapse",
+                modifier = Modifier.fillMaxWidth()
+            ) { allRated ->
+            if (allRated) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     shape = RoundedCornerShape(20.dp),
@@ -225,8 +254,7 @@ fun NowTab(
                     }
                 }
             } else {
-                // Show rating chips and dial only when there are hours to rate
-
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 // Both rateable hours as always-visible chips: selected = filled,
                 // the older one carries a quiet expiry countdown.
                 Row(
@@ -387,10 +415,9 @@ fun NowTab(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
                 }
-            }
 
-            // Tags Section - visible only when the rating circle is visible
-            if (!bothHoursRated) {
+                // Tags + notes are part of the same rating flow — they
+                // collapse away with the dial as one unit.
                 SoulFuelTagsSection(
                     allRatings = allRatings,
                     availableTags = availableTags,
@@ -413,6 +440,8 @@ fun NowTab(
                     onNoteChange = { currentNote = it },
                     enabled = true
                 )
+                }
+            }
             }
 
             // Today's single best hour, highlighted
@@ -422,6 +451,7 @@ fun NowTab(
             }
 
             Spacer(Modifier.height(96.dp))
+        }
         }
 
         // Why-only-two-hours explainer

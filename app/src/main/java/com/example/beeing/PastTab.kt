@@ -54,8 +54,6 @@ fun PastTab(
             }
         },
         containerColor = Color.Transparent,
-        // the app-level header already consumed the status bar inset;
-        // re-applying it here left a band of dead space below the header
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
@@ -63,6 +61,9 @@ fun PastTab(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
+                    // No app header on this tab — clear the status bar here
+                    // and keep the reclaimed space for the chart itself.
+                    .statusBarsPadding()
                     .padding(horizontal = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

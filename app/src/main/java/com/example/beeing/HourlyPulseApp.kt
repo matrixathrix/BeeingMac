@@ -157,6 +157,25 @@ fun HourlyPulseApp(
         viewModel.loadRatings(context)
     }
 
+    // Hourly alarm fires while the app is on screen → refresh immediately so
+    // the new hour's rating dial animates into existence, rather than waiting
+    // for the user to background/foreground the app.
+    DisposableEffect(Unit) {
+        val hourTickReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context?, i: Intent?) {
+                viewModel.loadRatings(context)
+                viewModel.triggerRefresh()
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            context,
+            hourTickReceiver,
+            android.content.IntentFilter(ACTION_HOUR_TICKED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { context.unregisterReceiver(hourTickReceiver) }
+    }
+
     // Lifecycle observer for app resume
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -215,18 +234,7 @@ fun HourlyPulseApp(
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(
-        topBar = {
-            // Original HeaderSection
-            HeaderSection(
-                onImport = { importLauncher.launch("text/*") },
-                onExport = { exportLauncher.launch("bee_data.csv") },
-                onMenuClick = { showMenu = true },
-                onStreakClick = {
-                    selectedTab = 0  // Switch to Streaks tab
-                },
-                onInfoClick = { showInfoDialog = true }
-            )
-        },
+        contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -256,7 +264,20 @@ fun HourlyPulseApp(
                     onOpenStreaks = { selectedTab = 0 },
                     pendingScore = pendingScore,
                     onPendingScoreConsumed = { pendingScore = null },
-                    onRingClosed = { ringCelebrationDays = it }
+                    onRingClosed = { ringCelebrationDays = it },
+                    // The header is part of the Now PAGE, so it slides
+                    // horizontally with it during swipes — the side tabs sit
+                    // at full height the whole time instead of drifting
+                    // diagonally up into reclaimed header space.
+                    header = {
+                        HeaderSection(
+                            onImport = { importLauncher.launch("text/*") },
+                            onExport = { exportLauncher.launch("bee_data.csv") },
+                            onMenuClick = { showMenu = true },
+                            onStreakClick = { selectedTab = 0 },
+                            onInfoClick = { showInfoDialog = true }
+                        )
+                    }
                 )
 
                 2 -> PastTab(
