@@ -1,6 +1,13 @@
 package com.example.beeing
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -101,13 +108,26 @@ fun StreaksTab(
             colors = CardDefaults.cardColors(containerColor = appCardColor())
         ) {
             Column(Modifier.padding(16.dp)) {
+                // Nothing before the first rated month — don't let the
+                // calendar scrub back into empty history.
+                val earliestRatingTs = remember(allRatings) { allRatings.minOfOrNull { it.timestamp } }
+                val viewedMonthStart = remember(monthOffset) {
+                    Calendar.getInstance().apply {
+                        add(Calendar.MONTH, -monthOffset)
+                        set(Calendar.DAY_OF_MONTH, 1)
+                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                }
+                val canGoEarlierMonth = earliestRatingTs != null && viewedMonthStart > earliestRatingTs
                 val monthController = rememberSwipeScrubController(
-                    onEarlier = { monthOffset++ },
+                    onEarlier = { if (canGoEarlierMonth) monthOffset++ },
                     onLater = { if (monthOffset > 0) monthOffset-- }
                 )
                 MonthHeader(
                     monthOffset = monthOffset,
                     controller = monthController,
+                    canPrev = canGoEarlierMonth,
                     onPrev = { monthController.stepEarlier() },
                     onNext = { monthController.stepLater() }
                 )
@@ -116,13 +136,17 @@ fun StreaksTab(
                 // neighbor is being dragged toward both move with the touch.
                 SwipeScrubStack(
                     controller = monthController,
-                    canEarlier = true,
+                    canEarlier = canGoEarlierMonth,
                     canLater = monthOffset > 0,
                     current = {
                         MonthGrid(monthOffset = monthOffset, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
                     },
                     earlierPreview = {
-                        MonthGrid(monthOffset = monthOffset + 1, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
+                        if (canGoEarlierMonth) {
+                            MonthGrid(monthOffset = monthOffset + 1, dayDetails = dayDetails, onDayClick = { statsDayMillis = it })
+                        } else {
+                            Box(Modifier.fillMaxWidth())
+                        }
                     },
                     laterPreview = {
                         if (monthOffset > 0) {
@@ -164,9 +188,8 @@ fun StreaksTab(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     infoDialog = "🛡️ Savers" to
-                            "Miss a day and one saver is used automatically — your streak continues.\n\n" +
-                            "No savers left? The streak resets.\n\n" +
-                            "Every $HOURS_PER_SAVER 🌸 automatically becomes a new saver as soon as you have room for one."
+                            "A missed day spends one saver automatically and your streak survives. " +
+                            "None left = streak resets. $HOURS_PER_SAVER 🌸 forge a new one."
                 }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -191,9 +214,8 @@ fun StreaksTab(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     infoDialog = "🌸 Flowers" to
-                            "Each hour you rate beyond 8 in a day gives you a flower (max $FLOWER_CAP).\n\n" +
-                            "Spend $RECLAIM_COST to rate an hour you missed today.\n\n" +
-                            "Whenever you have no saver and $HOURS_PER_SAVER+ flowers banked, they're automatically spent on a new one."
+                            "Hours beyond 8 in a day each earn a flower. " +
+                            "Spend $RECLAIM_COST to rate an hour you missed today."
                 }
             ) {
                 Text("🌸", fontSize = 20.sp)
@@ -296,12 +318,20 @@ fun StreaksTab(
                         modifier = Modifier.rotate(logChevron)
                     )
                 }
-                if (logExpanded) {
-                    Spacer(Modifier.height(8.dp))
-                    StreakLogContent(
-                        ratings = allRatings,
-                        refreshKey = viewModel.refreshTrigger + spendsVersion
-                    )
+                AnimatedVisibility(
+                    visible = logExpanded,
+                    enter = expandVertically(tween(300, easing = FastOutSlowInEasing)) +
+                            fadeIn(tween(220, delayMillis = 80)),
+                    exit = shrinkVertically(tween(280, easing = FastOutSlowInEasing)) +
+                            fadeOut(tween(120))
+                ) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        StreakLogContent(
+                            ratings = allRatings,
+                            refreshKey = viewModel.refreshTrigger + spendsVersion
+                        )
+                    }
                 }
             }
         }
@@ -429,6 +459,7 @@ fun StreaksTab(
 private fun MonthHeader(
     monthOffset: Int,
     controller: SwipeScrubController,
+    canPrev: Boolean,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -442,7 +473,12 @@ private fun MonthHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onPrev) { Icon(Icons.Default.KeyboardArrowLeft, "Earlier month") }
+        IconButton(onClick = onPrev, enabled = canPrev) {
+            Icon(
+                Icons.Default.KeyboardArrowLeft, "Earlier month",
+                tint = if (canPrev) LocalContentColor.current else Color.Gray
+            )
+        }
         ScrubLabel(
             controller,
             fmt.format(cal.time),

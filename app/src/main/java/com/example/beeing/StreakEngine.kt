@@ -1,9 +1,12 @@
 package com.example.beeing
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -16,6 +19,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -403,13 +409,13 @@ fun StreakMeter(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                    fontSize = 30.sp,
+                                    fontSize = 36.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     "hours",
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -479,7 +485,7 @@ fun StreakMeter(
                         ) {
                             Text(
                                 "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                fontSize = 19.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -803,15 +809,22 @@ fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
         val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
         computeStreakLog(ratings, loadReclaimSpends(context)).filter { it.timestamp >= cutoff }
     }
-    // Grouped by day (newest day first), events inside a day in the order
-    // they happened — reads as a diary rather than a flat event dump.
-    val grouped = remember(events) {
+    // Two-level grouping: collapsible month sections (only the newest starts
+    // open, so the log never dumps everything at once), and inside each month
+    // the events read as a day-by-day diary.
+    val byMonth = remember(events) {
         val cal = Calendar.getInstance()
-        events.take(60).groupBy {
+        events.groupBy {
             cal.timeInMillis = it.timestamp
-            cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
+            cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
         }
     }
+    val expandedMonths = remember(events) {
+        mutableStateMapOf<Int, Boolean>().apply {
+            byMonth.keys.firstOrNull()?.let { put(it, true) }
+        }
+    }
+    val monthFmt = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
     val dayFmt = remember { SimpleDateFormat("EEEE, d MMM", Locale.getDefault()) }
     val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
@@ -819,44 +832,83 @@ fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
         Text("Nothing in the last 3 months — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
-            grouped.entries.forEachIndexed { groupIndex, (_, dayEvents) ->
-                Text(
-                    dayFmt.format(Date(dayEvents.first().timestamp)),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = if (groupIndex == 0) 0.dp else 14.dp, bottom = 2.dp)
-                )
-                dayEvents.sortedBy { it.timestamp }.forEach { ev ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    ev.title,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    if (ev.endOfDay) "End of day" else timeFmt.format(Date(ev.timestamp)),
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
+            byMonth.entries.forEach { (monthKey, monthEvents) ->
+                val monthOpen = expandedMonths[monthKey] == true
+                val chevron by animateFloatAsState(if (monthOpen) 180f else 0f, label = "logMonthChevron")
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { expandedMonths[monthKey] = !monthOpen }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        monthFmt.format(Date(monthEvents.first().timestamp)),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "${monthEvents.size} event${if (monthEvents.size == 1) "" else "s"}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (monthOpen) "Collapse month" else "Expand month",
+                        modifier = Modifier.rotate(chevron)
+                    )
+                }
+                AnimatedVisibility(
+                    visible = monthOpen,
+                    enter = expandVertically(tween(300, easing = FastOutSlowInEasing)) +
+                            fadeIn(tween(220, delayMillis = 80)),
+                    exit = shrinkVertically(tween(280, easing = FastOutSlowInEasing)) +
+                            fadeOut(tween(120))
+                ) {
+                    Column {
+                        val byDay = remember(monthEvents) {
+                            val cal = Calendar.getInstance()
+                            monthEvents.groupBy {
+                                cal.timeInMillis = it.timestamp
+                                cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
                             }
-                            Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        byDay.entries.forEach { (_, dayEvents) ->
+                            Text(
+                                dayFmt.format(Date(dayEvents.first().timestamp)),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                            )
+                            dayEvents.sortedBy { it.timestamp }.forEach { ev ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                    Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                ev.title,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Text(
+                                                if (ev.endOfDay) "End of day" else timeFmt.format(Date(ev.timestamp)),
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-            }
-            if (events.size > 60) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Showing latest 60 of ${events.size} events",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

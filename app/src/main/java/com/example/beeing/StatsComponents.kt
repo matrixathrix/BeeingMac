@@ -5,9 +5,15 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -357,9 +363,17 @@ fun CollapsibleSection(
                     modifier = Modifier.rotate(rotation)
                 )
             }
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-                content()
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(300, easing = FastOutSlowInEasing)) +
+                        fadeIn(tween(220, delayMillis = 80)),
+                exit = shrinkVertically(tween(280, easing = FastOutSlowInEasing)) +
+                        fadeOut(tween(120))
+            ) {
+                Column {
+                    Spacer(Modifier.height(8.dp))
+                    content()
+                }
             }
         }
     }

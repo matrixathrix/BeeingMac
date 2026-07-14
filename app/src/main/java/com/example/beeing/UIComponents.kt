@@ -202,13 +202,24 @@ fun SwipeScrubStack(
                 )
             }
     ) {
-        Box(Modifier.offset { IntOffset((offset.value - controller.widthPx).roundToInt(), 0) }) {
+        // Only `current` participates in sizing the stack — the off-screen
+        // neighbors match its size instead of inflating it, so a taller
+        // adjacent month/period can't leave dead padding under the visible one.
+        Box(
+            Modifier
+                .matchParentSize()
+                .offset { IntOffset((offset.value - controller.widthPx).roundToInt(), 0) }
+        ) {
             earlierPreview()
         }
         Box(Modifier.offset { IntOffset(offset.value.roundToInt(), 0) }) {
             current()
         }
-        Box(Modifier.offset { IntOffset((offset.value + controller.widthPx).roundToInt(), 0) }) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .offset { IntOffset((offset.value + controller.widthPx).roundToInt(), 0) }
+        ) {
             laterPreview()
         }
     }
@@ -729,9 +740,9 @@ fun EditEntrySheet(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(16.dp))
-        Text("Select new score:")
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        Text("Select new score:", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(6.dp))
 
         // Auto-centers the selected score in the viewport, clamped so "1"
         // and "10" never overshoot past their natural start/end edges — each
@@ -760,8 +771,10 @@ fun EditEntrySheet(
         ) {
             (1..10).forEach { score ->
                 val isSelected = editedEntry.score == score
+                // Fixed square slot: the selected circle grows around its own
+                // center instead of hanging lower than its neighbors.
                 Box(
-                    modifier = Modifier.width(scoreSlotWidth),
+                    modifier = Modifier.size(scoreSlotWidth),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -793,9 +806,9 @@ fun EditEntrySheet(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(10.dp))
         Text("Tags:", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
 
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(
@@ -829,7 +842,7 @@ fun EditEntrySheet(
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(14.dp))
 
         Row(
             Modifier.fillMaxWidth(),
@@ -850,7 +863,7 @@ fun EditEntrySheet(
                 Text("Save Changes")
             }
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(16.dp))
     }
 
     if (showTagDialog) {
