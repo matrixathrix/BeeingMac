@@ -6,7 +6,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -18,10 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -189,141 +185,6 @@ fun cancelWeeklyReport(context: Context) {
 // INSIGHTS SECTION  (Past tab) — features 2, 3, 5
 // ============================================================
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun InsightsContent(
-    ratings: List<RatingEntry>,
-    refreshKey: Int = 0
-) {
-    var period by remember { mutableStateOf(StatPeriod.DAY) }
-    var pageOffset by remember { mutableIntStateOf(0) }
-    LaunchedEffect(period) { pageOffset = 0 }
-
-    val bucket = remember(period, pageOffset) { buildPeriodBuckets(period, pageOffset, window = 1).first() }
-    // Nothing before the earliest rating — don't let "Previous" scroll into empty history
-    val earliestRatingTs = remember(ratings) { ratings.minOfOrNull { it.timestamp } }
-    val canGoEarlier = earliestRatingTs != null && bucket.startMillis > earliestRatingTs
-
-    val periodLabel = if (pageOffset == 0) when (period) {
-        StatPeriod.DAY -> "Today"
-        StatPeriod.WEEK -> "This week"
-        StatPeriod.MONTH -> "This month"
-        StatPeriod.YEAR -> "This year"
-    } else bucket.label
-
-    val controller = rememberSwipeScrubController(
-        onEarlier = { if (canGoEarlier) pageOffset++ },
-        onLater = { if (pageOffset > 0) pageOffset-- }
-    )
-
-    Column(Modifier.fillMaxWidth()) {
-        // Prev/next scrubber + granularity selector share one line
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { controller.stepEarlier() }, enabled = canGoEarlier) {
-                Icon(
-                    Icons.Default.KeyboardArrowLeft, "Previous",
-                    tint = if (canGoEarlier) LocalContentColor.current else Color.Gray
-                )
-            }
-            ScrubLabel(
-                controller,
-                periodLabel,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-            IconButton(onClick = { controller.stepLater() }, enabled = pageOffset > 0) {
-                Icon(
-                    Icons.Default.KeyboardArrowRight, "Next",
-                    tint = if (pageOffset > 0) LocalContentColor.current else Color.Gray
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            PeriodDropdown(selected = period, onSelect = { period = it })
-        }
-
-        // Title + ⓘ pinned here, outside the swipeable window below, so they
-        // stay put while the tag rows slide between periods.
-        var showInfo by remember { mutableStateOf(false) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "How tags score",
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = { showInfo = true }, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = "How this is calculated",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-        if (showInfo) {
-            AlertDialog(
-                onDismissRequest = { showInfo = false },
-                title = { Text("How tags score") },
-                text = {
-                    Text(
-                        "A tag's score is the average of every hour it was on in this period. (n) = hours counted — small n swings easily.",
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { showInfo = false }) { Text("Got it") }
-                }
-            )
-        }
-
-        // Switching granularity still crossfades; scrubbing through pageOffset
-        // (button or drag) is handled by the stack, which tracks the finger
-        // live instead of only animating after release.
-        Crossfade(targetState = period, animationSpec = tween(200), label = "insightsPeriodFade") { animPeriod ->
-            SwipeScrubStack(
-                controller = controller,
-                canEarlier = canGoEarlier,
-                canLater = pageOffset > 0,
-                current = { InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset, window = 1).first(), ratings, refreshKey) },
-                earlierPreview = {
-                    if (canGoEarlier) {
-                        InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset + 1, window = 1).first(), ratings, refreshKey)
-                    } else {
-                        Box(Modifier.fillMaxWidth())
-                    }
-                },
-                laterPreview = {
-                    if (pageOffset > 0) {
-                        InsightsWindow(buildPeriodBuckets(animPeriod, pageOffset - 1, window = 1).first(), ratings, refreshKey)
-                    } else {
-                        Box(Modifier.fillMaxWidth())
-                    }
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun InsightsWindow(bucket: PeriodBucket, ratings: List<RatingEntry>, refreshKey: Int) {
-    val windowEntries = remember(ratings, bucket, refreshKey) {
-        ratings.filter { it.timestamp in bucket.startMillis until bucket.endMillisExclusive }
-    }
-    if (windowEntries.isEmpty()) {
-        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text("No ratings in this period.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    } else {
-        Column {
-            Spacer(Modifier.height(8.dp))
-            TagCorrelationCard(windowEntries)
-        }
-    }
-}
-
 /**
  * Uniform, collapsible section wrapper used across the Past tab.
  * Pass a blank title to render a header bar with just the chevron.
@@ -333,6 +194,7 @@ fun CollapsibleSection(
     title: String,
     modifier: Modifier = Modifier,
     initiallyExpanded: Boolean = true,
+    headerActions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
@@ -344,23 +206,33 @@ fun CollapsibleSection(
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (title.isNotBlank()) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (title.isNotBlank()) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
+                headerActions()
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     if (expanded) "Collapse" else "Expand",
-                    modifier = Modifier.rotate(rotation)
+                    modifier = Modifier
+                        .rotate(rotation)
+                        .clickable { expanded = !expanded }
                 )
             }
             AnimatedVisibility(
@@ -380,10 +252,10 @@ fun CollapsibleSection(
 }
 
 // --- Feature 2: tag-score correlation ---
-// The "How tags score" title + ⓘ live in InsightsContent, pinned outside the
-// swipeable window — this composable is only the sliding rows.
+// The "How tags score" title + ⓘ, and the range this reflects, live in
+// ProfessionalChart (UIComponents.kt) — this composable is only the rows.
 @Composable
-private fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
+fun TagCorrelationCard(windowEntries: List<RatingEntry>) {
     val tagStats = remember(windowEntries) {
         windowEntries.flatMap { e -> e.tags.map { it to e.score } }
             .groupBy({ it.first }, { it.second })

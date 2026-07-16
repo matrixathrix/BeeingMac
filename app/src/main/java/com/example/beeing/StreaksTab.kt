@@ -705,7 +705,7 @@ private fun DayStatsDialog(
                             .heightIn(max = 300.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        val ordered = entries.sortedBy { it.timestamp }
+                        val ordered = entries.sortedByDescending { it.timestamp }
                         ordered.forEachIndexed { i, entry ->
                             RatedHourRow(entry, showDate = false)
                             if (i < ordered.lastIndex) {

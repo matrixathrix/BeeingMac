@@ -12,6 +12,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
@@ -307,15 +308,27 @@ fun TapTip(
     }
 }
 
+/**
+ * The Past tab's top card: a 7-bar chart plus the tag insights it drives.
+ * Since the chart always shows exactly 7 bars for whatever period/window is
+ * selected, both live off ONE shared scrubber/period instead of each owning
+ * a separate one. Swiping/paging the chart re-scopes the tags below to the
+ * average across all 7 visible bars; tapping a single bar narrows the tags
+ * to just that bar's range instead (the bar gets a soft glow to show it's
+ * the active scope), until deselected by tapping it again or the window
+ * changes underneath it.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfessionalChart(ratings: List<RatingEntry>) {
+fun ProfessionalChart(ratings: List<RatingEntry>, refreshKey: Int = 0) {
     val isDark = isSystemInDarkTheme()
     val axisTextColor = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
 
     var period by remember { mutableStateOf(StatPeriod.DAY) }
     var pageOffset by remember { mutableIntStateOf(0) }
-    LaunchedEffect(period) { pageOffset = 0 }
+    // Which bar (0..6) the tags below are scoped to — null means "all 7".
+    var selectedBar by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(period) { pageOffset = 0; selectedBar = null }
 
     val buckets = remember(period, pageOffset) { buildPeriodBuckets(period, pageOffset, 7) }
     // Nothing before the earliest rating — don't let "Earlier" scroll into empty history
@@ -338,8 +351,8 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
     }
 
     val controller = rememberSwipeScrubController(
-        onEarlier = { if (canGoEarlier) pageOffset++ },
-        onLater = { if (pageOffset > 0) pageOffset-- }
+        onEarlier = { if (canGoEarlier) { pageOffset++; selectedBar = null } },
+        onLater = { if (pageOffset > 0) { pageOffset--; selectedBar = null } }
     )
 
     Column(Modifier.fillMaxWidth()) {
@@ -378,7 +391,12 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
                     canEarlier = canGoEarlier,
                     canLater = pageOffset > 0,
                     current = {
-                        ChartCanvas(buildPeriodBuckets(animPeriod, pageOffset, 7), ratings, textPaint, goalTextPaint, labelPaint)
+                        ChartCanvas(
+                            buildPeriodBuckets(animPeriod, pageOffset, 7), ratings,
+                            textPaint, goalTextPaint, labelPaint,
+                            selectedIndex = selectedBar,
+                            onBarTap = { idx -> selectedBar = if (selectedBar == idx) null else idx }
+                        )
                     },
                     earlierPreview = {
                         if (canGoEarlier) {
@@ -396,6 +414,80 @@ fun ProfessionalChart(ratings: List<RatingEntry>) {
                     }
                 )
             }
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+            Spacer(Modifier.height(16.dp))
+
+            // Tag insights — always scoped to whatever the chart above is
+            // currently showing: the full 7-bar window, or a single tapped bar.
+            // The range in scope is the headline here (it's the thing that
+            // actually changes as you swipe/tap); "How tags score" + the info
+            // button are the smaller, secondary line underneath.
+            var showInfo by remember { mutableStateOf(false) }
+            val scopeLabel = selectedBar?.let { buckets.getOrNull(it)?.label }
+                ?: "${buckets.first().label} – ${buckets.last().label}"
+            Text(
+                scopeLabel,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "How tags score",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { showInfo = true }, modifier = Modifier.size(20.dp)) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "How this is calculated",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+            if (showInfo) {
+                AlertDialog(
+                    onDismissRequest = { showInfo = false },
+                    title = { Text("How tags score") },
+                    text = {
+                        Text(
+                            "A tag's score is the average of every hour it was tagged, in the range shown above. " +
+                                    "(n) = hours counted.",
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showInfo = false }) { Text("Got it") }
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            val insightsKey = Triple(buckets.first().startMillis, buckets.last().startMillis, selectedBar)
+            Crossfade(targetState = insightsKey, animationSpec = tween(200), label = "insightsScopeFade") {
+                val scoped = remember(ratings, buckets, selectedBar, refreshKey) {
+                    val range = selectedBar?.let { buckets.getOrNull(it) }
+                    val start = range?.startMillis ?: buckets.first().startMillis
+                    val endExclusive = range?.endMillisExclusive ?: buckets.last().endMillisExclusive
+                    ratings.filter { it.timestamp in start until endExclusive }
+                }
+                // Crossfade's content scope is a Box, not a Column — TagCorrelationCard
+                // emits several sibling rows assuming vertical layout, so without this
+                // wrapper every tag row rendered stacked on top of the others.
+                Column(Modifier.fillMaxWidth()) {
+                    if (scoped.isEmpty()) {
+                        Text("No ratings in this range.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    } else {
+                        TagCorrelationCard(scoped)
+                    }
+                }
+            }
         }
 }
 
@@ -405,7 +497,9 @@ private fun ChartCanvas(
     ratings: List<RatingEntry>,
     textPaint: android.graphics.Paint,
     goalTextPaint: android.graphics.Paint,
-    labelPaint: android.graphics.Paint
+    labelPaint: android.graphics.Paint,
+    selectedIndex: Int? = null,
+    onBarTap: ((Int) -> Unit)? = null
 ) {
     val data = remember(ratings, buckets) {
         buckets.map { b ->
@@ -416,7 +510,18 @@ private fun ChartCanvas(
     }
     Box(Modifier.fillMaxWidth().height(230.dp)) {
         Canvas(
-            Modifier.fillMaxSize().padding(top = 18.dp, bottom = 34.dp, start = 26.dp, end = 8.dp)
+            Modifier
+                .fillMaxSize()
+                .padding(top = 18.dp, bottom = 34.dp, start = 26.dp, end = 8.dp)
+                .then(
+                    if (onBarTap != null) Modifier.pointerInput(data.size) {
+                        detectTapGestures { tapOffset ->
+                            val barSpacing = size.width / data.size.toFloat()
+                            val idx = (tapOffset.x / barSpacing).toInt().coerceIn(0, data.size - 1)
+                            onBarTap(idx)
+                        }
+                    } else Modifier
+                )
         ) {
             val canvasH = size.height
             val canvasW = size.width
@@ -446,6 +551,24 @@ private fun ChartCanvas(
                 val score = pair.second
                 val center = i * barSpacing + barSpacing / 2
                 val left = center - barWidth / 2
+
+                if (selectedIndex == i) {
+                    // Soft glow halo behind the selected bar, tinted from the
+                    // bar's own score color (or neutral gray if empty) so it
+                    // reads correctly against both light and dark cards.
+                    val glowColor = if (score > 0f) getScoreColor(score.toDouble()) else Color(0xFF9E9E9E)
+                    val haloTop = if (score > 0f) canvasH - (score / 10f) * canvasH else canvasH - 8f
+                    for (ring in 3 downTo 1) {
+                        val pad = ring * 6f
+                        drawRoundRect(
+                            color = glowColor.copy(alpha = 0.10f * ring),
+                            topLeft = Offset(left - pad, haloTop - pad),
+                            size = Size(barWidth + pad * 2, (canvasH - haloTop) + pad),
+                            cornerRadius = CornerRadius(12f + pad, 12f + pad)
+                        )
+                    }
+                }
+
                 if (score > 0f) {
                     val barHeight = (score / 10f) * canvasH
                     drawRoundRect(
@@ -665,12 +788,41 @@ fun RatedHourRow(
 
 @Composable
 fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // One toast at a time: a second tap on a locked entry while it's still
+    // showing is a no-op rather than queuing another Toast behind it.
+    var toastShowing by remember { mutableStateOf(false) }
+    val editCutoff = remember(ratings) { System.currentTimeMillis() - 10L * 3600_000L }
+
     Column(Modifier.fillMaxWidth()) {
         val recentRatings = ratings.toList().take(10)
 
         recentRatings.forEachIndexed { index, item ->
             key(item.id) {
-                RatedHourRow(item, showDate = true, onClick = { onEdit(item) })
+                val editable = item.timestamp >= editCutoff
+                Box(Modifier.alpha(if (editable) 1f else 0.55f)) {
+                    RatedHourRow(
+                        item,
+                        showDate = true,
+                        onClick = {
+                            if (editable) {
+                                onEdit(item)
+                            } else if (!toastShowing) {
+                                toastShowing = true
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Entries older than last 10 hours cannot be edited",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                                scope.launch {
+                                    delay(2000)
+                                    toastShowing = false
+                                }
+                            }
+                        }
+                    )
+                }
                 if (index < recentRatings.lastIndex) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
                 }
@@ -722,6 +874,7 @@ fun EditEntrySheet(
     onDelete: (Long) -> Unit
 ) {
     var editedEntry by remember { mutableStateOf(entry) }
+    var noteText by remember { mutableStateOf(entry.note) }
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
 
@@ -729,20 +882,45 @@ fun EditEntrySheet(
     val selectedTags = remember { mutableStateListOf<String>().apply { addAll(entry.tags) } }
     var showTagDialog by remember { mutableStateOf(false) }
 
+    val cal = remember(entry) { Calendar.getInstance().apply { timeInMillis = entry.timestamp } }
+    val startH = cal.get(Calendar.HOUR_OF_DAY)
+    val endH = if (startH == 23) 0 else startH + 1
+    val dateFmt = remember { SimpleDateFormat("EEE, d MMM", Locale.getDefault()) }
+    val sectionLabelStyle = MaterialTheme.typography.labelMedium.copy(
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = 0.6.sp
+    )
+
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 20.dp)
     ) {
-        Text(
-            text = "Edit Entry",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+        // The hour + date this entry is for is the headline; delete rides
+        // alongside it instead of splitting the footer row with Save, which
+        // used to leave the icon button surrounded by dead horizontal space.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${formatHour(startH)} – ${formatHour(endH)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    dateFmt.format(cal.time),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { onDelete(entry.id) }) {
+                Icon(Icons.Default.Delete, "Delete entry", tint = MaterialTheme.colorScheme.error)
+            }
+        }
 
-        Spacer(Modifier.height(10.dp))
-        Text("Select new score:", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("SCORE", style = sectionLabelStyle)
+        Spacer(Modifier.height(8.dp))
 
         // Auto-centers the selected score in the viewport, clamped so "1"
         // and "10" never overshoot past their natural start/end edges — each
@@ -806,15 +984,18 @@ fun EditEntrySheet(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
-        Text("Tags:", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("TAGS", style = sectionLabelStyle)
+        Spacer(Modifier.height(8.dp))
 
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            // Negative: InputChip's own line height already has generous
+            // built-in padding, so positive spacing doubled up into a big
+            // gap between wrapped lines — same fix SoulFuelTagsSection uses.
+            verticalArrangement = Arrangement.spacedBy((-8).dp, Alignment.CenterVertically)
         ) {
             availableTags.forEach { tag ->
                 InputChip(
@@ -842,28 +1023,22 @@ fun EditEntrySheet(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("NOTE", style = sectionLabelStyle)
+        Spacer(Modifier.height(8.dp))
+        NotesSection(noteText = noteText, onNoteChange = { noteText = it })
 
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Spacer(Modifier.height(24.dp))
+
+        Button(
+            onClick = {
+                onUpdate(editedEntry.copy(tags = selectedTags.toList(), note = noteText))
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp)
         ) {
-            IconButton(
-                onClick = { onDelete(entry.id) },
-                modifier = Modifier.weight(0.2f)
-            ) {
-                Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
-            }
-            Button(
-                onClick = {
-                    onUpdate(editedEntry.copy(tags = selectedTags.toList()))
-                },
-                modifier = Modifier.weight(0.8f)
-            ) {
-                Text("Save Changes")
-            }
+            Text("Save Changes", fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.height(16.dp))
     }
 
     if (showTagDialog) {

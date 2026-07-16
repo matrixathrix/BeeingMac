@@ -83,6 +83,10 @@ fun NowTab(
     var isTagDeleteMode by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
     var showWindowInfo by remember { mutableStateOf(false) }
+    // The "all caught up" card is tucked away behind a tap on the big meter
+    // card instead of always showing — collapses shut again the moment
+    // there's a new pending hour to rate.
+    var showCaughtUpInfo by remember { mutableStateOf(false) }
     // Sticky once the user taps Save while incomplete; cleared on a
     // successful save or when the targeted hour changes, so it never
     // bleeds into a fresh hour.
@@ -171,6 +175,8 @@ fun NowTab(
         if (bothHoursRated) {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(1) // Cancel the hourly notification (ID = 1)
+        } else {
+            showCaughtUpInfo = false
         }
     }
 
@@ -214,7 +220,9 @@ fun NowTab(
                 state = streakState,
                 expanded = bothHoursRated,
                 modifier = Modifier.padding(bottom = 16.dp),
-                onClick = onOpenStreaks
+                onClick = if (bothHoursRated) {
+                    { showCaughtUpInfo = !showCaughtUpInfo }
+                } else onOpenStreaks
             )
 
             // When both hours are rated, the whole rating flow (chips, dial,
@@ -234,23 +242,36 @@ fun NowTab(
                 modifier = Modifier.fillMaxWidth()
             ) { allRated ->
             if (allRated) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = appCardColor()),
-                    border = BorderStroke(1.5.dp, Color(0xFF66BB6A).copy(alpha = 0.5f))
+                // Only reveals once the big meter card above is tapped, with
+                // the same slide+fade used for the rating warning below.
+                AnimatedVisibility(
+                    visible = showCaughtUpInfo,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(220)) +
+                            slideInVertically(tween(220)) { -it / 2 },
+                    exit = fadeOut(tween(220)) + shrinkVertically(tween(220)) +
+                            slideOutVertically(tween(220)) { -it / 2 }
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        contentAlignment = Alignment.Center
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = appCardColor()),
+                        border = BorderStroke(1.5.dp, Color(0xFF66BB6A).copy(alpha = 0.5f))
                     ) {
-                        Text(
-                            "All caught up! Now go make this hour count 🐝",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF66BB6A),
-                            textAlign = TextAlign.Center
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (streakState.todayQualified)
+                                    "Streak extended for today! Come back with a good rating for this hour too 🐝"
+                                else
+                                    "All caught up! Make the best use of this hour too 🐝",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF66BB6A),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             } else {

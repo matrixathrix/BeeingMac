@@ -59,7 +59,7 @@ fun HourlyPulseApp(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    // 0 = Streaks, 1 = Now (default), 2 = Past
+    // 0 = Streak, 1 = Now (default), 2 = Past
     var selectedTab by remember { mutableIntStateOf(1) }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
@@ -578,7 +578,7 @@ private fun DataActionCard(
 private data class NavItem(val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(
-    NavItem("Streaks", Icons.Default.Star),
+    NavItem("Streak", Icons.Default.Star),
     NavItem("Now", Icons.Default.Home),
     NavItem("Past", Icons.Default.DateRange)
 )

@@ -406,17 +406,29 @@ fun StreakMeter(
                             strokeWidth = 18.dp,
                             scale = ringScale.value
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                modifier = Modifier.padding(top = 10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
                                     "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                    fontSize = 36.sp,
+                                    fontSize = 42.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    "hours",
+                                    "hours rated",
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    lineHeight = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    "today",
+                                    fontSize = 12.sp,
+                                    lineHeight = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
@@ -434,21 +446,6 @@ fun StreakMeter(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    if (state.todayQualified) {
-                        Text(
-                            "Streak extended today! 🎉",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = ringColor
-                        )
-                    } else {
-                        Text(
-                            hoursTip,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -479,23 +476,36 @@ fun StreakMeter(
                             animatedExtra = animatedExtra,
                             ringColor = ringColor,
                             trackColor = track,
-                            ringSize = 96.dp,
-                            strokeWidth = 12.dp,
+                            ringSize = 116.dp,
+                            strokeWidth = 14.dp,
                             scale = ringScale.value
                         ) {
-                            Text(
-                                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            Column(
+                                modifier = Modifier.padding(top = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                                    fontSize = 30.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "hours rated",
+                                    fontSize = 9.sp,
+                                    lineHeight = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    "today",
+                                    fontSize = 9.sp,
+                                    lineHeight = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "hours today",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         TapTip(
                             text = hoursTip,
                             visible = activeTip == 1,
@@ -531,7 +541,7 @@ fun StreakMeter(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         TapTip(
-                            text = "You can check Streak logs in the Streaks tab",
+                            text = "You can check Streak logs in the Streak tab",
                             visible = activeTip == 2,
                             onDismiss = { activeTip = 0 }
                         )

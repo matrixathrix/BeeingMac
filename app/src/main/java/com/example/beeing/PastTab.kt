@@ -3,6 +3,8 @@ package com.example.beeing
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,7 +69,8 @@ fun PastTab(
                     .padding(horizontal = 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Rhythm chart (untitled, always visible; self-managed Day/Week/Month/Year)
+                // Rhythm chart + the tag insights it drives, combined into one
+                // card (always visible; self-managed Day/Week/Month/Year)
                 if (allRatings.isNotEmpty()) {
                     Column(
                         Modifier
@@ -77,23 +80,43 @@ fun PastTab(
                             }
                     ) {
                         PlainSectionCard {
-                            ProfessionalChart(ratings = allRatings)
+                            ProfessionalChart(ratings = allRatings, refreshKey = viewModel.refreshTrigger)
                         }
                     }
                 }
 
-                // Insights: single-period tag correlation (feature 2)
-                if (allRatings.isNotEmpty()) {
-                    CollapsibleSection(title = "Insights", initiallyExpanded = false) {
-                        InsightsContent(
-                            ratings = allRatings,
-                            refreshKey = viewModel.refreshTrigger
-                        )
-                    }
-                }
-
                 // Recent history
-                CollapsibleSection(title = "Recent History", initiallyExpanded = false) {
+                CollapsibleSection(
+                    title = "Recent History",
+                    initiallyExpanded = false,
+                    headerActions = {
+                        var showEditInfo by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showEditInfo = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "Which entries can be edited",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        if (showEditInfo) {
+                            AlertDialog(
+                                onDismissRequest = { showEditInfo = false },
+                                title = { Text("Editing entries") },
+                                text = {
+                                    Text(
+                                        "You can edit the score, tags, or note on any of the last 10 hours. Older entries are locked in place.",
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showEditInfo = false }) { Text("Got it") }
+                                }
+                            )
+                        }
+                    }
+                ) {
                     HistoryPanel(
                         ratings = allRatings,
                         onEdit = { editingEntry = it }
