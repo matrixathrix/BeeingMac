@@ -192,7 +192,12 @@ data class DayDetail(
     val streakDay: Int = 0,     // this day's position in the current streak (QUALIFIED only)
     val flowersEarned: Int = 0, // flowers actually banked this day, after the cap
     val saversEarned: Int = 0,  // savers forged this day when the bank crossed a threshold
-    val saverUsed: Boolean = false // a saver was spent to cover this missed day
+    val saverUsed: Boolean = false, // a saver was spent to cover this missed day
+    val dayMillis: Long = 0L,
+    val hoursRated: Int = 0,
+    val flowersSpent: Int = 0,  // flowers spent reclaiming a missed hour this day
+    val saversAfter: Int = 0,   // running saver count once this day is accounted for
+    val wasReset: Boolean = false // a MISSED day that actually broke an active streak
 )
 
 /**
@@ -241,6 +246,7 @@ fun computeDayDetails(
     while (true) {
         val key = cursor.dayKey()
         val hours = hoursByDay[key]?.size ?: 0
+        val spentFlowers = RECLAIM_COST * (spendsByDay[key] ?: 0)
 
         if (hours >= STREAK_HOURS_REQUIRED) {
             streak += 1
@@ -254,18 +260,35 @@ fun computeDayDetails(
                 savers += 1
                 saversEarned += 1
             }
-            details[key] = DayDetail(DayOutcome.QUALIFIED, streak, flowersEarned, saversEarned)
+            details[key] = DayDetail(
+                DayOutcome.QUALIFIED, streak, flowersEarned, saversEarned,
+                dayMillis = cursor.timeInMillis, hoursRated = hours,
+                flowersSpent = spentFlowers, saversAfter = savers
+            )
         } else if (key != todayKey) {
+            // Only running out of savers actually breaks the streak — a saved
+            // day survives it, so `streak` must keep counting through those.
+            val hadActiveStreak = streak > 0
             if (savers > 0) {
                 savers -= 1
-                details[key] = DayDetail(DayOutcome.SAVED, saverUsed = true)
+                details[key] = DayDetail(
+                    DayOutcome.SAVED, saverUsed = true,
+                    dayMillis = cursor.timeInMillis, hoursRated = hours,
+                    flowersSpent = spentFlowers, saversAfter = savers
+                )
             } else {
                 bank = 0
-                details[key] = DayDetail(DayOutcome.MISSED)
+                details[key] = DayDetail(
+                    DayOutcome.MISSED,
+                    dayMillis = cursor.timeInMillis, hoursRated = hours,
+                    flowersSpent = spentFlowers, saversAfter = savers,
+                    wasReset = hadActiveStreak
+                )
+                streak = 0
             }
         }
 
-        bank -= RECLAIM_COST * (spendsByDay[key] ?: 0)
+        bank -= spentFlowers
         if (bank < 0) bank = 0
 
         if (key == todayKey) break
@@ -673,176 +696,43 @@ private fun StreakRing(
 }
 
 // ============================================================
-// STREAK LOG  (exhaustive, timestamped event history)
+// STREAK LOG  (one row per day — outcome callout + at-a-glance stats,
+// reusing computeDayDetails so it can never disagree with the calendar)
 // ============================================================
-
-enum class StreakEventType { STARTED, EXTENDED, SAVER_EARNED, SAVER_USED, RESET, BANKED, RECLAIMED }
-
-data class StreakEvent(
-    val timestamp: Long,
-    val type: StreakEventType,
-    val title: String,
-    val detail: String,
-    // True for day-outcome events stamped at 23:59 — the log shows these as
-    // "End of day" rather than a misleading clock time.
-    val endOfDay: Boolean = false
-)
-
-private fun StreakEventType.emoji(): String = when (this) {
-    StreakEventType.STARTED -> "🌱"
-    StreakEventType.EXTENDED -> "🔥"
-    StreakEventType.SAVER_EARNED -> "🛡️"
-    StreakEventType.SAVER_USED -> "🛟"
-    StreakEventType.RESET -> "💔"
-    StreakEventType.BANKED -> "🌸"
-    StreakEventType.RECLAIMED -> "💧"
-}
-
-/**
- * Replays history at hour granularity to emit an exhaustive, timestamped log of
- * streak milestones. Returned newest-first.
- */
-fun computeStreakLog(
-    ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
-): List<StreakEvent> {
-    if (ratings.isEmpty()) return emptyList()
-
-    // For each day: distinct hours mapped to the earliest timestamp they were rated.
-    val byDay = HashMap<Long, HashMap<Int, Long>>()
-    val reclaimedByDay = HashMap<Long, MutableSet<Int>>()
-    var earliest = Long.MAX_VALUE
-    val tmp = Calendar.getInstance()
-    for (e in ratings) {
-        tmp.timeInMillis = e.timestamp
-        val key = tmp.get(Calendar.YEAR) * 1000L + tmp.get(Calendar.DAY_OF_YEAR)
-        val hour = tmp.get(Calendar.HOUR_OF_DAY)
-        val map = byDay.getOrPut(key) { HashMap() }
-        val existing = map[hour]
-        if (existing == null || e.timestamp < existing) map[hour] = e.timestamp
-        if (RECLAIM_TAG in e.tags) reclaimedByDay.getOrPut(key) { mutableSetOf() }.add(hour)
-        if (e.timestamp < earliest) earliest = e.timestamp
-    }
-    val spendsByDay = HashMap<Long, MutableList<Long>>()
-    for (p in reclaimSpends) {
-        tmp.timeInMillis = p
-        val key = tmp.get(Calendar.YEAR) * 1000L + tmp.get(Calendar.DAY_OF_YEAR)
-        spendsByDay.getOrPut(key) { mutableListOf() }.add(p)
-    }
-
-    val today = Calendar.getInstance()
-    val todayKey = today.get(Calendar.YEAR) * 1000L + today.get(Calendar.DAY_OF_YEAR)
-
-    val cursor = Calendar.getInstance().apply {
-        timeInMillis = earliest
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
-    val dateFmt = SimpleDateFormat("d MMM", Locale.getDefault())
-
-    val events = ArrayList<StreakEvent>()
-    var streak = 0
-    var savers = GIFTED_SAVERS
-    var bank = 0
-
-    while (true) {
-        val key = cursor.get(Calendar.YEAR) * 1000L + cursor.get(Calendar.DAY_OF_YEAR)
-        val dayStart = cursor.timeInMillis
-        val endOfDay = dayStart + 23L * 3600000L + 59L * 60000L
-        val dayLabel = dateFmt.format(cursor.time)
-
-        val orderedTs = byDay[key]?.values?.sorted() ?: emptyList()
-        val n = orderedTs.size
-
-        if (n >= STREAK_HOURS_REQUIRED) {
-            // 8th distinct hour -> start/extend. The log is grouped by day in
-            // the UI, so details never need to repeat the date.
-            val qualifyTs = orderedTs[STREAK_HOURS_REQUIRED - 1]
-            if (streak == 0) {
-                streak = 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Streak started", "Rated 8 hours — day 1 of your streak"))
-            } else {
-                streak += 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Streak extended to day $streak", "Rated 8 hours this day"))
-            }
-            // extra hours -> bank flowers one by one (reclaimed hours never earn)
-            val reclaimed = reclaimedByDay[key]?.size ?: 0
-            val eligible = (n - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            for (i in (n - eligible) until n) {
-                if (bank < FLOWER_CAP) bank += 1
-                if (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
-                    bank -= HOURS_PER_SAVER; savers += 1
-                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "New saver forged", "10 🌸 became a 🛡️ — you now have $savers"))
-                }
-            }
-            // end-of-day balance — only when extra hours were actually banked
-            if (eligible > 0) {
-                events.add(
-                    StreakEvent(
-                        endOfDay, StreakEventType.BANKED,
-                        "+$eligible 🌸 earned",
-                        "Extra hours beyond 8 · now ${bank} 🌸 and $savers 🛡️",
-                        endOfDay = true
-                    )
-                )
-            }
-        } else if (key != todayKey) {
-            // missed past day
-            if (savers > 0) {
-                savers -= 1
-                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Saver spent — streak protected", "Under 8 hours this day · $savers 🛡️ left", endOfDay = true))
-            } else if (streak > 0) {
-                streak = 0; bank = 0
-                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Streak ended", "Under 8 hours with no savers left", endOfDay = true))
-            }
-        }
-        // today with <8 hours: in progress, no event
-
-        // reclaims spend from the bank on the day they happen
-        spendsByDay[key]?.forEach { ts ->
-            bank = (bank - RECLAIM_COST).coerceAtLeast(0)
-            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Missed hour reclaimed", "Spent $RECLAIM_COST 🌸 · $bank 🌸 left"))
-        }
-
-        if (key == todayKey) break
-        cursor.add(Calendar.DAY_OF_YEAR, 1)
-    }
-
-    return events.sortedByDescending { it.timestamp }
-}
 
 @Composable
 fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val events = remember(ratings, refreshKey) {
+    val days = remember(ratings, refreshKey) {
         // Only the last 3 months of history
         val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
-        computeStreakLog(ratings, loadReclaimSpends(context)).filter { it.timestamp >= cutoff }
+        computeDayDetails(ratings, loadReclaimSpends(context)).values
+            .filter { it.dayMillis >= cutoff }
+            .sortedByDescending { it.dayMillis }
     }
-    // Two-level grouping: collapsible month sections (only the newest starts
-    // open, so the log never dumps everything at once), and inside each month
-    // the events read as a day-by-day diary.
-    val byMonth = remember(events) {
+    // Collapsible month sections (only the newest starts open, so the log
+    // never dumps everything at once); each day inside reads as a compact
+    // handful of at-a-glance stat lines instead of a full event diary.
+    val byMonth = remember(days) {
         val cal = Calendar.getInstance()
-        events.groupBy {
-            cal.timeInMillis = it.timestamp
+        days.groupBy {
+            cal.timeInMillis = it.dayMillis
             cal.get(Calendar.YEAR) * 100 + cal.get(Calendar.MONTH)
         }
     }
-    val expandedMonths = remember(events) {
+    val expandedMonths = remember(days) {
         mutableStateMapOf<Int, Boolean>().apply {
             byMonth.keys.firstOrNull()?.let { put(it, true) }
         }
     }
     val monthFmt = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
     val dayFmt = remember { SimpleDateFormat("EEEE, d MMM", Locale.getDefault()) }
-    val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
-    if (events.isEmpty()) {
+    if (days.isEmpty()) {
         Text("Nothing in the last 3 months — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
-            byMonth.entries.forEach { (monthKey, monthEvents) ->
+            byMonth.entries.forEach { (monthKey, monthDays) ->
                 val monthOpen = expandedMonths[monthKey] == true
                 val chevron by animateFloatAsState(if (monthOpen) 180f else 0f, label = "logMonthChevron")
                 Row(
@@ -854,13 +744,13 @@ fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        monthFmt.format(Date(monthEvents.first().timestamp)),
+                        monthFmt.format(Date(monthDays.first().dayMillis)),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        "${monthEvents.size} event${if (monthEvents.size == 1) "" else "s"}",
+                        "${monthDays.size} day${if (monthDays.size == 1) "" else "s"}",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -878,47 +768,75 @@ fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
                             fadeOut(tween(120))
                 ) {
                     Column {
-                        val byDay = remember(monthEvents) {
-                            val cal = Calendar.getInstance()
-                            monthEvents.groupBy {
-                                cal.timeInMillis = it.timestamp
-                                cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
-                            }
-                        }
-                        byDay.entries.forEach { (_, dayEvents) ->
-                            Text(
-                                dayFmt.format(Date(dayEvents.first().timestamp)),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                            )
-                            dayEvents.sortedBy { it.timestamp }.forEach { ev ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                                    Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                ev.title,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 14.sp,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                if (ev.endOfDay) "End of day" else timeFmt.format(Date(ev.timestamp)),
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                            )
-                                        }
-                                        Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
+                        monthDays.forEach { detail ->
+                            StreakLogDayRow(detail, dayFmt)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
                         }
                         Spacer(Modifier.height(6.dp))
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StreakLogDayRow(detail: DayDetail, dayFmt: SimpleDateFormat) {
+    val (calloutEmoji, calloutText, calloutColor) = when {
+        detail.outcome == DayOutcome.QUALIFIED && detail.streakDay == 1 ->
+            Triple("🌱", "Streak started", MaterialTheme.colorScheme.primary)
+        detail.outcome == DayOutcome.QUALIFIED ->
+            Triple("🔥", "Streak day ${detail.streakDay}", MaterialTheme.colorScheme.primary)
+        detail.outcome == DayOutcome.SAVED ->
+            Triple("🛡️", "Saver used — streak protected", MaterialTheme.colorScheme.onSurfaceVariant)
+        detail.wasReset ->
+            Triple("💔", "Streak reset", Color(0xFFB71C1C))
+        else ->
+            Triple("🥀", "Missed", MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                dayFmt.format(Date(detail.dayMillis)),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Text("$calloutEmoji $calloutText", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = calloutColor)
+        if (detail.saversEarned > 0) {
+            Text(
+                "🛡️ New saver forged — now ${detail.saversAfter}/$MAX_SAVERS",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        LogStatLine("Hours rated", "${detail.hoursRated}")
+        if (detail.flowersEarned > 0 || detail.flowersSpent > 0) {
+            LogStatLine("Flowers earned", "+${detail.flowersEarned}", "Spent", "-${detail.flowersSpent}")
+        }
+        if (detail.saverUsed) {
+            LogStatLine("Savers used", "1", "Left", "${detail.saversAfter}/$MAX_SAVERS")
+        }
+    }
+}
+
+/** One or two label/value pairs on a single quiet stat line. */
+@Composable
+private fun LogStatLine(label1: String, value1: String, label2: String? = null, value2: String? = null) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row {
+            Text("$label1: ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value1, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (label2 != null && value2 != null) {
+            Row {
+                Text("$label2: ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

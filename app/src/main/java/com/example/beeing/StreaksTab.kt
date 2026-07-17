@@ -441,7 +441,7 @@ fun StreaksTab(
                 Column {
                     Text("• Rate at least 8 hours in a day to keep your streak.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Each extra hour beyond 8 gives you a 🌸 flower (max $FLOWER_CAP). $HOURS_PER_SAVER flowers become a 🛡️ saver (max $MAX_SAVERS).", fontSize = 14.sp)
+                    Text("• Each extra hour beyond 8 gives you a 🌸 flower. Every $HOURS_PER_SAVER flowers automatically forges a 🛡️ saver, up to $MAX_SAVERS held — flowers only start capping out at $FLOWER_CAP once all $MAX_SAVERS are already yours.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
                     Text("• Miss a day and one saver is used automatically. With no savers left, the streak resets.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
