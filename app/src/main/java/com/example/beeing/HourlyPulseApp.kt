@@ -199,9 +199,11 @@ fun HourlyPulseApp(
                         delay(100)
                         nowScrollState.animateScrollTo(ratingCardYPosition.toInt())
                     }
-                } else {
+                } else if (isPreviousHourLogged) {
                     targetedHourOffset = 0
                 }
+                // both pending: leave the target alone — NowTab defaults to
+                // the expiring hour unless a notification chose otherwise
             }
         }
 
@@ -542,7 +544,7 @@ fun HourlyPulseApp(
 private data class NavItem(val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(
-    NavItem("Streaks", Icons.Default.Star),
+    NavItem("Hive", Icons.Default.Star),
     NavItem("Now", Icons.Default.Home),
     NavItem("Past", Icons.Default.DateRange)
 )
