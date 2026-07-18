@@ -689,7 +689,7 @@ private fun TodayStripCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    formatHour(window.last + 1),
+                    formatHour((window.last + 1) % 24),
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
