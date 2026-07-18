@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -65,6 +66,14 @@ fun StreaksTab(
     val outcomes = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
         computeDayOutcomes(allRatings, reclaimSpends)
     }
+    // Per-day average score — tints the calendar dots
+    val dayAvgs = remember(allRatings, viewModel.refreshTrigger) {
+        val cal = Calendar.getInstance()
+        allRatings.groupBy { entry ->
+            cal.timeInMillis = entry.timestamp
+            cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
+        }.mapValues { (_, entries) -> entries.map { it.score }.average() }
+    }
 
     var monthOffset by remember { mutableIntStateOf(0) } // 0 = current month
     var showPickHour by remember { mutableStateOf(false) }
@@ -98,6 +107,87 @@ fun StreaksTab(
             .padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // ---- Hero: streak + today ring — the Now tab's status strip, expanded ----
+        StreakMeter(
+            state = streakState,
+            expanded = false
+        )
+
+        // ---- ACTION: reclaim a missed hour — the one action on this tab,
+        // right under the goal it protects; hidden when nothing to recover ----
+        if (missedHoursToday.isNotEmpty()) {
+            val reclaimEnabled = canAfford
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (reclaimEnabled)
+                        MaterialTheme.colorScheme.primaryContainer
+                    else Color.Transparent
+                ),
+                border = if (reclaimEnabled)
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                else BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)),
+                modifier = Modifier.clickable(enabled = reclaimEnabled) { showPickHour = true }
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .alpha(if (reclaimEnabled) 1f else 0.55f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("💧", fontSize = 26.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Rate an older hour from today",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            if (reclaimEnabled)
+                                "${missedHoursToday.size} missed hour${if (missedHoursToday.size == 1) "" else "s"} · $RECLAIM_COST 🌸 each"
+                            else "Needs $RECLAIM_COST 🌸 — you have ${streakState.bankProgress}",
+                            fontSize = 13.sp,
+                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (reclaimEnabled) {
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Pick an hour",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = "Unavailable",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ---- Garden: flowers and savers are ONE economy — ten slots fill
+        // left to right and crystallize into the next shield ----
+        GardenCard(
+            state = streakState,
+            onClick = {
+                infoDialog = "🌸 The Garden" to
+                        "Each hour you rate beyond 8 in a day grows a flower (bank holds $FLOWER_CAP).\n\n" +
+                        "$HOURS_PER_SAVER flowers automatically become a 🛡️ saver (max $MAX_SAVERS). " +
+                        "Miss a day and one saver is spent for you — your streak survives. " +
+                        "No savers left? The streak resets.\n\n" +
+                        "You can also spend $RECLAIM_COST 🌸 to rate an hour you missed today."
+            }
+        )
+
         // ---- Monthly calendar (info) ----
         Card(
             shape = RoundedCornerShape(20.dp),
@@ -130,6 +220,7 @@ fun StreaksTab(
                     MonthGrid(
                         monthOffset = offset,
                         outcomes = outcomes,
+                        dayAvgs = dayAvgs,
                         onDayClick = { statsDayMillis = it }
                     )
                 }
@@ -139,9 +230,9 @@ fun StreaksTab(
                     horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LegendItem("💐", "streak day")
+                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "streak day")
                     LegendItem("🛡️", "saved")
-                    LegendItem("🥀", "missed")
+                    LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
@@ -150,158 +241,6 @@ fun StreaksTab(
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                }
-            }
-        }
-
-        // ---- Savers & flowers at a glance — tap a card for a quick explainer ----
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            InfoMiniCard(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = {
-                    infoDialog = "🛡️ Savers" to
-                            "Miss a day and one saver is used automatically — your streak continues.\n\n" +
-                            "No savers left? The streak resets.\n\n" +
-                            "Every $HOURS_PER_SAVER 🌸 make a new saver."
-                }
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    for (i in 0 until MAX_SAVERS) {
-                        Text(
-                            "🛡️",
-                            fontSize = 20.sp,
-                            modifier = Modifier.alpha(if (i < streakState.savers) 1f else 0.22f)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${streakState.savers} / $MAX_SAVERS",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-                InfoMiniCaption("Savers")
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "used if you miss a day",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            InfoMiniCard(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = {
-                    infoDialog = "🌸 Flowers" to
-                            "Each hour you rate beyond 8 in a day gives you a flower (max $FLOWER_CAP).\n\n" +
-                            "$HOURS_PER_SAVER flowers automatically become a 🛡️ saver.\n\n" +
-                            "Spend $RECLAIM_COST to rate an hour you missed today."
-                }
-            ) {
-                Text("🌸", fontSize = 20.sp)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${streakState.bankProgress} / $FLOWER_CAP",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-                InfoMiniCaption("Flowers")
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.height(8.dp))
-                if (streakState.savers < MAX_SAVERS) {
-                    LinearProgressIndicator(
-                        progress = {
-                            (streakState.bankProgress / HOURS_PER_SAVER.toFloat()).coerceAtMost(1f)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "${(HOURS_PER_SAVER - streakState.bankProgress).coerceAtLeast(0)} more for a 🛡️",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    Text(
-                        "savers are full",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-
-        // ---- ACTION: reclaim a missed hour from today ----
-        // Reads as a button: bright + bordered + chevron when available,
-        // outlined + dimmed + lock when not.
-        val reclaimEnabled = canAfford && missedHoursToday.isNotEmpty()
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (reclaimEnabled)
-                    MaterialTheme.colorScheme.primaryContainer
-                else Color.Transparent
-            ),
-            border = if (reclaimEnabled)
-                BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-            else BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)),
-            modifier = Modifier.clickable(enabled = reclaimEnabled) { showPickHour = true }
-        ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .alpha(if (reclaimEnabled) 1f else 0.55f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("💧", fontSize = 26.sp)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "Rate an older hour from today",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    val subtitle = when {
-                        missedHoursToday.isEmpty() -> "No missed hours today 🎉"
-                        !canAfford -> "Needs $RECLAIM_COST 🌸 — you have ${streakState.bankProgress}"
-                        else -> "${missedHoursToday.size} missed hour${if (missedHoursToday.size == 1) "" else "s"} · $RECLAIM_COST 🌸 each"
-                    }
-                    Text(
-                        subtitle,
-                        fontSize = 13.sp,
-                        color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (reclaimEnabled) {
-                    Icon(
-                        Icons.Default.KeyboardArrowRight,
-                        contentDescription = "Pick an hour",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                } else {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = "Unavailable",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
                 }
             }
         }
@@ -344,7 +283,7 @@ fun StreaksTab(
             }
         }
 
-        Spacer(Modifier.height(80.dp)) // clearance for the floating nav pill
+        Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
     }
 
     // ---- Pick which missed hour to reclaim ----
@@ -491,6 +430,7 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
 private fun MonthGrid(
     monthOffset: Int,
     outcomes: Map<Long, DayOutcome>,
+    dayAvgs: Map<Long, Double>,
     onDayClick: (Long) -> Unit
 ) {
     val monthStart = Calendar.getInstance().apply {
@@ -532,6 +472,7 @@ private fun MonthGrid(
                         DayCell(
                             dayNumber = day,
                             outcome = outcomes[key],
+                            avgScore = dayAvgs[key],
                             isToday = key == todayKey,
                             enabled = key <= todayKey,
                             onClick = { onDayClick(dayMillis) },
@@ -545,10 +486,18 @@ private fun MonthGrid(
     }
 }
 
+/**
+ * A calendar day. Repeated identical emoji carry no information, so a streak
+ * day shows a dot tinted by that day's average score, a saved day keeps the
+ * small shield, and a missed day is a hollow red ring. Today gets the
+ * primary-color outline. Color never travels alone here — tapping any day
+ * opens the stats dialog with the digits.
+ */
 @Composable
 private fun DayCell(
     dayNumber: Int,
     outcome: DayOutcome?,
+    avgScore: Double?,
     isToday: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -556,11 +505,13 @@ private fun DayCell(
 ) {
     Column(
         modifier = modifier
-            .height(58.dp)
+            .height(48.dp)
             .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .then(
-                if (isToday) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+                if (isToday) Modifier
+                    .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
                 else Modifier
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -569,61 +520,112 @@ private fun DayCell(
         Text(
             "$dayNumber",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
         )
-        Text(
-            when (outcome) {
-                DayOutcome.QUALIFIED -> "💐"
-                DayOutcome.SAVED -> "🛡️"
-                DayOutcome.MISSED -> "🥀"
-                null -> " "
-            },
-            fontSize = 24.sp
-        )
+        Spacer(Modifier.height(4.dp))
+        when (outcome) {
+            DayOutcome.QUALIFIED -> Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(getScoreColor(avgScore ?: 0.0))
+            )
+            DayOutcome.SAVED -> Text("🛡️", fontSize = 11.sp)
+            DayOutcome.MISSED -> Box(
+                Modifier
+                    .size(9.dp)
+                    .border(1.5.dp, Color(0xFFC62828), CircleShape)
+            )
+            null -> Spacer(Modifier.size(9.dp))
+        }
     }
 }
 
 /**
- * Small untitled info card: centered content, whole card tappable to open a
- * quick explainer. Flat surfaceVariant fill = "info", vs the bordered/bright
- * action card.
+ * The Garden: flowers and savers rendered as one economy. Ten slots fill
+ * left to right; every full row of ten crystallizes into the next shield.
+ * The whole card is tappable for the explainer.
  */
 @Composable
-private fun InfoMiniCard(
-    modifier: Modifier = Modifier,
+private fun GardenCard(
+    state: StreakState,
     onClick: () -> Unit,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         )
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(vertical = 14.dp, horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            content = content
-        )
-    }
-}
-
-/** Caption under a mini card's number, with a subtle ⓘ hinting it's tappable. */
-@Composable
-private fun InfoMiniCaption(label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(3.dp))
-        Icon(
-            Icons.Default.Info,
-            contentDescription = "About $label",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.size(12.dp)
-        )
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "GARDEN",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "About the garden",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Flower slots toward the next saver
+                Row(
+                    Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    val filled = state.bankProgress.coerceAtMost(HOURS_PER_SAVER)
+                    for (i in 0 until HOURS_PER_SAVER) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (i < filled) Text("🌸", fontSize = 11.sp)
+                        }
+                    }
+                }
+                Text(
+                    "  →  ",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    for (i in 0 until MAX_SAVERS) {
+                        Text(
+                            "🛡️",
+                            fontSize = 17.sp,
+                            modifier = Modifier.alpha(if (i < state.savers) 1f else 0.22f)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                if (state.savers >= MAX_SAVERS)
+                    "Savers full · ${state.bankProgress}/$FLOWER_CAP 🌸 banked"
+                else
+                    "${(HOURS_PER_SAVER - state.bankProgress).coerceAtLeast(0)} more 🌸 grow your next saver · " +
+                            "$RECLAIM_COST 🌸 reclaims a missed hour",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -720,6 +722,22 @@ private fun StatRow(label: String, value: String, valueColor: Color = Color.Unsp
 private fun LegendItem(emoji: String, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(emoji, fontSize = 13.sp)
+        Spacer(Modifier.width(4.dp))
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color, hollow: Boolean, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(9.dp)
+                .then(
+                    if (hollow) Modifier.border(1.5.dp, color, CircleShape)
+                    else Modifier.clip(CircleShape).background(color)
+                )
+        )
         Spacer(Modifier.width(4.dp))
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
