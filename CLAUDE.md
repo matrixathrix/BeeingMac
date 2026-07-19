@@ -38,10 +38,19 @@ Always verify by running:
 ./gradlew installDebug
 ```
 
-If `./gradlew` fails with "Unable to locate a Java Runtime" on this Mac:
+If `./gradlew` fails because Java can't be found, point `JAVA_HOME` at
+Android Studio's bundled JDK:
+
+Mac:
 
 ```
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew installDebug
+```
+
+Windows (Git Bash):
+
+```
+JAVA_HOME="C:\\Program Files\\Android\\Android Studio\\jbr" ./gradlew installDebug
 ```
 
 Note for cloud/CI sessions: Google's artifact hosts (dl.google.com,
