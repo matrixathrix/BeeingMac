@@ -1,6 +1,7 @@
 package com.example.beeing
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -384,80 +385,101 @@ fun PastTab(
                     )
                 }
             } else {
-                // ---- One control bar: period arrows + D/W/M ----
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = {
-                        when (zoom) {
-                            Zoom.D -> weekOffset++
-                            Zoom.W -> monthOffset++
-                            Zoom.M -> yearOffset++
-                        }
-                    }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.KeyboardArrowLeft, "Earlier")
-                    }
-                    Text(
-                        rangeLabel,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-                    val canForward = when (zoom) {
-                        Zoom.D -> weekOffset > 0
-                        Zoom.W -> monthOffset > 0
-                        Zoom.M -> yearOffset > 0
-                    }
-                    IconButton(
-                        onClick = {
-                            when (zoom) {
-                                Zoom.D -> if (weekOffset > 0) weekOffset--
-                                Zoom.W -> if (monthOffset > 0) monthOffset--
-                                Zoom.M -> if (yearOffset > 0) yearOffset--
-                            }
-                        },
-                        enabled = canForward,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowRight, "Later",
-                            tint = if (canForward) LocalContentColor.current else Color.Gray
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    SingleChoiceSegmentedButtonRow {
-                        Zoom.entries.forEachIndexed { i, z ->
-                            SegmentedButton(
-                                selected = zoom == z,
-                                onClick = { zoom = z },
-                                shape = SegmentedButtonDefaults.itemShape(i, Zoom.entries.size)
-                            ) { Text(z.name, fontSize = 12.sp) }
-                        }
-                    }
+                // ---- Control card: period nav + D/W/M + summary tiles ----
+                val canForward = when (zoom) {
+                    Zoom.D -> weekOffset > 0
+                    Zoom.W -> monthOffset > 0
+                    Zoom.M -> yearOffset > 0
                 }
-
-                // ---- Summary before any chart ----
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                    )
                 ) {
-                    StatTile(
-                        value = stats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
-                        valueColor = stats.avg?.let { getScoreColor(it) } ?: Color.Unspecified,
-                        label = "avg score",
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatTile(
-                        value = "${stats.ratedHours}/${stats.possibleHours}",
-                        label = "hours rated",
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatTile(
-                        value = "🌸 ${stats.flowers}",
-                        label = "flowers",
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                when (zoom) {
+                                    Zoom.D -> weekOffset++
+                                    Zoom.W -> monthOffset++
+                                    Zoom.M -> yearOffset++
+                                }
+                            }, modifier = Modifier.size(30.dp)) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowLeft, "Earlier",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                rangeLabel,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
+                            IconButton(
+                                onClick = {
+                                    when (zoom) {
+                                        Zoom.D -> if (weekOffset > 0) weekOffset--
+                                        Zoom.W -> if (monthOffset > 0) monthOffset--
+                                        Zoom.M -> if (yearOffset > 0) yearOffset--
+                                    }
+                                },
+                                enabled = canForward,
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowRight, "Later",
+                                    tint = if (canForward) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            ZoomPicker(zoom = zoom, onSelect = { zoom = it })
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                            )
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                StatCell(
+                                    value = stats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
+                                    valueColor = stats.avg?.let { getScoreColor(it) } ?: Color.Unspecified,
+                                    label = "avg score",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                StatDivider()
+                                StatCell(
+                                    value = "${stats.ratedHours}/${stats.possibleHours}",
+                                    label = "hours rated",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                StatDivider()
+                                StatCell(
+                                    value = "🌸 ${stats.flowers}",
+                                    label = "flowers",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // ---- Bar chart ----
@@ -676,35 +698,75 @@ private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StatTile(
+private fun StatCell(
     value: String,
     label: String,
     modifier: Modifier = Modifier,
     valueColor: Color = Color.Unspecified
 ) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+    Column(
+        modifier.padding(horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                value,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = valueColor,
-                maxLines = 1
-            )
-            Text(
-                label,
-                fontSize = 10.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Text(
+            value,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = valueColor,
+            maxLines = 1
+        )
+        Text(
+            label,
+            fontSize = 10.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun StatDivider() {
+    Box(
+        Modifier
+            .height(30.dp)
+            .width(1.dp)
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.18f))
+    )
+}
+
+/**
+ * The D/W/M zoom selector: a stadium-shaped pill where the active level sits
+ * in a filled primary circle (the one interactive accent), the rest bare.
+ */
+@Composable
+private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Zoom.entries.forEach { z ->
+            val selected = z == zoom
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onSelect(z) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    z.name,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

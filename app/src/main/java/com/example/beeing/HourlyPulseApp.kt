@@ -219,16 +219,22 @@ fun HourlyPulseApp(
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
-            // Original HeaderSection
-            HeaderSection(
-                onImport = { importLauncher.launch("text/*") },
-                onExport = { exportLauncher.launch("bee_data.csv") },
-                onMenuClick = { showMenu = true },
-                onStreakClick = {
-                    selectedTab = 0  // Switch to Streaks tab
-                },
-                onInfoClick = { showInfoDialog = true }
-            )
+            // Header everywhere except Past — that tab owns its full height for
+            // the control card. Its status-bar clearance comes from the spacer
+            // so the Scaffold still reserves that inset.
+            if (selectedTab != 2) {
+                HeaderSection(
+                    onImport = { importLauncher.launch("text/*") },
+                    onExport = { exportLauncher.launch("bee_data.csv") },
+                    onMenuClick = { showMenu = true },
+                    onStreakClick = {
+                        selectedTab = 0  // Switch to Streaks tab
+                    },
+                    onInfoClick = { showInfoDialog = true }
+                )
+            } else {
+                Spacer(Modifier.fillMaxWidth().statusBarsPadding())
+            }
         },
     ) { paddingValues ->
         Box(
