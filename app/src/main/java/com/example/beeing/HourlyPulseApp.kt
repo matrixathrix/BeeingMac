@@ -19,6 +19,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -43,6 +45,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -270,7 +273,7 @@ fun HourlyPulseApp(
 
             // Floating translucent nav pill — content scrolls beneath it
             FloatingPillNavBar(
-                selectedTab = selectedTab,
+                pagerState = pagerState,
                 onTabSelected = { selectedTab = it },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -550,81 +553,82 @@ private val bottomNavItems = listOf(
 )
 
 /**
- * Floating pill-shaped bottom navigation bar with a fixed width, centered.
- * Every item keeps a fixed slot (icon + label); a filled highlight slides
- * between slots as the selection changes.
+ * Slim floating bottom navigation bar spanning the screen width, matching the
+ * 20dp card radius used across the app. Each tab is icon + label side by side.
+ * The filled highlight pill is driven directly by the pager's continuous
+ * scroll position, so it tracks finger swipes in real time instead of
+ * snapping after the swipe settles.
  * Translucent — it floats over the content, which scrolls beneath it.
  */
 @Composable
 private fun FloatingPillNavBar(
-    selectedTab: Int,
+    pagerState: PagerState,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val slotWidth = 92.dp
-    val slotHeight = 52.dp
-
     Box(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 28.dp, vertical = 14.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
             tonalElevation = 0.dp,
-            shadowElevation = 8.dp
+            shadowElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                // Sliding highlight behind the selected slot
-                val highlightX by animateDpAsState(
-                    targetValue = slotWidth * selectedTab,
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    label = "navHighlight"
-                )
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                val slotWidth = maxWidth / bottomNavItems.size
+                val highlightInset = 12.dp
+                // Continuous pager position: whole part = page, fraction = swipe progress
+                val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
+
                 Box(
                     Modifier
-                        .offset(x = highlightX)
-                        .size(slotWidth, slotHeight)
-                        .clip(RoundedCornerShape(20.dp))
+                        .offset(x = slotWidth * progress + highlightInset)
+                        .size(slotWidth - highlightInset * 2, 36.dp)
+                        .clip(RoundedCornerShape(18.dp))
                         .background(MaterialTheme.colorScheme.primary)
                 )
 
                 Row {
                     bottomNavItems.forEachIndexed { index, item ->
-                        val selected = selectedTab == index
-                        val contentColor by animateColorAsState(
-                            targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = tween(250),
-                            label = "navItemContent"
+                        val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
+                        val contentColor = lerp(
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            MaterialTheme.colorScheme.onPrimary,
+                            focus
                         )
 
-                        Column(
+                        Row(
                             modifier = Modifier
-                                .size(slotWidth, slotHeight)
-                                .clip(RoundedCornerShape(20.dp))
+                                .size(slotWidth, 36.dp)
+                                .clip(RoundedCornerShape(18.dp))
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
                                 ) { onTabSelected(index) },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 item.icon,
                                 contentDescription = item.label,
                                 tint = contentColor,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.width(6.dp))
                             Text(
                                 item.label,
                                 color = contentColor,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp
+                                fontSize = 12.sp
                             )
                         }
                     }

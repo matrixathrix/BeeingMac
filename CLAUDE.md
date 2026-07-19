@@ -62,7 +62,7 @@ case verify by static review and say so explicitly — the user compiles locally
 | File | What lives there |
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
-| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar`, header, settings/info dialogs, import/export, ON_RESUME auto-focus of the pending hour |
+| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live), header, settings/info dialogs, import/export, ON_RESUME auto-focus of the pending hour |
 | `NowTab.kt` | The rating flow. Three queue states (2/1/0 pending hours), `StatusStrip` (🔥·ring·🌸), rating card (chips→comb→tags→notes→save), caught-up hero with Lock button + `TodayStripCard`. Exposes `ACTION_LOCK_PHONE` broadcast |
 | `CombStrip.kt` | The rating input: 10 pointy-top hexagons, zoned band tints at rest, hybrid honey fill, drag loupe, haptics. `scoreWord()`, `PointyHexShape` |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), reclaim CTA (only when recoverable hours exist), `GardenCard` (flowers→savers), calendar with score-tinted dots, streak log, reclaim dialogs |
