@@ -304,10 +304,10 @@ fun StreakMeter(
     val track = MaterialTheme.colorScheme.surfaceVariant
     val ringColor = if (state.todayQualified) done else accent
 
-    // The ring shows TODAY's hours, so the count inside is hours; the streak
-    // day count lives outside the ring.
+    // The ring shows TODAY's hours, so the count inside is hours; the hive
+    // (one cell built per qualifying day) lives outside the ring.
     val streakTitle = if (state.currentStreak > 0)
-        "${state.currentStreak} day streak" else "No streak yet"
+        "${state.currentStreak}-cell hive" else "No hive yet"
     val remaining = (STREAK_HOURS_REQUIRED - state.todayHours).coerceAtLeast(0)
     val statusText = if (state.todayQualified) "Today is secured ✓"
     else "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
@@ -547,9 +547,9 @@ data class StreakEvent(
 
 private fun StreakEventType.emoji(): String = when (this) {
     StreakEventType.STARTED -> "🌱"
-    StreakEventType.EXTENDED -> "🔥"
-    StreakEventType.SAVER_EARNED -> "🛡️"
-    StreakEventType.SAVER_USED -> "🛟"
+    StreakEventType.EXTENDED -> "⬢"
+    StreakEventType.SAVER_EARNED -> "🍯"
+    StreakEventType.SAVER_USED -> "🍯"
     StreakEventType.RESET -> "💔"
     StreakEventType.BANKED -> "🌸"
     StreakEventType.RECLAIMED -> "💧"
@@ -616,10 +616,10 @@ fun computeStreakLog(
             val qualifyTs = orderedTs[STREAK_HOURS_REQUIRED - 1]
             if (streak == 0) {
                 streak = 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Streak started", "Day 1 — reached 8 hours on $dayLabel"))
+                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Hive started", "Cell 1 — reached 8 hours on $dayLabel"))
             } else {
                 streak += 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Streak extended", "Day $streak — reached 8 hours on $dayLabel"))
+                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Cell added", "Cell $streak — reached 8 hours on $dayLabel"))
             }
             // extra hours -> bank flowers one by one (reclaimed hours never earn)
             val reclaimed = reclaimedByDay[key]?.size ?: 0
@@ -628,7 +628,7 @@ fun computeStreakLog(
                 if (bank < FLOWER_CAP) bank += 1
                 if (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
                     bank -= HOURS_PER_SAVER; savers += 1
-                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "Streak saver earned 🛡️", "Collected 10 🌸 flowers · savers now $savers"))
+                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "Honey pot earned 🍯", "Filled $HOURS_PER_SAVER 🌸 flowers · honey pots now $savers"))
                 }
             }
             // end-of-day balance — only when extra hours were actually banked
@@ -636,7 +636,7 @@ fun computeStreakLog(
                 events.add(
                     StreakEvent(
                         endOfDay, StreakEventType.BANKED, "End of day",
-                        "$dayLabel: +$eligible 🌸 flowers · balance ${bank} 🌸 · $savers saver${if (savers == 1) "" else "s"}"
+                        "$dayLabel: +$eligible 🌸 flowers · balance ${bank} 🌸 · $savers honey pot${if (savers == 1) "" else "s"}"
                     )
                 )
             }
@@ -644,10 +644,10 @@ fun computeStreakLog(
             // missed past day
             if (savers > 0) {
                 savers -= 1
-                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Streak saver used 🛟", "$dayLabel had under 8 hours — streak saved · $savers saver${if (savers == 1) "" else "s"} left"))
+                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Honey pot used 🍯", "$dayLabel had under 8 hours — hive saved · $savers honey pot${if (savers == 1) "" else "s"} left"))
             } else if (streak > 0) {
                 streak = 0; bank = 0
-                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Streak reset 💔", "$dayLabel had under 8 hours and no savers left"))
+                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Hive reset 💔", "$dayLabel had under 8 hours and no honey pots left"))
             }
         }
         // today with <8 hours: in progress, no event

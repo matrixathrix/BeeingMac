@@ -63,6 +63,7 @@ fun NowTab(
     ratingCardYPosition: Float,
     onRatingCardYPosition: (Float) -> Unit,
     onOpenStreaks: () -> Unit = {},
+    onMenuClick: () -> Unit = {},
     pendingScore: Int? = null,
     onPendingScoreConsumed: () -> Unit = {},
     onRingClosed: (Int) -> Unit = {}
@@ -230,12 +231,26 @@ fun NowTab(
                 .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Slim status strip — same info in every state; tap opens the Hive
-            StatusStrip(
-                state = streakState,
-                onClick = onOpenStreaks,
-                modifier = Modifier.padding(bottom = 14.dp)
-            )
+            // Header: the status card (cell-hive · ring · 🍯) sits where the
+            // header used to be; tapping it opens the Hive. The ⋮ menu carries
+            // data options and "How it works".
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusStrip(
+                    state = streakState,
+                    onClick = onOpenStreaks,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onMenuClick) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             if (allCaughtUp) {
                 // ---- CAUGHT UP: countdown hero + the only Lock button ----
@@ -553,15 +568,24 @@ private fun StatusStrip(
         )
     ) {
         Row(
-            Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
         ) {
-            Text(
-                "🔥 ${state.currentStreak}",
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 14.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "⬢",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = Color(0xFFFFB300) // honey gold — hive identity
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "${state.currentStreak}",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp
+                )
+            }
             StripDivider()
             MiniHourRing(
                 hours = state.todayHours,
@@ -574,7 +598,7 @@ private fun StatusStrip(
             )
             StripDivider()
             Text(
-                "🌸 ${state.bankProgress}",
+                "🍯 ${state.savers}",
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 14.sp
             )

@@ -1,6 +1,21 @@
 package com.example.beeing
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,12 +32,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -46,6 +65,22 @@ import kotlin.math.roundToInt
 
 private enum class Zoom { D, W, M }
 
+/** Lower rank = finer grain. Drilling M→W→D lowers the rank (a zoom-in). */
+private fun Zoom.rank(): Int = when (this) { Zoom.D -> 0; Zoom.W -> 1; Zoom.M -> 2 }
+
+/** Identifies exactly what the animated region is showing, so a change to any
+ *  field drives one transition. */
+private data class PastViewKey(
+    val zoom: Zoom,
+    val weekOffset: Int,
+    val monthOffset: Int,
+    val yearOffset: Int
+)
+
+/** How the current view change should animate. Zoom-in/out fly toward/away from
+ *  the tapped bar; the steps slide the whole region left or right. */
+private enum class PastNav { StepPrev, StepNext, ZoomIn, ZoomOut, None }
+
 private data class PeriodUnit(
     val label: String,        // x-axis label under the bar
     val colLabel: String,     // short grid column header
@@ -59,8 +94,7 @@ private data class PeriodUnit(
 private data class PeriodStats(
     val avg: Double?,
     val ratedHours: Int,
-    val possibleHours: Int,
-    val flowers: Int
+    val possibleHours: Int
 )
 
 private data class TagStat(
@@ -193,19 +227,14 @@ private fun computePeriodStats(
     val cal = Calendar.getInstance()
 
     val hoursByDay = HashMap<Long, MutableSet<Int>>()
-    val reclaimedByDay = HashMap<Long, Int>()
     var scoreSum = 0L
     for (e in entries) {
         cal.timeInMillis = e.timestamp
         val key = cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
         hoursByDay.getOrPut(key) { mutableSetOf() }.add(cal.get(Calendar.HOUR_OF_DAY))
-        if (RECLAIM_TAG in e.tags) reclaimedByDay[key] = (reclaimedByDay[key] ?: 0) + 1
         scoreSum += e.score
     }
     val ratedHours = hoursByDay.values.sumOf { it.size }
-    val flowers = hoursByDay.entries.sumOf { (key, hours) ->
-        (hours.size - STREAK_HOURS_REQUIRED - (reclaimedByDay[key] ?: 0)).coerceAtLeast(0)
-    }
 
     // Elapsed days of the period (never counting the future)
     val now = System.currentTimeMillis()
@@ -220,8 +249,7 @@ private fun computePeriodStats(
     return PeriodStats(
         avg = if (entries.isEmpty()) null else scoreSum.toDouble() / entries.size,
         ratedHours = ratedHours,
-        possibleHours = elapsedDays * windowSize,
-        flowers = flowers
+        possibleHours = elapsedDays * windowSize
     )
 }
 
@@ -285,45 +313,20 @@ fun PastTab(
     val refresh = viewModel.refreshTrigger
     val window = remember(allRatings, refresh) { computeActiveWindow(allRatings) }
 
+    // How the next view change should animate, and the horizontal anchor for a
+    // zoom (0..1 across the bar row) — set by the action that triggers it.
+    var navKind by remember { mutableStateOf(PastNav.None) }
+    var zoomOriginX by remember { mutableFloatStateOf(0.5f) }
+
+    // Kept at the top only for the control bar (range label) and to map a
+    // tapped bar back to its column index for the zoom origin. All the per-view
+    // data (stats, avgs, grid cells, tags) is computed inside the animated
+    // region so the outgoing and incoming levels each render their own.
     val units = remember(zoom, weekOffset, monthOffset, yearOffset, refresh) {
         buildUnits(zoom, weekOffset, monthOffset, yearOffset)
     }
     val range = remember(zoom, weekOffset, monthOffset, yearOffset) {
         periodRange(zoom, weekOffset, monthOffset, yearOffset)
-    }
-    val prevRange = remember(zoom, weekOffset, monthOffset, yearOffset) {
-        periodRange(
-            zoom,
-            if (zoom == Zoom.D) weekOffset + 1 else weekOffset,
-            if (zoom == Zoom.W) monthOffset + 1 else monthOffset,
-            if (zoom == Zoom.M) yearOffset + 1 else yearOffset
-        )
-    }
-    val stats = remember(allRatings, range, window, refresh) {
-        computePeriodStats(allRatings, range.first, range.second, window)
-    }
-    val unitAvgs = remember(allRatings, units, refresh) {
-        units.map { u ->
-            if (u.future) null else {
-                val scores = allRatings.filter { it.timestamp in u.startMs until u.endMs }.map { it.score }
-                if (scores.isEmpty()) null else scores.average()
-            }
-        }
-    }
-    val tagStats = remember(allRatings, range, prevRange, sortByScore, refresh) {
-        computeTagStats(allRatings, range.first, range.second, prevRange.first, prevRange.second, sortByScore)
-    }
-    // Ratings outside the active window, collapsed into cap pills
-    val periodEntries = remember(allRatings, range, refresh) {
-        allRatings.filter { it.timestamp in range.first until range.second }
-    }
-    val earlyCount = remember(periodEntries, window) {
-        val cal = Calendar.getInstance()
-        periodEntries.count { cal.timeInMillis = it.timestamp; cal.get(Calendar.HOUR_OF_DAY) < window.first }
-    }
-    val lateCount = remember(periodEntries, window) {
-        val cal = Calendar.getInstance()
-        periodEntries.count { cal.timeInMillis = it.timestamp; cal.get(Calendar.HOUR_OF_DAY) > window.last }
     }
 
     val rangeLabel = remember(zoom, weekOffset, monthOffset, yearOffset) {
@@ -343,10 +346,37 @@ fun PastTab(
         }
     }
 
+    fun goEarlier() {
+        navKind = PastNav.StepPrev
+        when (zoom) {
+            Zoom.D -> weekOffset++
+            Zoom.W -> monthOffset++
+            Zoom.M -> yearOffset++
+        }
+    }
+
+    fun goLater() {
+        navKind = PastNav.StepNext
+        when (zoom) {
+            Zoom.D -> if (weekOffset > 0) weekOffset--
+            Zoom.W -> if (monthOffset > 0) monthOffset--
+            Zoom.M -> if (yearOffset > 0) yearOffset--
+        }
+    }
+
+    // Horizontal anchor of the tapped unit (0..1) so the zoom flies into it.
+    fun originOf(unit: PeriodUnit): Float {
+        val i = units.indexOf(unit)
+        val n = units.size.coerceAtLeast(1)
+        return if (i < 0) 0.5f else ((i + 0.5f) / n).coerceIn(0f, 1f)
+    }
+
     fun drill(unit: PeriodUnit) {
         if (unit.future) return
         when (zoom) {
             Zoom.M -> {
+                navKind = PastNav.ZoomIn
+                zoomOriginX = originOf(unit)
                 val cur = Calendar.getInstance()
                 val target = Calendar.getInstance().apply { timeInMillis = unit.drillStartMs }
                 monthOffset = (cur.get(Calendar.YEAR) * 12 + cur.get(Calendar.MONTH)) -
@@ -354,6 +384,8 @@ fun PastTab(
                 zoom = Zoom.W
             }
             Zoom.W -> {
+                navKind = PastNav.ZoomIn
+                zoomOriginX = originOf(unit)
                 val curWs = weekStartOf(Calendar.getInstance()).timeInMillis
                 weekOffset = ((curWs - unit.drillStartMs).toDouble() / (7.0 * 24 * 3600_000))
                     .roundToInt().coerceAtLeast(0)
@@ -385,35 +417,33 @@ fun PastTab(
                     )
                 }
             } else {
-                // ---- Control card: period nav + D/W/M + summary tiles ----
+                // ---- One card: control bar (static) + an animated region that
+                // slides on period steps and flies into the tapped bar on drill ----
                 val canForward = when (zoom) {
                     Zoom.D -> weekOffset > 0
                     Zoom.W -> monthOffset > 0
                     Zoom.M -> yearOffset > 0
                 }
+                val viewKey = PastViewKey(zoom, weekOffset, monthOffset, yearOffset)
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { onChartYPosition(it.positionInParent().y) },
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     )
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        // Control bar (never animates): arrows + range label + D/W/M
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(onClick = {
-                                when (zoom) {
-                                    Zoom.D -> weekOffset++
-                                    Zoom.W -> monthOffset++
-                                    Zoom.M -> yearOffset++
-                                }
-                            }, modifier = Modifier.size(30.dp)) {
+                            IconButton(
+                                onClick = { goEarlier() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
                                 Icon(
                                     Icons.Default.KeyboardArrowLeft, "Earlier",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -426,13 +456,7 @@ fun PastTab(
                                 modifier = Modifier.padding(horizontal = 2.dp)
                             )
                             IconButton(
-                                onClick = {
-                                    when (zoom) {
-                                        Zoom.D -> if (weekOffset > 0) weekOffset--
-                                        Zoom.W -> if (monthOffset > 0) monthOffset--
-                                        Zoom.M -> if (yearOffset > 0) yearOffset--
-                                    }
-                                },
+                                onClick = { goLater() },
                                 enabled = canForward,
                                 modifier = Modifier.size(30.dp)
                             ) {
@@ -443,150 +467,194 @@ fun PastTab(
                                 )
                             }
                             Spacer(Modifier.weight(1f))
-                            ZoomPicker(zoom = zoom, onSelect = { zoom = it })
+                            ZoomPicker(
+                                zoom = zoom,
+                                onSelect = { target ->
+                                    if (target != zoom) {
+                                        navKind = if (target.rank() < zoom.rank())
+                                            PastNav.ZoomIn else PastNav.ZoomOut
+                                        zoomOriginX = 0.5f
+                                        zoom = target
+                                    }
+                                }
+                            )
                         }
 
                         Spacer(Modifier.height(14.dp))
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                            )
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                StatCell(
-                                    value = stats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
-                                    valueColor = stats.avg?.let { getScoreColor(it) } ?: Color.Unspecified,
-                                    label = "avg score",
-                                    modifier = Modifier.weight(1f)
+                        AnimatedContent(
+                            targetState = viewKey,
+                            transitionSpec = {
+                                val fspec = tween<Float>(360, easing = FastOutSlowInEasing)
+                                val ispec = tween<IntOffset>(360, easing = FastOutSlowInEasing)
+                                val origin = TransformOrigin(zoomOriginX, 0.28f)
+                                when (navKind) {
+                                    PastNav.StepNext ->
+                                        (slideInHorizontally(ispec) { it } + fadeIn(fspec)) togetherWith
+                                                (slideOutHorizontally(ispec) { -it } + fadeOut(fspec))
+                                    PastNav.StepPrev ->
+                                        (slideInHorizontally(ispec) { -it } + fadeIn(fspec)) togetherWith
+                                                (slideOutHorizontally(ispec) { it } + fadeOut(fspec))
+                                    PastNav.ZoomIn ->
+                                        (scaleIn(fspec, initialScale = 0.7f, transformOrigin = origin) + fadeIn(fspec)) togetherWith
+                                                (scaleOut(fspec, targetScale = 1.35f, transformOrigin = origin) + fadeOut(fspec))
+                                    PastNav.ZoomOut ->
+                                        (scaleIn(fspec, initialScale = 1.35f, transformOrigin = origin) + fadeIn(fspec)) togetherWith
+                                                (scaleOut(fspec, targetScale = 0.7f, transformOrigin = origin) + fadeOut(fspec))
+                                    PastNav.None ->
+                                        fadeIn(fspec) togetherWith fadeOut(fspec)
+                                }.using(SizeTransform(clip = false))
+                            },
+                            label = "pastView"
+                        ) { key ->
+                            // Everything below is derived from THIS slot's key, so
+                            // the outgoing and incoming levels each show their own
+                            // data during the transition.
+                            val kUnits = remember(key, allRatings, refresh) {
+                                buildUnits(key.zoom, key.weekOffset, key.monthOffset, key.yearOffset)
+                            }
+                            val kRange = remember(key) {
+                                periodRange(key.zoom, key.weekOffset, key.monthOffset, key.yearOffset)
+                            }
+                            val kPrevRange = remember(key) {
+                                periodRange(
+                                    key.zoom,
+                                    if (key.zoom == Zoom.D) key.weekOffset + 1 else key.weekOffset,
+                                    if (key.zoom == Zoom.W) key.monthOffset + 1 else key.monthOffset,
+                                    if (key.zoom == Zoom.M) key.yearOffset + 1 else key.yearOffset
                                 )
-                                StatDivider()
-                                StatCell(
-                                    value = "${stats.ratedHours}/${stats.possibleHours}",
-                                    label = "hours rated",
-                                    modifier = Modifier.weight(1f)
+                            }
+                            val kStats = remember(key, allRatings, window, refresh) {
+                                computePeriodStats(allRatings, kRange.first, kRange.second, window)
+                            }
+                            val kSaversUsed = remember(key, allRatings, refresh) {
+                                computeStreakLog(allRatings, loadReclaimSpends(context))
+                                    .count { it.type == StreakEventType.SAVER_USED && it.timestamp in kRange.first until kRange.second }
+                            }
+                            val kUnitAvgs = remember(key, allRatings, refresh) {
+                                kUnits.map { u ->
+                                    if (u.future) null else {
+                                        val scores = allRatings.filter { it.timestamp in u.startMs until u.endMs }.map { it.score }
+                                        if (scores.isEmpty()) null else scores.average()
+                                    }
+                                }
+                            }
+                            val kPeriodEntries = remember(key, allRatings, refresh) {
+                                allRatings.filter { it.timestamp in kRange.first until kRange.second }
+                            }
+                            val kEarly = remember(kPeriodEntries, window) {
+                                val cal = Calendar.getInstance()
+                                kPeriodEntries.count { cal.timeInMillis = it.timestamp; cal.get(Calendar.HOUR_OF_DAY) < window.first }
+                            }
+                            val kLate = remember(kPeriodEntries, window) {
+                                val cal = Calendar.getInstance()
+                                kPeriodEntries.count { cal.timeInMillis = it.timestamp; cal.get(Calendar.HOUR_OF_DAY) > window.last }
+                            }
+                            val kTagStats = remember(key, allRatings, sortByScore, refresh) {
+                                computeTagStats(allRatings, kRange.first, kRange.second, kPrevRange.first, kPrevRange.second, sortByScore)
+                            }
+
+                            Column(Modifier.fillMaxWidth()) {
+                                // Summary for the selected period
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    StatCell(
+                                        value = kStats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
+                                        valueColor = kStats.avg?.let { getScoreColor(it) } ?: Color.Unspecified,
+                                        label = "avg score",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    StatDivider()
+                                    StatCell(
+                                        value = "${kStats.ratedHours}/${kStats.possibleHours}",
+                                        label = "hours rated",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    StatDivider()
+                                    StatCell(
+                                        value = "🍯 $kSaversUsed",
+                                        label = "honey used",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                Spacer(Modifier.height(16.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
                                 )
-                                StatDivider()
-                                StatCell(
-                                    value = "🌸 ${stats.flowers}",
-                                    label = "flowers",
-                                    modifier = Modifier.weight(1f)
+                                Spacer(Modifier.height(16.dp))
+
+                                // Scores chart (swipe left/right to change period)
+                                SectionLabel(
+                                    when (key.zoom) {
+                                        Zoom.D -> "DAY SCORES"
+                                        Zoom.W -> "WEEK SCORES"
+                                        Zoom.M -> "MONTH SCORES"
+                                    }
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                ScoreBarChart(
+                                    units = kUnits,
+                                    avgs = kUnitAvgs,
+                                    onUnitClick = ::drill,
+                                    onSwipeEarlier = { goEarlier() },
+                                    onSwipeLater = { if (canForward) goLater() }
+                                )
+
+                                Spacer(Modifier.height(18.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                                )
+                                Spacer(Modifier.height(16.dp))
+
+                                // Hour-by-hour pattern grid
+                                SectionLabel(
+                                    when (key.zoom) {
+                                        Zoom.D -> "YOUR WEEK, HOUR BY HOUR"
+                                        Zoom.W -> "YOUR MONTH, HOUR BY HOUR"
+                                        Zoom.M -> "YOUR YEAR, HOUR BY HOUR"
+                                    }
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                if (!gridExpanded && kEarly > 0) {
+                                    CapPill(
+                                        "▲ $kEarly early rating${if (kEarly == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
+                                    ) { gridExpanded = true }
+                                }
+                                if (gridExpanded) {
+                                    CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
+                                        gridExpanded = false
+                                    }
+                                }
+                                PatternGrid(
+                                    units = kUnits,
+                                    ratings = kPeriodEntries,
+                                    hourRange = if (gridExpanded) 0..23 else window,
+                                    onColumnClick = ::drill
+                                )
+                                if (!gridExpanded && kLate > 0) {
+                                    Spacer(Modifier.height(6.dp))
+                                    CapPill(
+                                        "▼ $kLate late rating${if (kLate == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
+                                    ) { gridExpanded = true }
+                                }
+
+                                Spacer(Modifier.height(18.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                                )
+                                Spacer(Modifier.height(16.dp))
+
+                                // How tags score, with trend vs the previous period —
+                                // a short inner scroll (≈5 rows) with a fading bar
+                                TagScoresSection(
+                                    tagStats = kTagStats,
+                                    sortByScore = sortByScore,
+                                    onSortChange = { sortByScore = it }
                                 )
                             }
-                        }
-                    }
-                }
-
-                // ---- Bar chart ----
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { onChartYPosition(it.positionInParent().y) },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        SectionLabel(
-                            when (zoom) {
-                                Zoom.D -> "DAY SCORES"
-                                Zoom.W -> "WEEK SCORES"
-                                Zoom.M -> "MONTH SCORES"
-                            }
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        ScoreBarChart(
-                            units = units,
-                            avgs = unitAvgs,
-                            onUnitClick = ::drill
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                // ---- Pattern grid: hour rows × period columns ----
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        SectionLabel(
-                            when (zoom) {
-                                Zoom.D -> "YOUR WEEK, HOUR BY HOUR"
-                                Zoom.W -> "YOUR MONTH, HOUR BY HOUR"
-                                Zoom.M -> "YOUR YEAR, HOUR BY HOUR"
-                            }
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        if (!gridExpanded && earlyCount > 0) {
-                            CapPill(
-                                "▲ $earlyCount early rating${if (earlyCount == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
-                            ) { gridExpanded = true }
-                        }
-                        if (gridExpanded) {
-                            CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
-                                gridExpanded = false
-                            }
-                        }
-                        PatternGrid(
-                            units = units,
-                            ratings = periodEntries,
-                            hourRange = if (gridExpanded) 0..23 else window,
-                            onColumnClick = ::drill
-                        )
-                        if (!gridExpanded && lateCount > 0) {
-                            Spacer(Modifier.height(6.dp))
-                            CapPill(
-                                "▼ $lateCount late rating${if (lateCount == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
-                            ) { gridExpanded = true }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                // ---- How tags score, with trend vs the previous period ----
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SectionLabel("HOW TAGS SCORE", modifier = Modifier.weight(1f))
-                            FilterChip(
-                                selected = sortByScore,
-                                onClick = { sortByScore = true },
-                                label = { Text("by score", fontSize = 11.sp) }
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            FilterChip(
-                                selected = !sortByScore,
-                                onClick = { sortByScore = false },
-                                label = { Text("by count", fontSize = 11.sp) }
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        if (tagStats.isEmpty()) {
-                            Text(
-                                "No tagged hours in this period.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp
-                            )
-                        } else {
-                            tagStats.forEach { stat -> TagStatRow(stat) }
                         }
                     }
                 }
@@ -733,9 +801,16 @@ private fun StatDivider() {
     )
 }
 
+private fun Zoom.fullLabel(): String = when (this) {
+    Zoom.D -> "Days"
+    Zoom.W -> "Weeks"
+    Zoom.M -> "Months"
+}
+
 /**
- * The D/W/M zoom selector: a stadium-shaped pill where the active level sits
- * in a filled primary circle (the one interactive accent), the rest bare.
+ * The D/W/M zoom selector: a stadium-shaped pill. The active level expands into
+ * a filled primary stadium showing its full word (Days/Weeks/Months); the
+ * others collapse to a single bare letter. The width change is animated.
  */
 @Composable
 private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
@@ -744,25 +819,34 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
             .padding(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Zoom.entries.forEach { z ->
             val selected = z == zoom
+            val bg by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                animationSpec = tween(220),
+                label = "zoomBg"
+            )
             Box(
                 Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(bg)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) { onSelect(z) },
+                    ) { onSelect(z) }
+                    .animateContentSize(animationSpec = tween(220))
+                    .padding(horizontal = if (selected) 14.dp else 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    z.name,
+                    if (selected) z.fullLabel() else z.name,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                     color = if (selected) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -795,17 +879,22 @@ private fun CapPill(text: String, onClick: () -> Unit) {
 /**
  * Band-colored bars over a light grid. The goal line is dashed with its
  * label INSIDE the plot; only the best unit carries a value label; the
- * current unit is outlined. Bars are tap targets for the zoom cascade.
+ * current unit carries a white outline. Bars are tap targets for the zoom
+ * cascade, and a horizontal swipe across the plot steps the period.
  */
 @Composable
 private fun ScoreBarChart(
     units: List<PeriodUnit>,
     avgs: List<Double?>,
-    onUnitClick: (PeriodUnit) -> Unit
+    onUnitClick: (PeriodUnit) -> Unit,
+    onSwipeEarlier: () -> Unit,
+    onSwipeLater: () -> Unit
 ) {
     val plotHeight = 150.dp
     val labelZone = 18.dp
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+    val earlier by rememberUpdatedState(onSwipeEarlier)
+    val later by rememberUpdatedState(onSwipeLater)
     val goalPaint = remember {
         android.graphics.Paint().apply {
             color = android.graphics.Color.GRAY
@@ -833,7 +922,23 @@ private fun ScoreBarChart(
                 Text("0", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(6.dp))
-            Box(Modifier.weight(1f).height(plotHeight + labelZone)) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(plotHeight + labelZone)
+                    .pointerInput(Unit) {
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                if (total > 60f) earlier()
+                                else if (total < -60f) later()
+                                total = 0f
+                            },
+                            onDragCancel = { total = 0f },
+                            onHorizontalDrag = { _, dragAmount -> total += dragAmount }
+                        )
+                    }
+            ) {
                 Canvas(
                     Modifier
                         .fillMaxWidth()
@@ -866,6 +971,22 @@ private fun ScoreBarChart(
                 ) {
                     units.forEachIndexed { i, u ->
                         val avg = avgs[i]
+                        // Animate height + color so period changes glide instead
+                        // of snapping. Future/empty bars stay at their placeholder.
+                        val animFrac by animateFloatAsState(
+                            targetValue = if (u.future || avg == null) 0f else (avg / 10.0).toFloat(),
+                            animationSpec = tween(450, easing = FastOutSlowInEasing),
+                            label = "barFrac$i"
+                        )
+                        val animColor by animateColorAsState(
+                            targetValue = avg?.let { getScoreColor(it) }
+                                ?: MaterialTheme.colorScheme.surfaceVariant,
+                            animationSpec = tween(450),
+                            label = "barColor$i"
+                        )
+                        val barShape = RoundedCornerShape(
+                            topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp
+                        )
                         Column(
                             Modifier.weight(1f),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -882,7 +1003,7 @@ private fun ScoreBarChart(
                             }
                             val barModifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp))
+                                .clip(barShape)
                             when {
                                 u.future -> Box(
                                     barModifier
@@ -896,14 +1017,11 @@ private fun ScoreBarChart(
                                 )
                                 else -> Box(
                                     barModifier
-                                        .height(((avg / 10.0) * plotHeight.value).dp.coerceAtLeast(6.dp))
-                                        .background(getScoreColor(avg))
+                                        .height((animFrac * plotHeight.value).dp.coerceAtLeast(6.dp))
+                                        .background(animColor)
                                         .then(
-                                            if (u.isCurrent) Modifier.border(
-                                                1.5.dp,
-                                                MaterialTheme.colorScheme.onSurface,
-                                                RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp)
-                                            ) else Modifier
+                                            if (u.isCurrent) Modifier.border(2.dp, Color.White, barShape)
+                                            else Modifier
                                         )
                                         .clickable { onUnitClick(u) }
                                 )
@@ -962,63 +1080,176 @@ private fun PatternGrid(
     val now = System.currentTimeMillis()
     val labelEvery = if (hourRange.count() > 18) 6 else 5
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        // column headers
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Box(Modifier.width(34.dp))
-            units.forEach { u ->
-                Text(
-                    u.colLabel,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-        for (h in hourRange) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.width(34.dp), contentAlignment = Alignment.CenterEnd) {
-                    if ((h - hourRange.first) % labelEvery == 0 || h == hourRange.last) {
+    // A slim gutter (was 34dp) reclaims width for the grid. Cells are square and
+    // HEIGHT-CAPPED at the 7-column (Day) size: with fewer columns (Week's ~5)
+    // the tiles stop ballooning and the grid keeps a near-constant height across
+    // D/W/M — the leftover width on the right is intentionally left blank.
+    val gutter = 24.dp
+    val spacing = 2.dp
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cols = units.size.coerceAtLeast(1)
+        val avail = maxWidth - gutter
+        val fitCols = (avail - spacing * (cols - 1)) / cols
+        val cap7 = (avail - spacing * 6) / 7
+        val cell = minOf(fitCols, cap7).coerceAtLeast(8.dp)
+
+        Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+            // column headers
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                Spacer(Modifier.width(gutter))
+                units.forEach { u ->
+                    Box(Modifier.width(cell), contentAlignment = Alignment.Center) {
                         Text(
-                            formatHour(h),
-                            fontSize = 8.5.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            u.colLabel,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (u.isCurrent) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                             maxLines = 1
                         )
                     }
                 }
-                units.forEachIndexed { col, u ->
-                    val avg = cellAvgs[h * 100L + col]
-                    // For a single-day column an hour can be individually in
-                    // the future; multi-day columns only dim when fully future
-                    val singleDay = u.endMs - u.startMs <= 25L * 3600_000L
-                    val cellFuture = u.future || (singleDay && u.startMs + h * 3600_000L > now)
+            }
+            for (h in hourRange) {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    // Hour marker sits on the row's TOP edge (the h:00 boundary),
+                    // straddling the seam between the previous hour and this one.
                     Box(
-                        Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(
-                                when {
-                                    avg != null -> getScoreColor(avg)
-                                    cellFuture -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                                    else -> MaterialTheme.colorScheme.surfaceVariant
-                                }
+                        Modifier.width(gutter).height(cell),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        if ((h - hourRange.first) % labelEvery == 0 || h == hourRange.last) {
+                            Text(
+                                formatHour(h),
+                                fontSize = 8.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .offset(y = (-5).dp)
+                                    .padding(end = 4.dp)
                             )
-                            .then(
-                                if (!u.future) Modifier.clickable { onColumnClick(u) } else Modifier
-                            )
-                    )
+                        }
+                    }
+                    units.forEachIndexed { col, u ->
+                        val avg = cellAvgs[h * 100L + col]
+                        // For a single-day column an hour can be individually in
+                        // the future; multi-day columns only dim when fully future
+                        val singleDay = u.endMs - u.startMs <= 25L * 3600_000L
+                        val cellFuture = u.future || (singleDay && u.startMs + h * 3600_000L > now)
+                        val cellColor by animateColorAsState(
+                            targetValue = when {
+                                avg != null -> getScoreColor(avg)
+                                cellFuture -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            animationSpec = tween(450),
+                            label = "cell"
+                        )
+                        val cellShape = RoundedCornerShape(3.dp)
+                        Box(
+                            Modifier
+                                .size(cell)
+                                .clip(cellShape)
+                                .background(cellColor)
+                                .then(
+                                    if (u.isCurrent) Modifier.border(1.5.dp, Color.White, cellShape)
+                                    else Modifier
+                                )
+                                .then(
+                                    if (!u.future) Modifier.clickable { onColumnClick(u) } else Modifier
+                                )
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * "How tags score" folded into the big card. The rows live in a short inner
+ * scroll (~5 rows tall) so the section can't push the grid off-screen; a thin
+ * scrollbar fades in while scrolling and disappears when it stops.
+ */
+@Composable
+private fun TagScoresSection(
+    tagStats: List<TagStat>,
+    sortByScore: Boolean,
+    onSortChange: (Boolean) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("HOW TAGS SCORE", modifier = Modifier.weight(1f))
+            FilterChip(
+                selected = sortByScore,
+                onClick = { onSortChange(true) },
+                label = { Text("by score", fontSize = 11.sp) }
+            )
+            Spacer(Modifier.width(6.dp))
+            FilterChip(
+                selected = !sortByScore,
+                onClick = { onSortChange(false) },
+                label = { Text("by count", fontSize = 11.sp) }
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        if (tagStats.isEmpty()) {
+            Text(
+                "No tagged hours in this period.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp
+            )
+        } else {
+            val listScroll = rememberScrollState()
+            Box(Modifier.fillMaxWidth().heightIn(max = 210.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(listScroll)
+                        .padding(end = 8.dp)
+                ) {
+                    tagStats.forEach { stat -> TagStatRow(stat) }
+                }
+                FadingScrollbar(
+                    scrollState = listScroll,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+/** A slim scrollbar that appears while [scrollState] is moving and fades out
+ *  shortly after it settles. Hidden entirely when there's nothing to scroll. */
+@Composable
+private fun FadingScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
+    if (scrollState.maxValue <= 0) return
+    val active = scrollState.isScrollInProgress
+    val alpha by animateFloatAsState(
+        targetValue = if (active) 0.5f else 0f,
+        animationSpec = tween(durationMillis = if (active) 120 else 700),
+        label = "scrollbarAlpha"
+    )
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier.width(3.dp)) {
+        val trackH = maxHeight
+        val contentExtra = with(density) { scrollState.maxValue.toDp() }
+        val thumbFrac = (trackH / (trackH + contentExtra)).coerceIn(0.12f, 1f)
+        val thumbH = trackH * thumbFrac
+        val prog = scrollState.value.toFloat() / scrollState.maxValue
+        val thumbY = (trackH - thumbH) * prog
+        Box(
+            Modifier
+                .offset(y = thumbY)
+                .width(3.dp)
+                .height(thumbH)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
+        )
     }
 }
 

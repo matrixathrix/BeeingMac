@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -63,15 +64,45 @@ private val SCORE_WORDS = listOf(
 
 fun scoreWord(score: Int): String = SCORE_WORDS.getOrElse(score) { "" }
 
-/** Pointy-top hexagon: flat left/right edges tessellate in a horizontal row. */
+/**
+ * Pointy-top hexagon with softly rounded vertices — friendly, not strict and
+ * angular. Same six-point silhouette (flat left/right edges tessellate in a
+ * horizontal row), but every corner is eased with a quadratic so the top and
+ * bottom points read as gentle curves rather than sharp spikes.
+ */
 val PointyHexShape = GenericShape { size, _ ->
-    moveTo(size.width / 2f, 0f)
-    lineTo(size.width, size.height * 0.25f)
-    lineTo(size.width, size.height * 0.75f)
-    lineTo(size.width / 2f, size.height)
-    lineTo(0f, size.height * 0.75f)
-    lineTo(0f, size.height * 0.25f)
+    val w = size.width
+    val h = size.height
+    val radius = size.minDimension * 0.22f
+    val pts = listOf(
+        Offset(w * 0.5f, 0f),      // top point
+        Offset(w, h * 0.25f),      // upper-right
+        Offset(w, h * 0.75f),      // lower-right
+        Offset(w * 0.5f, h),       // bottom point
+        Offset(0f, h * 0.75f),     // lower-left
+        Offset(0f, h * 0.25f)      // upper-left
+    )
+    val n = pts.size
+    for (i in 0 until n) {
+        val curr = pts[i]
+        val prev = pts[(i - 1 + n) % n]
+        val next = pts[(i + 1) % n]
+        val start = pointToward(curr, prev, radius)
+        val end = pointToward(curr, next, radius)
+        if (i == 0) moveTo(start.x, start.y) else lineTo(start.x, start.y)
+        quadraticBezierTo(curr.x, curr.y, end.x, end.y)
+    }
     close()
+}
+
+/** A point [dist] away from [from] along the line toward [to]. */
+private fun pointToward(from: Offset, to: Offset, dist: Float): Offset {
+    val dx = to.x - from.x
+    val dy = to.y - from.y
+    val len = kotlin.math.hypot(dx, dy)
+    if (len == 0f) return from
+    val f = dist / len
+    return Offset(from.x + dx * f, from.y + dy * f)
 }
 
 @Composable

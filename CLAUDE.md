@@ -18,17 +18,21 @@ notification → rate → tag → save → lock phone → back to life.
   (2-hour window). Existing ratings are editable up to **10 hours** back
   (`EDIT_WINDOW_MS`).
 - Past the 8-hour mandate, each extra rated hour earns a **🌸 flower**
-  (bank cap 20). **10 flowers auto-forge a 🛡️ saver** (max 3, 1 gifted).
-  A missed day silently consumes a saver; no savers → streak resets.
+  (bank cap 20). **10 flowers auto-fill a 🍯 honey pot** (max 3, 1 gifted;
+  "honey pot" is the user-facing name for a saver — the code type is still
+  `savers`). A missed day silently consumes a honey pot; none left → streak
+  resets.
 - **5 flowers reclaim** one expired hour *from today only* (mandatory note,
   tagged `RECLAIM_TAG`; reclaimed hours count toward the 8 but earn nothing).
 - Constants live at the top of `StreakEngine.kt`.
 
 ### Bee lexicon (used in UI copy)
 
-Flower = extra rated hour · Honey/saver = streak insurance · Comb = the rating
-widget · Hive = the streak tab · Waggle = celebration (reserved for rare
-milestones — never per-save; the one daily celebration is the ring closing).
+Flower = extra rated hour · Honey pot 🍯 = streak insurance (the saver, renamed)
+· Cell/chamber = one qualifying day; the streak reads as a "cell hive" (⬢ N),
+no 🔥 · Comb = the rating widget · Hive = the streak tab · Waggle = celebration
+(reserved for rare milestones — never per-save; the one daily celebration is
+the ring closing).
 
 ## Verifying changes
 
@@ -62,12 +66,12 @@ case verify by static review and say so explicitly — the user compiles locally
 | File | What lives there |
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
-| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live), header, settings/info dialogs, import/export, ON_RESUME auto-focus of the pending hour |
-| `NowTab.kt` | The rating flow. Three queue states (2/1/0 pending hours), `StatusStrip` (🔥·ring·🌸), rating card (chips→comb→tags→notes→save), caught-up hero with Lock button + `TodayStripCard`. Exposes `ACTION_LOCK_PHONE` broadcast |
-| `CombStrip.kt` | The rating input: 10 pointy-top hexagons, zoned band tints at rest, hybrid honey fill, drag loupe, haptics. `scoreWord()`, `PointyHexShape` |
+| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour |
+| `NowTab.kt` | The rating flow. Its header row = the `StatusStrip` pill (⬢ cell-hive · ring x/8 · 🍯 honey pots; taps to Hive) + the ⋮ menu button. Three queue states (2/1/0 pending hours), rating card (chips→comb→tags→notes→save), caught-up hero with Lock button + `TodayStripCard`. Exposes `ACTION_LOCK_PHONE` broadcast |
+| `CombStrip.kt` | The rating input: 10 soft rounded-vertex hexagons (friendly, not sharp), zoned band tints at rest, hybrid honey fill, drag loupe, haptics. `scoreWord()`, `PointyHexShape` (now rounded — name kept) |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), reclaim CTA (only when recoverable hours exist), `GardenCard` (flowers→savers), calendar with score-tinted dots, streak log, reclaim dialogs |
 | `StreakEngine.kt` | Pure streak logic: `computeStreakState`, `computeDayOutcomes`, `computeStreakLog` (all replay full history deterministically — they must never disagree), `StreakMeter`/`StreakRing` composables, constants |
-| `PastTab.kt` | Analytics: D/W/M zoom cascade (page always == control-bar period; taps narrow one level; day = terminal → bottom sheet), stats row, bar chart, hour-of-day `PatternGrid` pinned to the active window with early/late cap pills, tag scores with prev-period deltas, `DaySheetContent`, edit sheet. Also `getScoreColor(Double)` |
+| `PastTab.kt` | Analytics: D/W/M zoom cascade (page always == control-bar period; taps narrow one level; day = terminal → bottom sheet). One combined card: a **static control bar** (arrows + range label + `ZoomPicker`) over an **`AnimatedContent` region** keyed by `PastViewKey` — period steps slide L/R, a drill flies into the tapped bar (`scaleIn/Out` at `zoomOriginX`), driven by `navKind`/`zoomOriginX`. The region stacks summary stats (avg · hours rated · 🍯 honey used) + bar chart + `PatternGrid` + the folded-in **`TagScoresSection`** (short inner scroll ≈5 rows with a `FadingScrollbar`); each slot recomputes its own data from its key. `PatternGrid` is height-capped at the 7-col size (Week stops ballooning; extra width left blank), trimmed 24dp gutter, hour labels on the row seams. Current period's bar/column carry a white outline. `DaySheetContent`, edit sheet. Also `getScoreColor(Double)` |
 | `UIComponents.kt` | Shared: `HeaderSection`, `EditEntrySheet`, `SoulFuelTagsSection` (full tag editor), `NotesSection`, `HistoryPanel`, misc format helpers (`formatHour`, `getOrdinalSuffix`), plus legacy `ProfessionalChart`/`InsightPanel` (no longer mounted) |
 | `StatsComponents.kt` | Period buckets, weekly report notification, legacy `InsightsContent`/`CollapsibleSection` (no longer mounted) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers |

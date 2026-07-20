@@ -219,22 +219,12 @@ fun HourlyPulseApp(
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
-            // Header everywhere except Past — that tab owns its full height for
-            // the control card. Its status-bar clearance comes from the spacer
-            // so the Scaffold still reserves that inset.
-            if (selectedTab != 2) {
-                HeaderSection(
-                    onImport = { importLauncher.launch("text/*") },
-                    onExport = { exportLauncher.launch("bee_data.csv") },
-                    onMenuClick = { showMenu = true },
-                    onStreakClick = {
-                        selectedTab = 0  // Switch to Streaks tab
-                    },
-                    onInfoClick = { showInfoDialog = true }
-                )
-            } else {
-                Spacer(Modifier.fillMaxWidth().statusBarsPadding())
-            }
+            // A constant status-bar inset for every tab — no per-tab header in
+            // the Scaffold, so nothing pops in or out when a page settles. Each
+            // tab now owns its own header inside its scroll content (Now shows
+            // the status card + ⋮ menu; Hive and Past show none), so the header
+            // slides away with the page instead of jumping.
+            Spacer(Modifier.fillMaxWidth().statusBarsPadding())
         },
     ) { paddingValues ->
         Box(
@@ -263,6 +253,7 @@ fun HourlyPulseApp(
                     ratingCardYPosition = ratingCardYPosition,
                     onRatingCardYPosition = { ratingCardYPosition = it },
                     onOpenStreaks = { selectedTab = 0 },
+                    onMenuClick = { showMenu = true },
                     pendingScore = pendingScore,
                     onPendingScoreConsumed = { pendingScore = null },
                     onRingClosed = { ringCelebrationDays = it }
@@ -366,6 +357,25 @@ fun HourlyPulseApp(
                                     modifier = Modifier.padding(top = 4.dp)
                                 )
                             }
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        // How it works — moved here now that the header's info
+                        // button is gone
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showMenu = false
+                                    showInfoDialog = true
+                                }
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("How Beeing works")
                         }
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))

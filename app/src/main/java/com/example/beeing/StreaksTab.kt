@@ -44,10 +44,10 @@ import java.util.Locale
 
 /**
  * STREAKS TAB — the long game lives here:
- *  - monthly calendar of day outcomes (💐 qualified / 🛡️ saved / 🥀 missed)
- *  - savers + flower wallet
+ *  - monthly calendar of day outcomes (💐 qualified / 🍯 saved / 🥀 missed)
+ *  - honey pots + flower wallet
  *  - reclaim a missed hour from today (5 🌸, mandatory note)
- *  - the full streak event log
+ *  - the full hive event log
  */
 @Composable
 fun StreaksTab(
@@ -174,16 +174,16 @@ fun StreaksTab(
             }
         }
 
-        // ---- Garden: flowers and savers are ONE economy — ten slots fill
-        // left to right and crystallize into the next shield ----
+        // ---- Garden: flowers and honey pots are ONE economy — ten slots fill
+        // left to right and crystallize into the next honey pot ----
         GardenCard(
             state = streakState,
             onClick = {
                 infoDialog = "🌸 The Garden" to
                         "Each hour you rate beyond 8 in a day grows a flower (bank holds $FLOWER_CAP).\n\n" +
-                        "$HOURS_PER_SAVER flowers automatically become a 🛡️ saver (max $MAX_SAVERS). " +
-                        "Miss a day and one saver is spent for you — your streak survives. " +
-                        "No savers left? The streak resets.\n\n" +
+                        "$HOURS_PER_SAVER flowers automatically fill a 🍯 honey pot (max $MAX_SAVERS). " +
+                        "Miss a day and one honey pot is spent for you — your hive survives. " +
+                        "No honey pots left? The hive resets.\n\n" +
                         "You can also spend $RECLAIM_COST 🌸 to rate an hour you missed today."
             }
         )
@@ -230,13 +230,13 @@ fun StreaksTab(
                     horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "streak day")
-                    LegendItem("🛡️", "saved")
+                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "hive day")
+                    LegendItem("🍯", "saved")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = "How streaks work",
+                            contentDescription = "How the hive works",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
@@ -262,7 +262,7 @@ fun StreaksTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Streak log",
+                        "Hive log",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f)
@@ -384,14 +384,14 @@ fun StreaksTab(
     if (showRules) {
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text("How streaks work") },
+            title = { Text("How the hive works") },
             text = {
                 Column {
-                    Text("• Rate at least 8 hours in a day to keep your streak.", fontSize = 14.sp)
+                    Text("• Rate at least 8 hours in a day to build a cell — your hive grows one cell per day.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Each extra hour beyond 8 gives you a 🌸 flower (max $FLOWER_CAP). $HOURS_PER_SAVER flowers become a 🛡️ saver (max $MAX_SAVERS).", fontSize = 14.sp)
+                    Text("• Each extra hour beyond 8 gives you a 🌸 flower (max $FLOWER_CAP). $HOURS_PER_SAVER flowers fill a 🍯 honey pot (max $MAX_SAVERS).", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Miss a day and one saver is used automatically. With no savers left, the streak resets.", fontSize = 14.sp)
+                    Text("• Miss a day and one honey pot is used automatically. With no honey pots left, the hive resets.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
                     Text("• Spend $RECLAIM_COST 🌸 to rate an hour you missed today. Those hours count toward the 8 but don't earn flowers.", fontSize = 14.sp)
                 }
@@ -487,9 +487,9 @@ private fun MonthGrid(
 }
 
 /**
- * A calendar day. Repeated identical emoji carry no information, so a streak
- * day shows a dot tinted by that day's average score, a saved day keeps the
- * small shield, and a missed day is a hollow red ring. Today gets the
+ * A calendar day. Repeated identical emoji carry no information, so a hive
+ * day shows a dot tinted by that day's average score, a saved day shows the
+ * small honey pot, and a missed day is a hollow red ring. Today gets the
  * primary-color outline. Color never travels alone here — tapping any day
  * opens the stats dialog with the digits.
  */
@@ -532,7 +532,7 @@ private fun DayCell(
                     .clip(CircleShape)
                     .background(getScoreColor(avgScore ?: 0.0))
             )
-            DayOutcome.SAVED -> Text("🛡️", fontSize = 11.sp)
+            DayOutcome.SAVED -> Text("🍯", fontSize = 11.sp)
             DayOutcome.MISSED -> Box(
                 Modifier
                     .size(9.dp)
@@ -544,8 +544,8 @@ private fun DayCell(
 }
 
 /**
- * The Garden: flowers and savers rendered as one economy. Ten slots fill
- * left to right; every full row of ten crystallizes into the next shield.
+ * The Garden: flowers and honey pots rendered as one economy. Ten slots fill
+ * left to right; every full row of ten crystallizes into the next honey pot.
  * The whole card is tappable for the explainer.
  */
 @Composable
@@ -608,7 +608,7 @@ private fun GardenCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     for (i in 0 until MAX_SAVERS) {
                         Text(
-                            "🛡️",
+                            "🍯",
                             fontSize = 17.sp,
                             modifier = Modifier.alpha(if (i < state.savers) 1f else 0.22f)
                         )
@@ -618,9 +618,9 @@ private fun GardenCard(
             Spacer(Modifier.height(10.dp))
             Text(
                 if (state.savers >= MAX_SAVERS)
-                    "Savers full · ${state.bankProgress}/$FLOWER_CAP 🌸 banked"
+                    "Honey pots full · ${state.bankProgress}/$FLOWER_CAP 🌸 banked"
                 else
-                    "${(HOURS_PER_SAVER - state.bankProgress).coerceAtLeast(0)} more 🌸 grow your next saver · " +
+                    "${(HOURS_PER_SAVER - state.bankProgress).coerceAtLeast(0)} more 🌸 fill your next 🍯 · " +
                             "$RECLAIM_COST 🌸 reclaims a missed hour",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -660,7 +660,7 @@ private fun DayStatsDialog(
     }
     val outcomeLine = when {
         outcome == DayOutcome.QUALIFIED -> "💐 Streak day"
-        outcome == DayOutcome.SAVED -> "🛡️ Missed, but a saver covered it"
+        outcome == DayOutcome.SAVED -> "🍯 Missed, but a honey pot covered it"
         outcome == DayOutcome.MISSED -> "🥀 Missed"
         isToday -> "⏳ In progress"
         else -> "No ratings"
