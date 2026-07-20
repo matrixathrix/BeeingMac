@@ -358,6 +358,7 @@ fun HeaderSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditEntrySheet(
     entry: RatingEntry,
@@ -370,37 +371,40 @@ fun EditEntrySheet(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    var availableTags by remember { mutableStateOf(loadTags(context)) }
-    val selectedTags = remember { mutableStateListOf<String>().apply { addAll(entry.tags) } }
-    var showTagDialog by remember { mutableStateOf(false) }
+    val cal = remember(entry.timestamp) { Calendar.getInstance().apply { timeInMillis = entry.timestamp } }
+    val startH = remember(cal) { cal.get(Calendar.HOUR_OF_DAY) }
+    val endH = remember(startH) { if (startH == 23) 0 else startH + 1 }
+    val dateLabel = remember(cal) { SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(cal.time) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
             Text(
-                text = "Edit Entry",
+                text = "Editing the ${entry.hourLabel} hour",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
+            Text(
+                text = "${formatHour(startH)} – ${formatHour(endH)} · $dateLabel",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-            Spacer(Modifier.height(16.dp))
-            Text("Select new score:")
-            Spacer(Modifier.height(12.dp))
-
+            Spacer(Modifier.height(20.dp))
             Row(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
             ) {
                 (1..10).forEach { score ->
                     val isSelected = editedEntry.score == score
                     Box(
                         modifier = Modifier
-                            .size(if (isSelected) 56.dp else 48.dp)
+                            .size(if (isSelected) 42.dp else 36.dp)
                             .background(
                                 when {
                                     score >= 8 -> Color(0xFF66BB6A).copy(alpha = if (isSelected) 1f else 0.3f)
@@ -414,7 +418,7 @@ fun EditEntrySheet(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                             .border(
-                                width = if (isSelected) 3.dp else 0.dp,
+                                width = if (isSelected) 2.dp else 0.dp,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                 shape = CircleShape
                             ),
@@ -422,7 +426,7 @@ fun EditEntrySheet(
                     ) {
                         Text(
                             text = "$score",
-                            fontSize = if (isSelected) 20.sp else 16.sp,
+                            fontSize = if (isSelected) 15.sp else 13.sp,
                             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                             color = if (score >= 5) Color.Black else Color.White
                         )
@@ -430,43 +434,38 @@ fun EditEntrySheet(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text("Tags:", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = tag in selectedTags,
-                        onClick = {
-                            if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                        },
-                        label = { Text(tag) },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-
-                IconButton(
-                    onClick = { showTagDialog = true },
-                    modifier = Modifier.size(32.dp)
+            if (entry.tags.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "TAGGED",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy((-6).dp)
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add tag",
-                        modifier = Modifier.size(18.dp)
-                    )
+                    entry.tags.forEach { tag ->
+                        AssistChip(onClick = {}, enabled = false, label = { Text(tag) })
+                    }
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = editedEntry.note,
+                onValueChange = { editedEntry = editedEntry.copy(note = it) },
+                label = { Text("Note") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            )
+
+            Spacer(Modifier.height(20.dp))
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -492,9 +491,7 @@ fun EditEntrySheet(
                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                 }
                 Button(
-                    onClick = {
-                        onUpdate(editedEntry.copy(tags = selectedTags.toList()))
-                    },
+                    onClick = { onUpdate(editedEntry) },
                     modifier = Modifier.weight(0.8f)
                 ) {
                     Text("Save Changes")
@@ -508,36 +505,6 @@ fun EditEntrySheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
-        )
-    }
-
-    if (showTagDialog) {
-        var newTag by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showTagDialog = false },
-            title = { Text("Add new tag") },
-            text = {
-                OutlinedTextField(
-                    newTag,
-                    onValueChange = { newTag = it },
-                    label = { Text("Tag name") }
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTag.isNotBlank()) {
-                            availableTags = (availableTags + newTag.trim()).distinct()
-                            saveTags(context, availableTags)
-                            selectedTags.add(newTag.trim())
-                        }
-                        showTagDialog = false
-                    },
-                    enabled = newTag.isNotBlank()
-                ) {
-                    Text("Add")
-                }
-            }
         )
     }
 }

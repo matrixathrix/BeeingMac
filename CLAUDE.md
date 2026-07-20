@@ -67,12 +67,13 @@ case verify by static review and say so explicitly — the user compiles locally
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour |
-| `NowTab.kt` | The rating flow. Its header row = the `StatusStrip` pill (⬢ cell-hive · ring x/8 · 🍯 honey pots; taps to Hive) + the ⋮ menu button. Three queue states (2/1/0 pending hours), rating card (chips→comb→tags→notes→save), caught-up hero with Lock button + `TodayStripCard`. Exposes `ACTION_LOCK_PHONE` broadcast |
+| `NowTab.kt` | The rating flow. Header row = "Beeing" title + the `StatusStrip` pill (⬢ cell-hive · ring x/8 · 🍯 honey pots; taps to Hive) + the ⋮ menu button. Three queue states (2/1/0 pending hours), rating card (chips→comb→tags→notes→save), caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
+| `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `CombStrip.kt` | The rating input: 10 soft rounded-vertex hexagons (friendly, not sharp), zoned band tints at rest, hybrid honey fill, drag loupe, haptics. `scoreWord()`, `PointyHexShape` (now rounded — name kept) |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), reclaim CTA (only when recoverable hours exist), `GardenCard` (flowers→savers), calendar with score-tinted dots, streak log, reclaim dialogs |
 | `StreakEngine.kt` | Pure streak logic: `computeStreakState`, `computeDayOutcomes`, `computeStreakLog` (all replay full history deterministically — they must never disagree), `StreakMeter`/`StreakRing` composables, constants |
 | `PastTab.kt` | Analytics: D/W/M zoom cascade (page always == control-bar period; taps narrow one level; day = terminal → bottom sheet). One combined card: a **static control bar** (arrows + range label + `ZoomPicker`) over an **`AnimatedContent` region** keyed by `PastViewKey` — period steps slide L/R, a drill flies into the tapped bar (`scaleIn/Out` at `zoomOriginX`), driven by `navKind`/`zoomOriginX`. The region stacks summary stats (avg · hours rated · 🍯 honey used) + bar chart + `PatternGrid` + the folded-in **`TagScoresSection`** (short inner scroll ≈5 rows with a `FadingScrollbar`); each slot recomputes its own data from its key. `PatternGrid` is height-capped at the 7-col size (Week stops ballooning; extra width left blank), trimmed 24dp gutter, hour labels on the row seams. Current period's bar/column carry a white outline. `DaySheetContent`, edit sheet. Also `getScoreColor(Double)` |
-| `UIComponents.kt` | Shared: `HeaderSection`, `EditEntrySheet`, `SoulFuelTagsSection` (full tag editor), `NotesSection`, `HistoryPanel`, misc format helpers (`formatHour`, `getOrdinalSuffix`), plus legacy `ProfessionalChart`/`InsightPanel` (no longer mounted) |
+| `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (edits score + note only — tags are shown read-only, not addable/removable, here; shows which hour/date is being edited), `SoulFuelTagsSection` (full tag editor, used by `NowTab`'s live rating card), `NotesSection`, `HistoryPanel`, misc format helpers (`formatHour`, `getOrdinalSuffix`), plus legacy `ProfessionalChart`/`InsightPanel` (no longer mounted) |
 | `StatsComponents.kt` | Period buckets, weekly report notification, legacy `InsightsContent`/`CollapsibleSection` (no longer mounted) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers |
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
@@ -116,10 +117,12 @@ case verify by static review and say so explicitly — the user compiles locally
 ## Integration seams
 
 - **Lock phone:** `NowTab` sends a package-scoped broadcast
-  `com.example.beeing.ACTION_LOCK_PHONE`. The accessibility service that
-  performs the lock lives in the owner's local build (not this repo yet);
-  it should receive that action and call
-  `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)`.
+  `com.example.beeing.ACTION_LOCK_PHONE`, received by `LockAccessibilityService`
+  (registered in `AndroidManifest.xml`, config at
+  `res/xml/lock_accessibility_service_config.xml`), which calls
+  `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)`. If the service isn't
+  enabled yet, `NowTab` shows a dialog directing the user to
+  Settings → Accessibility instead of sending the broadcast.
 - **Notifications:** `NotificationReceiver` posts the hourly RemoteViews
   notification (10 score buttons). Tapping a score deep-links with
   `PENDING_SCORE`/`TARGET_TS` extras → `PendingRating` → pre-selects the comb.
@@ -134,7 +137,11 @@ case verify by static review and say so explicitly — the user compiles locally
 - The 2026-07 redesign (comb strip, three-state Now, Hive, Past zoom cascade)
   landed via PR #1 from branch `claude/mindfulness-app-ui-gqjbys`. Design
   rationale lives in that PR's description.
-- Known TODOs: active-window hysteresis persistence; accessibility-service
-  receiver for `ACTION_LOCK_PHONE`; legacy chart components in
-  `UIComponents.kt`/`StatsComponents.kt` can be deleted once nothing else
+- Known TODOs: active-window hysteresis persistence; legacy chart components
+  in `UIComponents.kt`/`StatsComponents.kt` can be deleted once nothing else
   references them.
+- 2026-07-20: added the `LockAccessibilityService` (lock now works in-repo,
+  no longer an external seam), restored the "Beeing" title to `NowTab`'s
+  header, renamed the lock button to "🔒 Lock phone and bee mindful🐝", and
+  redesigned `EditEntrySheet` (tighter rating circles and tag spacing, shows
+  which hour/date is being edited, notes are editable, tags are read-only).

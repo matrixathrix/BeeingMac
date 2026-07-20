@@ -84,6 +84,7 @@ fun NowTab(
     var showWindowInfo by remember { mutableStateOf(false) }
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val editSheetState = rememberModalBottomSheetState()
+    var showEnableAccessibility by remember { mutableStateOf(false) }
 
     // Score chosen on the notification arrives pre-selected
     LaunchedEffect(pendingScore) {
@@ -231,17 +232,23 @@ fun NowTab(
                 .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header: the status card (cell-hive · ring · 🍯) sits where the
-            // header used to be; tapping it opens the Hive. The ⋮ menu carries
-            // data options and "How it works".
+            // Header: the app title, plus the status card (cell-hive · ring ·
+            // 🍯) where taps open the Hive. The ⋮ menu carries data options
+            // and "How it works".
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    "Beeing",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.weight(1f))
                 StatusStrip(
                     state = streakState,
-                    onClick = onOpenStreaks,
-                    modifier = Modifier.weight(1f)
+                    onClick = onOpenStreaks
                 )
                 IconButton(onClick = onMenuClick) {
                     Icon(
@@ -275,9 +282,13 @@ fun NowTab(
                         Spacer(Modifier.height(16.dp))
                         Button(
                             onClick = {
-                                context.sendBroadcast(
-                                    Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
-                                )
+                                if (isLockAccessibilityServiceEnabled(context)) {
+                                    context.sendBroadcast(
+                                        Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
+                                    )
+                                } else {
+                                    showEnableAccessibility = true
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(14.dp),
@@ -286,7 +297,7 @@ fun NowTab(
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
                             )
                         ) {
-                            Text("🔒 Lock phone & go", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("🔒 Lock phone and bee mindful🐝", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                         }
                     }
                 }
@@ -459,6 +470,34 @@ fun NowTab(
             }
 
             Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
+        }
+
+        // First-run: locking needs the accessibility service turned on once
+        if (showEnableAccessibility) {
+            AlertDialog(
+                onDismissRequest = { showEnableAccessibility = false },
+                title = { Text("Turn on phone locking") },
+                text = {
+                    Text(
+                        "Beeing locks your screen the same way the power button does, so " +
+                                "Face/Fingerprint unlock keeps working next time. Turn on " +
+                                "\"Beeing\" under Accessibility once to enable it.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showEnableAccessibility = false
+                        context.startActivity(
+                            Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        )
+                    }) { Text("Open settings") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEnableAccessibility = false }) { Text("Not now") }
+                }
+            )
         }
 
         // Why-only-two-hours explainer
