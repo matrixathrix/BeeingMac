@@ -83,7 +83,7 @@ fun NowTab(
     var showTagDialog by remember { mutableStateOf(false) }
     var showWindowInfo by remember { mutableStateOf(false) }
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
-    val editSheetState = rememberModalBottomSheetState()
+    val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showEnableAccessibility by remember { mutableStateOf(false) }
 
     // Score chosen on the notification arrives pre-selected
@@ -241,16 +241,19 @@ fun NowTab(
             ) {
                 Text(
                     "Beeing",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
                 StatusStrip(
                     state = streakState,
                     onClick = onOpenStreaks
                 )
-                IconButton(onClick = onMenuClick) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.padding(start = 2.dp)
+                ) {
                     Icon(
                         Icons.Default.MoreVert,
                         contentDescription = "Menu",
@@ -334,11 +337,10 @@ fun NowTab(
                     )
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        // Header: chips when two hours compete, title when one
+                        // Header: fixed prompt + the "why only these hours" info
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (twoPending) "How was your hour?"
-                                else "How was your ${displayHourInfo.first}?",
+                                "How was your hour?",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
@@ -353,26 +355,42 @@ fun NowTab(
                             }
                         }
 
+                        // The hour(s) up for rating. Both chips carry a countdown
+                        // (the newer hour lives one hour longer) so they read at
+                        // the same height; a lone hour spans the full width.
+                        fun hourRange(offset: Int): String {
+                            val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
+                            val endH = cal.get(Calendar.HOUR_OF_DAY)
+                            return "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
+                        }
+                        fun minutesFor(offset: Int) =
+                            if (offset == 1) minutesToNextHour else minutesToNextHour + 60
+
+                        Spacer(Modifier.height(10.dp))
                         if (twoPending) {
-                            Spacer(Modifier.height(10.dp))
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 // The expiring hour first — it dies at the top of the hour
                                 listOf(1, 0).forEach { offset ->
-                                    val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
-                                    val endH = cal.get(Calendar.HOUR_OF_DAY)
-                                    val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
                                     PendingHourChip(
-                                        rangeLabel = range,
-                                        minutesLeft = if (offset == 1) minutesToNextHour else null,
+                                        rangeLabel = hourRange(offset),
+                                        minutesLeft = minutesFor(offset),
                                         selected = targetedHourOffset == offset,
                                         onClick = { onTargetedHourOffsetChange(offset) },
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
+                        } else {
+                            PendingHourChip(
+                                rangeLabel = hourRange(targetedHourOffset),
+                                minutesLeft = minutesFor(targetedHourOffset),
+                                selected = true,
+                                onClick = {},
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
 
                         Spacer(Modifier.height(8.dp))
@@ -575,10 +593,9 @@ fun NowTab(
             ) {
                 EditEntrySheet(
                     entry = editingEntry!!,
-                    onUpdate = { updated ->
-                        viewModel.saveRating(context, updated)
-                        editingEntry = null
-                    },
+                    dayEntries = todayRatings,
+                    onPersist = { updated -> viewModel.saveRating(context, updated) },
+                    onClose = { editingEntry = null },
                     onDelete = { id ->
                         viewModel.deleteRating(context, id)
                         editingEntry = null
@@ -607,7 +624,7 @@ private fun StatusStrip(
         )
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+            Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
         ) {
@@ -615,14 +632,14 @@ private fun StatusStrip(
                 Text(
                     "⬢",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp,
+                    fontSize = 23.sp,
                     color = Color(0xFFFFB300) // honey gold — hive identity
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "${state.currentStreak}",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp
+                    fontSize = 17.sp
                 )
             }
             StripDivider()
@@ -633,14 +650,21 @@ private fun StatusStrip(
             Text(
                 "${state.todayHours}/$STREAK_HOURS_REQUIRED",
                 fontWeight = FontWeight.ExtraBold,
-                fontSize = 14.sp
+                fontSize = 17.sp
             )
             StripDivider()
-            Text(
-                "🍯 ${state.savers}",
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 14.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "🍯",
+                    fontSize = 23.sp
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "${state.savers}",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 17.sp
+                )
+            }
         }
     }
 }
@@ -649,7 +673,7 @@ private fun StatusStrip(
 private fun StripDivider() {
     Box(
         Modifier
-            .size(width = 1.dp, height = 16.dp)
+            .size(width = 1.dp, height = 20.dp)
             .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
     )
 }
@@ -659,8 +683,8 @@ private fun MiniHourRing(hours: Int, qualified: Boolean) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val fill = if (qualified) Color(0xFF66BB6A) else Color(0xFFFFB300)
     val fraction = (hours.toFloat() / STREAK_HOURS_REQUIRED).coerceIn(0f, 1f)
-    Canvas(Modifier.size(20.dp)) {
-        val stroke = 3.dp.toPx()
+    Canvas(Modifier.size(24.dp)) {
+        val stroke = 3.5.dp.toPx()
         val inset = stroke / 2
         drawArc(
             color = track,
@@ -833,7 +857,12 @@ private fun TagPickerSection(
                 onClick = { onExpandedChange(true) },
                 label = {
                     Text(if (hiddenCount > 0) "+ $hiddenCount more" else "edit tags")
-                }
+                },
+                border = null,
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
     }

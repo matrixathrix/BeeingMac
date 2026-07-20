@@ -723,10 +723,16 @@ fun PastTab(
         ) {
             EditEntrySheet(
                 entry = editingEntry!!,
-                onUpdate = { updated ->
-                    viewModel.saveRating(context, updated)
-                    editingEntry = null
+                dayEntries = run {
+                    val ref = Calendar.getInstance().apply { timeInMillis = editingEntry!!.timestamp }
+                    allRatings.filter {
+                        val c = Calendar.getInstance().apply { timeInMillis = it.timestamp }
+                        c.get(Calendar.DAY_OF_YEAR) == ref.get(Calendar.DAY_OF_YEAR) &&
+                                c.get(Calendar.YEAR) == ref.get(Calendar.YEAR)
+                    }
                 },
+                onPersist = { updated -> viewModel.saveRating(context, updated) },
+                onClose = { editingEntry = null },
                 onDelete = { id ->
                     val entryToDelete = allRatings.find { it.id == id }
                     viewModel.deleteRating(context, id)

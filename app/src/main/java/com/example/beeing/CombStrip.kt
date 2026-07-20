@@ -126,8 +126,11 @@ fun CombStrip(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Loupe zone — fixed height so the layout never jumps when it appears
-        Box(Modifier.fillMaxWidth().height(70.dp)) {
+        Box(Modifier.fillMaxWidth()) {
+        // The loupe hangs in a zero-height anchor at the top of the comb so it
+        // reserves no vertical space; while dragging it rises ABOVE the strip
+        // and is free to overlap whatever sits above it — it's only temporary.
+        Box(Modifier.fillMaxWidth().height(0.dp)) {
             if (dragging && selectedScore != null && stripWidthPx > 0) {
                 val loupeWpx = with(density) { 58.dp.toPx() }
                 val cellW = stripWidthPx / 10f
@@ -135,7 +138,8 @@ fun CombStrip(
                 val x = centerX.coerceIn(0f, (stripWidthPx - loupeWpx).coerceAtLeast(0f))
                 Box(
                     Modifier
-                        .offset { IntOffset(x.roundToInt(), 0) }
+                        .zIndex(2f)
+                        .offset { IntOffset(x.roundToInt(), -with(density) { 74.dp.toPx() }.roundToInt()) }
                         .size(width = 58.dp, height = 66.dp)
                         .clip(PointyHexShape)
                         .background(scoreBandColor(selectedScore)),
@@ -189,6 +193,7 @@ fun CombStrip(
                 )
             }
         }
+        } // comb + loupe overlay box
 
         Spacer(Modifier.height(8.dp))
         val sel = selectedScore
