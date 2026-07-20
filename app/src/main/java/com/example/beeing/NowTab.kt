@@ -621,7 +621,8 @@ private fun StatusStrip(
         shape = RoundedCornerShape(50),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        ),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
     ) {
         Row(
             Modifier.padding(horizontal = 18.dp, vertical = 13.dp),

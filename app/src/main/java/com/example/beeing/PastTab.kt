@@ -15,7 +15,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -34,7 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
@@ -47,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.roundToInt
 
 /**
  * PAST TAB — the payoff screen. Reading order: summary → magnitude →
@@ -305,7 +302,12 @@ fun PastTab(
     var yearOffset by remember { mutableIntStateOf(0) }
     var sortByScore by remember { mutableStateOf(true) }
     var gridExpanded by remember { mutableStateOf(false) }
+    // The whole hour-by-hour pattern grid is folded away by default.
+    var hourByHourExpanded by remember { mutableStateOf(false) }
     var sheetDayStart by remember { mutableStateOf<Long?>(null) }
+    // The day the user last tapped in Day view — drives the white outline
+    // highlight (Day view only). Week/Month bars carry no highlight.
+    var selectedDayStart by remember { mutableStateOf<Long?>(null) }
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val daySheetState = rememberModalBottomSheetState()
     val editSheetState = rememberModalBottomSheetState()
@@ -364,35 +366,13 @@ fun PastTab(
         }
     }
 
-    // Horizontal anchor of the tapped unit (0..1) so the zoom flies into it.
-    fun originOf(unit: PeriodUnit): Float {
-        val i = units.indexOf(unit)
-        val n = units.size.coerceAtLeast(1)
-        return if (i < 0) 0.5f else ((i + 0.5f) / n).coerceIn(0f, 1f)
-    }
-
-    fun drill(unit: PeriodUnit) {
+    // Tapping is a Day-view-only affordance now: it opens that day's sheet and
+    // marks the day as selected (white outline). Zoom levels change only through
+    // the D/W/M picker; Week/Month bars and cells are inert.
+    fun openDay(unit: PeriodUnit) {
         if (unit.future) return
-        when (zoom) {
-            Zoom.M -> {
-                navKind = PastNav.ZoomIn
-                zoomOriginX = originOf(unit)
-                val cur = Calendar.getInstance()
-                val target = Calendar.getInstance().apply { timeInMillis = unit.drillStartMs }
-                monthOffset = (cur.get(Calendar.YEAR) * 12 + cur.get(Calendar.MONTH)) -
-                        (target.get(Calendar.YEAR) * 12 + target.get(Calendar.MONTH))
-                zoom = Zoom.W
-            }
-            Zoom.W -> {
-                navKind = PastNav.ZoomIn
-                zoomOriginX = originOf(unit)
-                val curWs = weekStartOf(Calendar.getInstance()).timeInMillis
-                weekOffset = ((curWs - unit.drillStartMs).toDouble() / (7.0 * 24 * 3600_000))
-                    .roundToInt().coerceAtLeast(0)
-                zoom = Zoom.D
-            }
-            Zoom.D -> sheetDayStart = unit.drillStartMs
-        }
+        selectedDayStart = unit.drillStartMs
+        sheetDayStart = unit.drillStartMs
     }
 
     Scaffold(
@@ -598,9 +578,8 @@ fun PastTab(
                                 ScoreBarChart(
                                     units = kUnits,
                                     avgs = kUnitAvgs,
-                                    onUnitClick = ::drill,
-                                    onSwipeEarlier = { goEarlier() },
-                                    onSwipeLater = { if (canForward) goLater() }
+                                    highlightStartMs = if (key.zoom == Zoom.D) selectedDayStart else null,
+                                    onUnitClick = if (key.zoom == Zoom.D) ::openDay else null
                                 )
 
                                 Spacer(Modifier.height(18.dp))
@@ -609,36 +588,53 @@ fun PastTab(
                                 )
                                 Spacer(Modifier.height(16.dp))
 
-                                // Hour-by-hour pattern grid
-                                SectionLabel(
-                                    when (key.zoom) {
-                                        Zoom.D -> "YOUR WEEK, HOUR BY HOUR"
-                                        Zoom.W -> "YOUR MONTH, HOUR BY HOUR"
-                                        Zoom.M -> "YOUR YEAR, HOUR BY HOUR"
-                                    }
-                                )
-                                Spacer(Modifier.height(10.dp))
-                                if (!gridExpanded && kEarly > 0) {
-                                    CapPill(
-                                        "▲ $kEarly early rating${if (kEarly == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
-                                    ) { gridExpanded = true }
+                                // Hour-by-hour pattern grid — collapsed by default
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { hourByHourExpanded = !hourByHourExpanded },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    SectionLabel(
+                                        when (key.zoom) {
+                                            Zoom.D -> "YOUR WEEK, HOUR BY HOUR"
+                                            Zoom.W -> "YOUR MONTH, HOUR BY HOUR"
+                                            Zoom.M -> "YOUR YEAR, HOUR BY HOUR"
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        if (hourByHourExpanded) "hide" else "show",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
-                                if (gridExpanded) {
-                                    CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
-                                        gridExpanded = false
+                                if (hourByHourExpanded) {
+                                    Spacer(Modifier.height(10.dp))
+                                    if (!gridExpanded && kEarly > 0) {
+                                        CapPill(
+                                            "▲ $kEarly early rating${if (kEarly == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
+                                        ) { gridExpanded = true }
                                     }
-                                }
-                                PatternGrid(
-                                    units = kUnits,
-                                    ratings = kPeriodEntries,
-                                    hourRange = if (gridExpanded) 0..23 else window,
-                                    onColumnClick = ::drill
-                                )
-                                if (!gridExpanded && kLate > 0) {
-                                    Spacer(Modifier.height(6.dp))
-                                    CapPill(
-                                        "▼ $kLate late rating${if (kLate == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
-                                    ) { gridExpanded = true }
+                                    if (gridExpanded) {
+                                        CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
+                                            gridExpanded = false
+                                        }
+                                    }
+                                    PatternGrid(
+                                        units = kUnits,
+                                        ratings = kPeriodEntries,
+                                        hourRange = if (gridExpanded) 0..23 else window,
+                                        highlightStartMs = if (key.zoom == Zoom.D) selectedDayStart else null,
+                                        onColumnClick = if (key.zoom == Zoom.D) ::openDay else null
+                                    )
+                                    if (!gridExpanded && kLate > 0) {
+                                        Spacer(Modifier.height(6.dp))
+                                        CapPill(
+                                            "▼ $kLate late rating${if (kLate == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
+                                        ) { gridExpanded = true }
+                                    }
                                 }
 
                                 Spacer(Modifier.height(18.dp))
@@ -884,23 +880,20 @@ private fun CapPill(text: String, onClick: () -> Unit) {
 
 /**
  * Band-colored bars over a light grid. The goal line is dashed with its
- * label INSIDE the plot; only the best unit carries a value label; the
- * current unit carries a white outline. Bars are tap targets for the zoom
- * cascade, and a horizontal swipe across the plot steps the period.
+ * label INSIDE the plot; only the best unit carries a value label. In Day
+ * view a tapped day opens its sheet and carries a white outline; Week/Month
+ * bars are inert (no tap, no highlight).
  */
 @Composable
 private fun ScoreBarChart(
     units: List<PeriodUnit>,
     avgs: List<Double?>,
-    onUnitClick: (PeriodUnit) -> Unit,
-    onSwipeEarlier: () -> Unit,
-    onSwipeLater: () -> Unit
+    highlightStartMs: Long?,
+    onUnitClick: ((PeriodUnit) -> Unit)?
 ) {
     val plotHeight = 150.dp
     val labelZone = 18.dp
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
-    val earlier by rememberUpdatedState(onSwipeEarlier)
-    val later by rememberUpdatedState(onSwipeLater)
     val goalPaint = remember {
         android.graphics.Paint().apply {
             color = android.graphics.Color.GRAY
@@ -932,18 +925,6 @@ private fun ScoreBarChart(
                 Modifier
                     .weight(1f)
                     .height(plotHeight + labelZone)
-                    .pointerInput(Unit) {
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (total > 60f) earlier()
-                                else if (total < -60f) later()
-                                total = 0f
-                            },
-                            onDragCancel = { total = 0f },
-                            onHorizontalDrag = { _, dragAmount -> total += dragAmount }
-                        )
-                    }
             ) {
                 Canvas(
                     Modifier
@@ -1026,10 +1007,13 @@ private fun ScoreBarChart(
                                         .height((animFrac * plotHeight.value).dp.coerceAtLeast(6.dp))
                                         .background(animColor)
                                         .then(
-                                            if (u.isCurrent) Modifier.border(2.dp, Color.White, barShape)
+                                            if (u.drillStartMs == highlightStartMs) Modifier.border(2.dp, Color.White, barShape)
                                             else Modifier
                                         )
-                                        .clickable { onUnitClick(u) }
+                                        .then(
+                                            if (onUnitClick != null) Modifier.clickable { onUnitClick(u) }
+                                            else Modifier
+                                        )
                                 )
                             }
                         }
@@ -1064,7 +1048,8 @@ private fun PatternGrid(
     units: List<PeriodUnit>,
     ratings: List<RatingEntry>,
     hourRange: IntRange,
-    onColumnClick: (PeriodUnit) -> Unit
+    highlightStartMs: Long?,
+    onColumnClick: ((PeriodUnit) -> Unit)?
 ) {
     // hour -> per-column average
     val cellAvgs = remember(units, ratings, hourRange) {
@@ -1159,11 +1144,12 @@ private fun PatternGrid(
                                 .clip(cellShape)
                                 .background(cellColor)
                                 .then(
-                                    if (u.isCurrent) Modifier.border(1.5.dp, Color.White, cellShape)
+                                    if (u.drillStartMs == highlightStartMs) Modifier.border(1.5.dp, Color.White, cellShape)
                                     else Modifier
                                 )
                                 .then(
-                                    if (!u.future) Modifier.clickable { onColumnClick(u) } else Modifier
+                                    if (onColumnClick != null && !u.future) Modifier.clickable { onColumnClick(u) }
+                                    else Modifier
                                 )
                         )
                     }
