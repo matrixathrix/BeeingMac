@@ -239,6 +239,20 @@ fun NowTab(
                 Modifier.fillMaxWidth().padding(bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Hamburger — carries all data options; sized to sit level
+                // with the "Beeing" title beside it.
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Menu,
+                        contentDescription = "Menu",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     "Beeing",
                     style = MaterialTheme.typography.headlineLarge,
@@ -250,16 +264,6 @@ fun NowTab(
                     state = streakState,
                     onClick = onOpenStreaks
                 )
-                IconButton(
-                    onClick = onMenuClick,
-                    modifier = Modifier.padding(start = 2.dp)
-                ) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
             if (allCaughtUp) {
@@ -547,8 +551,10 @@ fun NowTab(
                     Column {
                         OutlinedTextField(
                             newTag,
-                            onValueChange = { newTag = it },
-                            label = { Text("Tag name") }
+                            onValueChange = { if (it.length <= 20) newTag = it },
+                            label = { Text("Tag name") },
+                            supportingText = { Text("${newTag.length}/20") },
+                            singleLine = true
                         )
                         if (availableTags.size >= 30) {
                             Spacer(Modifier.height(8.dp))
@@ -622,25 +628,26 @@ private fun StatusStrip(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         ),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
+        // Subtler, thinner hairline outline than before
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f))
     ) {
         Row(
-            Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "⬢",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 23.sp,
+                    fontSize = 16.sp,
                     color = Color(0xFFFFB300) // honey gold — hive identity
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(3.dp))
                 Text(
                     "${state.currentStreak}",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 17.sp
+                    fontSize = 14.sp
                 )
             }
             StripDivider()
@@ -651,19 +658,19 @@ private fun StatusStrip(
             Text(
                 "${state.todayHours}/$STREAK_HOURS_REQUIRED",
                 fontWeight = FontWeight.ExtraBold,
-                fontSize = 17.sp
+                fontSize = 14.sp
             )
             StripDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "🍯",
-                    fontSize = 23.sp
+                    fontSize = 16.sp
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(3.dp))
                 Text(
                     "${state.savers}",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 17.sp
+                    fontSize = 14.sp
                 )
             }
         }
@@ -674,7 +681,7 @@ private fun StatusStrip(
 private fun StripDivider() {
     Box(
         Modifier
-            .size(width = 1.dp, height = 20.dp)
+            .size(width = 1.dp, height = 14.dp)
             .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
     )
 }
@@ -684,8 +691,8 @@ private fun MiniHourRing(hours: Int, qualified: Boolean) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val fill = if (qualified) Color(0xFF66BB6A) else Color(0xFFFFB300)
     val fraction = (hours.toFloat() / STREAK_HOURS_REQUIRED).coerceIn(0f, 1f)
-    Canvas(Modifier.size(24.dp)) {
-        val stroke = 3.5.dp.toPx()
+    Canvas(Modifier.size(18.dp)) {
+        val stroke = 3.dp.toPx()
         val inset = stroke / 2
         drawArc(
             color = track,
@@ -796,7 +803,7 @@ private fun TodayStripCard(
 // TAG PICKER  (capped at ~2 rows; expands to the full editor)
 // ============================================================
 
-private const val COLLAPSED_TAG_COUNT = 8
+private const val COLLAPSED_TAG_COUNT = 15
 
 @Composable
 private fun TagPickerSection(
@@ -818,7 +825,16 @@ private fun TagPickerSection(
                 selectedTags = selectedTags,
                 isTagDeleteMode = isTagDeleteMode,
                 isEnabled = true,
-                onTagDeleteModeChange = onTagDeleteModeChange,
+                // Tapping the tick means "done" — close the editor back to the
+                // tag row instead of dropping to an expanded pencil-only state.
+                onTagDeleteModeChange = { editing ->
+                    if (editing) {
+                        onTagDeleteModeChange(true)
+                    } else {
+                        onTagDeleteModeChange(false)
+                        onExpandedChange(false)
+                    }
+                },
                 onTagsUpdate = onTagsUpdate,
                 onShowTagDialog = onShowTagDialog
             )
@@ -855,7 +871,13 @@ private fun TagPickerSection(
                 )
             }
             AssistChip(
-                onClick = { onExpandedChange(true) },
+                onClick = {
+                    onExpandedChange(true)
+                    // "+N more" just reveals the hidden tags; "edit tags" means
+                    // the user wants to add/delete, so drop straight into edit
+                    // mode instead of making them tap the pencil again.
+                    if (hiddenCount == 0) onTagDeleteModeChange(true)
+                },
                 label = {
                     Text(if (hiddenCount > 0) "+ $hiddenCount more" else "edit tags")
                 },

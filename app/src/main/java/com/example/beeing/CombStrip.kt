@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,7 +74,7 @@ fun scoreWord(score: Int): String = SCORE_WORDS.getOrElse(score) { "" }
 val PointyHexShape = GenericShape { size, _ ->
     val w = size.width
     val h = size.height
-    val radius = size.minDimension * 0.22f
+    val radius = size.minDimension * 0.12f
     val pts = listOf(
         Offset(w * 0.5f, 0f),      // top point
         Offset(w, h * 0.25f),      // upper-right
@@ -116,6 +117,9 @@ fun CombStrip(
     val density = LocalDensity.current
     var stripWidthPx by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
+    // Raw finger X within the strip, so the loupe travels with the thumb
+    // rather than snapping to the selected cell's center.
+    var dragX by remember { mutableFloatStateOf(0f) }
 
     fun scoreForX(x: Float): Int {
         if (stripWidthPx <= 0) return 1
@@ -133,9 +137,10 @@ fun CombStrip(
         Box(Modifier.fillMaxWidth().height(0.dp)) {
             if (dragging && selectedScore != null && stripWidthPx > 0) {
                 val loupeWpx = with(density) { 58.dp.toPx() }
-                val cellW = stripWidthPx / 10f
-                val centerX = (selectedScore - 0.5f) * cellW - loupeWpx / 2f
-                val x = centerX.coerceIn(0f, (stripWidthPx - loupeWpx).coerceAtLeast(0f))
+                // Track the finger, not the cell center — the loupe slides
+                // smoothly under the thumb across the whole strip.
+                val x = (dragX - loupeWpx / 2f)
+                    .coerceIn(0f, (stripWidthPx - loupeWpx).coerceAtLeast(0f))
                 Box(
                     Modifier
                         .zIndex(2f)
@@ -165,10 +170,12 @@ fun CombStrip(
                         val down = awaitFirstDown()
                         down.consume()
                         dragging = true
+                        dragX = down.position.x
                         var last = scoreForX(down.position.x)
                         onScoreChange(last)
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         drag(down.id) { change ->
+                            dragX = change.position.x
                             val s = scoreForX(change.position.x)
                             if (s != last) {
                                 last = s
