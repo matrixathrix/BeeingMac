@@ -4,10 +4,13 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -138,7 +141,6 @@ fun NowTab(
     val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
 
     val allCaughtUp = isLatestHourLogged && isPreviousHourLogged
-    val twoPending = !isLatestHourLogged && !isPreviousHourLogged
 
     val streakState = remember(allRatings, viewModel.refreshTrigger) {
         computeStreakState(allRatings, loadReclaimSpends(context))
@@ -341,15 +343,53 @@ fun NowTab(
                     )
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        // Header: fixed prompt + the "why only these hours" info
+                        // Compact hour range: collapse the shared meridiem
+                        // ("3–4pm") so the whole thing fits the title line;
+                        // spell both out only across the noon boundary ("11am–12pm").
+                        fun hourRange(offset: Int): String {
+                            val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
+                            val endH = cal.get(Calendar.HOUR_OF_DAY)
+                            val startH = if (endH == 0) 23 else endH - 1
+                            val startNum = if (startH % 12 == 0) 12 else startH % 12
+                            return if ((startH < 12) == (endH < 12)) {
+                                "$startNum–${formatHour(endH)}"
+                            } else {
+                                "${formatHour(startH)}–${formatHour(endH)}"
+                            }
+                        }
+                        fun minutesFor(offset: Int) =
+                            if (offset == 1) minutesToNextHour else minutesToNextHour + 60
+
+                        // Header, all on one line: prompt · picker chip (‹ › carets,
+                        // each live only when that neighbouring hour is still
+                        // pending — offset 1 = earlier/expiring, offset 0 = latest)
+                        // · countdown to the right · info at the far edge.
+                        val mins = minutesFor(targetedHourOffset)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "How was your hour?",
+                                "How was your",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
+                                fontWeight = FontWeight.Bold
                             )
-                            IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(24.dp)) {
+                            Spacer(Modifier.width(8.dp))
+                            HourWindowPicker(
+                                rangeLabel = hourRange(targetedHourOffset),
+                                canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
+                                canGoLater = targetedHourOffset == 1 && !isLatestHourLogged,
+                                onEarlier = { onTargetedHourOffsetChange(1) },
+                                onLater = { onTargetedHourOffsetChange(0) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "⏳${mins}m",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                color = if (mins <= 15) Color(0xFFFFB300)
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(22.dp)) {
                                 Icon(
                                     Icons.Default.Info,
                                     contentDescription = "Why only these hours?",
@@ -359,45 +399,7 @@ fun NowTab(
                             }
                         }
 
-                        // The hour(s) up for rating. Both chips carry a countdown
-                        // (the newer hour lives one hour longer) so they read at
-                        // the same height; a lone hour spans the full width.
-                        fun hourRange(offset: Int): String {
-                            val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
-                            val endH = cal.get(Calendar.HOUR_OF_DAY)
-                            return "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
-                        }
-                        fun minutesFor(offset: Int) =
-                            if (offset == 1) minutesToNextHour else minutesToNextHour + 60
-
-                        Spacer(Modifier.height(10.dp))
-                        if (twoPending) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // The expiring hour first — it dies at the top of the hour
-                                listOf(1, 0).forEach { offset ->
-                                    PendingHourChip(
-                                        rangeLabel = hourRange(offset),
-                                        minutesLeft = minutesFor(offset),
-                                        selected = targetedHourOffset == offset,
-                                        onClick = { onTargetedHourOffsetChange(offset) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        } else {
-                            PendingHourChip(
-                                rangeLabel = hourRange(targetedHourOffset),
-                                minutesLeft = minutesFor(targetedHourOffset),
-                                selected = true,
-                                onClick = {},
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(12.dp))
                         CombStrip(
                             selectedScore = selectedScore,
                             onScoreChange = { selectedScore = it },
@@ -622,32 +624,34 @@ private fun StatusStrip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // A neutral gray fill (not the tinted surfaceVariant) so the strip pops off
+    // the header in both themes; grays chosen to sit above the app background.
+    val stripBg = if (isSystemInDarkTheme()) Color(0xFF3B3B3E) else Color(0xFFDDDCE0)
     Card(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(50),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        ),
-        // Subtler, thinner hairline outline than before
-        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f))
+            containerColor = stripBg,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "⬢",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
+                    fontSize = 21.sp,
                     color = Color(0xFFFFB300) // honey gold — hive identity
                 )
-                Spacer(Modifier.width(3.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     "${state.currentStreak}",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp
+                    fontSize = 18.sp
                 )
             }
             StripDivider()
@@ -658,19 +662,19 @@ private fun StatusStrip(
             Text(
                 "${state.todayHours}/$STREAK_HOURS_REQUIRED",
                 fontWeight = FontWeight.ExtraBold,
-                fontSize = 14.sp
+                fontSize = 18.sp
             )
             StripDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "🍯",
-                    fontSize = 16.sp
+                    fontSize = 21.sp
                 )
-                Spacer(Modifier.width(3.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     "${state.savers}",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp
+                    fontSize = 18.sp
                 )
             }
         }
@@ -681,8 +685,8 @@ private fun StatusStrip(
 private fun StripDivider() {
     Box(
         Modifier
-            .size(width = 1.dp, height = 14.dp)
-            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+            .size(width = 1.dp, height = 18.dp)
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
     )
 }
 
@@ -691,8 +695,8 @@ private fun MiniHourRing(hours: Int, qualified: Boolean) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val fill = if (qualified) Color(0xFF66BB6A) else Color(0xFFFFB300)
     val fraction = (hours.toFloat() / STREAK_HOURS_REQUIRED).coerceIn(0f, 1f)
-    Canvas(Modifier.size(18.dp)) {
-        val stroke = 3.dp.toPx()
+    Canvas(Modifier.size(24.dp)) {
+        val stroke = 4.dp.toPx()
         val inset = stroke / 2
         drawArc(
             color = track,
@@ -892,47 +896,59 @@ private fun TagPickerSection(
 }
 
 /**
- * One rateable hour as a tappable chip. Selected = filled with the primary
- * container color; the expiring hour shows minutes left, turning amber under 15.
+ * Compact, single-line hour-window picker that sits on the "How was your" line:
+ * the targeted hour range flanked by ‹ › carets. A caret is enabled only when
+ * the neighbouring hour is itself still pending, so the user can only step to a
+ * window that actually needs a rating. The countdown lives beside the chip, not
+ * inside it, so the whole control stays one text-height tall.
  */
 @Composable
-private fun PendingHourChip(
+private fun HourWindowPicker(
     rangeLabel: String,
-    minutesLeft: Int?,
-    selected: Boolean,
-    onClick: () -> Unit,
+    canGoEarlier: Boolean,
+    canGoLater: Boolean,
+    onEarlier: () -> Unit,
+    onLater: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val onContainer = MaterialTheme.colorScheme.onPrimaryContainer
     Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        border = if (selected) null else BorderStroke(
-            1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        ),
+        modifier = modifier,
+        shape = RoundedCornerShape(9.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.primaryContainer
         )
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onEarlier,
+                enabled = canGoEarlier,
+                modifier = Modifier.size(26.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "Earlier hour",
+                    tint = onContainer.copy(alpha = if (canGoEarlier) 1f else 0.25f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Text(
                 rangeLabel,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                fontSize = 15.sp,
-                maxLines = 1
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                maxLines = 1,
+                color = onContainer
             )
-            if (minutesLeft != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "⏳ ${minutesLeft}m left",
-                    fontSize = 11.sp,
-                    color = if (minutesLeft <= 15) Color(0xFFFFB300)
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+            IconButton(
+                onClick = onLater,
+                enabled = canGoLater,
+                modifier = Modifier.size(26.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Later hour",
+                    tint = onContainer.copy(alpha = if (canGoLater) 1f else 0.25f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

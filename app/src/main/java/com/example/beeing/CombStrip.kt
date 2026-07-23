@@ -1,7 +1,14 @@
 package com.example.beeing
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -41,6 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 
@@ -117,6 +126,19 @@ fun CombStrip(
     val density = LocalDensity.current
     var stripWidthPx by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
+
+    // Gentle breathing of the outlined cells while nothing is picked yet, so the
+    // comb reads as the live action area rather than a disabled control.
+    val pulse = rememberInfiniteTransition(label = "combPulse")
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "combPulseAlpha"
+    )
     // Raw finger X within the strip, so the loupe travels with the thumb
     // rather than snapping to the selected cell's center.
     var dragX by remember { mutableFloatStateOf(0f) }
@@ -132,8 +154,10 @@ fun CombStrip(
     ) {
         Box(Modifier.fillMaxWidth()) {
         // The loupe hangs in a zero-height anchor at the top of the comb so it
-        // reserves no vertical space; while dragging it rises ABOVE the strip
-        // and is free to overlap whatever sits above it — it's only temporary.
+        // reserves no vertical space. It's drawn in a Popup, not an offset Box,
+        // so it rises ABOVE the strip and OUT of the rating Card without being
+        // clipped by the card's rounded bounds — it's free to overlap whatever
+        // sits above it while the finger is down.
         Box(Modifier.fillMaxWidth().height(0.dp)) {
             if (dragging && selectedScore != null && stripWidthPx > 0) {
                 val loupeWpx = with(density) { 58.dp.toPx() }
@@ -141,21 +165,26 @@ fun CombStrip(
                 // smoothly under the thumb across the whole strip.
                 val x = (dragX - loupeWpx / 2f)
                     .coerceIn(0f, (stripWidthPx - loupeWpx).coerceAtLeast(0f))
-                Box(
-                    Modifier
-                        .zIndex(2f)
-                        .offset { IntOffset(x.roundToInt(), -with(density) { 74.dp.toPx() }.roundToInt()) }
-                        .size(width = 58.dp, height = 66.dp)
-                        .clip(PointyHexShape)
-                        .background(scoreBandColor(selectedScore)),
-                    contentAlignment = Alignment.Center
+                val yOff = -with(density) { 74.dp.toPx() }
+                Popup(
+                    alignment = Alignment.TopStart,
+                    offset = IntOffset(x.roundToInt(), yOff.roundToInt()),
+                    properties = PopupProperties(focusable = false, clippingEnabled = false)
                 ) {
-                    Text(
-                        "$selectedScore",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (selectedScore >= 5) Color.Black else Color.White
-                    )
+                    Box(
+                        Modifier
+                            .size(width = 58.dp, height = 66.dp)
+                            .clip(PointyHexShape)
+                            .background(scoreBandColor(selectedScore)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "$selectedScore",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (selectedScore >= 5) Color.Black else Color.White
+                        )
+                    }
                 }
             }
         }
@@ -196,21 +225,25 @@ fun CombStrip(
                     selectedScore = selectedScore,
                     dragging = dragging,
                     enabled = enabled,
+                    pulseAlpha = pulseAlpha,
                     modifier = Modifier.weight(1f)
                 )
             }
         }
         } // comb + loupe overlay box
 
-        Spacer(Modifier.height(8.dp))
+        // Only the picked value is echoed — the empty-state prompt is gone; the
+        // pulsating outlined comb already signals "tap here".
         val sel = selectedScore
-        Text(
-            text = if (sel != null) "$sel · ${scoreWord(sel)}" else "how was it?",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (sel != null) scoreBandColor(sel)
-            else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (sel != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "$sel · ${scoreWord(sel)}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = scoreBandColor(sel)
+            )
+        }
     }
 }
 
@@ -220,20 +253,23 @@ private fun CombCell(
     selectedScore: Int?,
     dragging: Boolean,
     enabled: Boolean,
+    pulseAlpha: Float,
     modifier: Modifier = Modifier
 ) {
     val sel = selectedScore
-    val bandColor = sel?.let { scoreBandColor(it) }
+    val bandColor = scoreBandColor(score)
     val isSelected = score == sel && !dragging
+    // Nothing picked yet: every cell is a bright, hollow, gently pulsing outline.
+    val atRest = sel == null
 
     val background = when {
-        sel == null -> scoreBandColor(score).copy(alpha = 0.14f) // zoned whisper
-        score <= sel -> bandColor!!                              // honey fill
-        else -> bandColor!!.copy(alpha = 0.18f)                  // faint same hue
+        atRest -> Color.Transparent                  // outline only
+        score <= sel!! -> scoreBandColor(sel)        // honey fill
+        else -> scoreBandColor(sel).copy(alpha = 0.18f) // faint same hue
     }
     val numberColor = when {
-        sel == null -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        score == sel -> if (sel >= 5) Color.Black else Color.White
+        atRest -> MaterialTheme.colorScheme.onSurface
+        score == sel!! -> if (sel >= 5) Color.Black else Color.White
         score < sel -> (if (sel >= 5) Color.Black else Color.White).copy(alpha = 0.35f)
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     }
@@ -250,9 +286,13 @@ private fun CombCell(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                if (atRest) alpha = pulseAlpha
             }
             .clip(PointyHexShape)
-            .background(background)
+            .then(
+                if (atRest) Modifier.border(2.dp, bandColor, PointyHexShape)
+                else Modifier.background(background)
+            )
             .alpha(if (enabled) 1f else 0.45f),
         contentAlignment = Alignment.Center
     ) {
