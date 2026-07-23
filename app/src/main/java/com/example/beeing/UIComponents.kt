@@ -712,6 +712,10 @@ fun NotesSection(
     enabled: Boolean = true
 ) {
     Column(Modifier.fillMaxWidth()) {
+        // Deliberately low-contrast — an optional afterthought, not a call to
+        // action. Border, label and text all sit at hint-text emphasis so the
+        // box recedes until the user actually taps into it.
+        val hint = MaterialTheme.colorScheme.onSurfaceVariant
         OutlinedTextField(
             value = noteText,
             onValueChange = onNoteChange,
@@ -719,7 +723,16 @@ fun NotesSection(
             modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
             shape = RoundedCornerShape(16.dp),
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = hint),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = hint.copy(alpha = 0.35f),
+                unfocusedBorderColor = hint.copy(alpha = 0.15f),
+                focusedLabelColor = hint.copy(alpha = 0.6f),
+                unfocusedLabelColor = hint.copy(alpha = 0.4f),
+                cursorColor = hint,
+                focusedTextColor = hint,
+                unfocusedTextColor = hint
+            )
         )
     }
 }
