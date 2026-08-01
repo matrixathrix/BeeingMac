@@ -193,3 +193,64 @@ case verify by static review and say so explicitly — the user compiles locally
   expanded tag editor's "✓ Show less" pill moved inline into the chip
   `FlowRow` (`onCollapse` slot on `SoulFuelTagsSection`) to save vertical
   space under the tags.
+- 2026-08-01 (dial polish): the cell parked under the notch now carries a
+  white stroke (only once a rating exists) so the selection reads on the ring
+  as well as in the core; the first-appearance "this spins" sway went from
+  ±4°/1.1 s to ±14°/2 s over two decaying swings (still under the 18°
+  half-detent, so the value never flips); detent haptics are now a full-
+  bodied `createOneShot(18 ms, 160)` (falling back to `EFFECT_HEAVY_CLICK`
+  / `LONG_PRESS`) instead of `EFFECT_TICK`; and `NowTab` trims the dial's
+  empty bottom rim (5% of its measured height, via a `layout` modifier) and
+  drops the 8dp spacer so the tag chips sit right under the comb.
+- 2026-08-01 (dial color): the ring is muted — every cell except the one under
+  the notch is drawn in `mutedCellColor` (its `dialScoreColor` hue lerped 60%
+  into `surfaceVariant`), with its digit in `onSurfaceVariant` rather than the
+  `dialDigitColor` lightness flip. Full saturation now appears only on the
+  notched cell and the core, so an unrated dial is a quiet comb. The hue arc
+  is unchanged (5°→125°) by owner decision — only intensity was dialled back.
+- 2026-08-01 (dial sound): the per-detent click no longer uses
+  `View.playSoundEffect` — that is the system TOUCH sound, silent unless the
+  user enabled "Touch sounds" (off by default on One UI). `DialTicker`
+  (private in `DecagonDial.kt`) synthesizes a ~9 ms damped 2.6 kHz ping with a
+  noise transient into a `MODE_STATIC` `AudioTrack` and replays it per detent;
+  `USAGE_ASSISTANCE_SONIFICATION` keeps it on the system/ring volume and
+  silent in silent mode. Knobs: `TICK_MS`, `TICK_VOLUME` (0.45), the 2600 Hz
+  and `exp(-t * 520)` terms. The dial's `tickSound` flag still gates it.
+- 2026-08-01 (dial fling): a flung wheel now coasts about twice as long —
+  `TAU_MS` 120→240 with the travel cap lifted in step (new
+  `FLING_MAX_TRAVEL` = 400°, ~11 detents, was 200°/~5). Both had to move
+  together: the cap is expressed as `FLING_MAX_TRAVEL / TAU_MS`, so raising
+  tau alone would have kept the same distance at half the speed.
+- 2026-08-01 (dial fling, again): 3× faster and 3× longer again — `TAU_MS`
+  240→720, `FLING_MAX_TRAVEL` 400°→3600° (ten full turns, ~100 detents), so
+  peak speed is 5°/ms and a max fling coasts ~4 s. Because that crosses a
+  detent every ~7 ms, `tick()` now drops haptic+click when the previous one
+  was under `MIN_TICK_GAP_MS` (55 ms) ago — otherwise the 18 ms vibration and
+  9 ms click queue into a single buzz. Value changes are NOT thinned: every
+  detent still fires `onRatingChange`.
+- 2026-08-01 (dial as fidget spinner): owner wants the wheel to be spinnable
+  for its own sake. Three things were capping it, and all three are fixed:
+  (1) the release-velocity filter was `0.75*old + 0.25*new`, so a hard flick
+  reported a fraction of the finger's real speed — now `0.35/0.65` plus a
+  `FLING_GAIN` of 1.9; (2) the cap tripled again to 15°/ms
+  (`FLING_MAX_TRAVEL` 10800°, ~30 turns, ~42 turns/s); (3) **the ring aliased**
+  — 10-fold symmetry means the silhouette repeats every 36°, so past 18°/frame
+  the wagon-wheel effect made a fast spin look like a slow backwards crawl.
+  `drawDial` now takes the signed speed and crossfades the ten cells into a
+  smeared annulus above ~10°/frame (`blur`), dropping digits and the selected
+  outline as it goes. Feedback: ticks stay rate-limited (`MIN_TICK_GAP_MS`)
+  and go short/light above `WHIRR_V`; `onRatingChange` is not pushed per detent
+  above `VALUE_PUSH_MAX_V` (~500/s would recompose the rating card) — the
+  landed value is always published by `animateThetaTo`. `spin` must be zeroed
+  anywhere `settleJob` is cancelled or the blur sticks on screen.
+- 2026-08-01 (fling gate): the fidget spin is now behind a firmer flick —
+  `settleFrom` picks one of two regimes off the raw release speed. Under
+  `FIDGET_FLICK_V` (3°/ms) an ordinary rating drag gets no gain,
+  `TAU_SETTLE_MS` (240) and `SETTLE_MAX_TRAVEL` (600°, ~1.7 turns); at or above
+  it, the `FLING_GAIN` boost, `TAU_FIDGET_MS` (720) and `FIDGET_MAX_TRAVEL`
+  (10800°) unlock. Rating precision lives below the gate, fidgeting above it.
+  Retuned same day to widen the gap between the two regimes: gate down to
+  2°/ms and `FLING_GAIN` up to 3.5 (so ~4.3°/ms of finger already tops out the
+  15°/ms cap), while the calm side got *slower* — `SETTLE_GAIN` 0.7 (it now
+  coasts slower than the finger threw it), `TAU_SETTLE_MS` 180,
+  `SETTLE_MAX_TRAVEL` 300° (<1 turn).

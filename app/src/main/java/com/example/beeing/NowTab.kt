@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
@@ -413,10 +414,17 @@ fun NowTab(
                         Spacer(Modifier.height(12.dp))
                         DecagonCombDial(
                             rating = selectedScore,
-                            onRatingChange = { if (!isLoggedCurrent) selectedScore = it }
+                            onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
+                            // The dial is square but its bottom ~5% is empty rim
+                            // below the lowest cell; drop it from the measured
+                            // height so the tags sit right under the comb.
+                            modifier = Modifier.layout { measurable, constraints ->
+                                val p = measurable.measure(constraints)
+                                val trimmed = (p.height * 0.95f).roundToInt()
+                                layout(p.width, trimmed) { p.place(0, 0) }
+                            }
                         )
 
-                        Spacer(Modifier.height(8.dp))
                         TagPickerSection(
                             allRatings = allRatings,
                             availableTags = availableTags,
