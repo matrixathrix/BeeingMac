@@ -43,10 +43,11 @@ import java.util.Calendar
 import java.util.Locale
 
 /**
- * STREAKS TAB — the long game lives here:
- *  - monthly calendar of day outcomes (💐 qualified / 🍯 saved / 🥀 missed)
- *  - honey pots + flower wallet
- *  - reclaim a missed hour from today (5 🌸, mandatory note)
+ * HIVE TAB — the long game lives here:
+ *  - monthly calendar of day outcomes (tinted dot built / 🌸 saved / hollow missed)
+ *  - the flower bank (the one currency)
+ *  - send a bee back: reclaim any of the last RECLAIM_WINDOW_HOURS clock hours
+ *    (5 🌸, mandatory note, may cross midnight and retro-qualify yesterday)
  *  - the full hive event log
  */
 @Composable
@@ -77,27 +78,26 @@ fun StreaksTab(
 
     var monthOffset by remember { mutableIntStateOf(0) } // 0 = current month
     var showPickHour by remember { mutableStateOf(false) }
-    var reclaimStartHour by remember { mutableStateOf<Int?>(null) }
+    var reclaimStartMillis by remember { mutableStateOf<Long?>(null) }
     var showRules by remember { mutableStateOf(false) }
-    // (title, body) of the currently open quick explainer, if any
-    var infoDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     // Day tapped on the calendar (start-of-day millis) → stats popup
     var statsDayMillis by remember { mutableStateOf<Long?>(null) }
 
-    // Today's expired unrated hours (start hours 0..H-3), most recent first
-    val missedHoursToday = remember(allRatings, viewModel.refreshTrigger) {
-        val today = Calendar.getInstance()
-        val currentHour = today.get(Calendar.HOUR_OF_DAY)
-        val ratedStarts = allRatings.filter { entry ->
-            val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
-            isSameDay(cal, today)
-        }.map {
-            Calendar.getInstance().apply { timeInMillis = it.timestamp }.get(Calendar.HOUR_OF_DAY)
-        }.toSet()
-        ((currentHour - 3) downTo 0).filter { it !in ratedStarts }
+    // Expired unrated hours a bee can still reach: hour starts 3..10 behind the
+    // current hour (the last 2 are still normally ratable). Crosses midnight —
+    // an early-morning reclaim can retroactively qualify yesterday. Most
+    // recent first. Values are hour-start millis.
+    val reclaimableHours = remember(allRatings, viewModel.refreshTrigger) {
+        val currentHourStart = Calendar.getInstance().apply {
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val ratedStarts = allRatings.map { it.timestamp }.toSet()
+        (3..RECLAIM_WINDOW_HOURS)
+            .map { currentHourStart - it * 3_600_000L }
+            .filter { it !in ratedStarts }
     }
 
-    val canAfford = streakState.bankProgress >= RECLAIM_COST
+    val canAfford = streakState.flowers >= RECLAIM_COST
 
     Column(
         modifier = Modifier
@@ -113,9 +113,9 @@ fun StreaksTab(
             expanded = false
         )
 
-        // ---- ACTION: reclaim a missed hour — the one action on this tab,
+        // ---- ACTION: send a bee back — the one action on this tab,
         // right under the goal it protects; hidden when nothing to recover ----
-        if (missedHoursToday.isNotEmpty()) {
+        if (reclaimableHours.isNotEmpty()) {
             val reclaimEnabled = canAfford
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -136,11 +136,11 @@ fun StreaksTab(
                         .alpha(if (reclaimEnabled) 1f else 0.55f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("💧", fontSize = 26.sp)
+                    Text("🐝", fontSize = 26.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Rate an older hour from today",
+                            "Missed rating a special hour?",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
                             color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
@@ -149,8 +149,9 @@ fun StreaksTab(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             if (reclaimEnabled)
-                                "${missedHoursToday.size} missed hour${if (missedHoursToday.size == 1) "" else "s"} · $RECLAIM_COST 🌸 each"
-                            else "Needs $RECLAIM_COST 🌸 — you have ${streakState.bankProgress}",
+                                "Send a bee back to revisit it · " +
+                                        "${reclaimableHours.size} in reach · $RECLAIM_COST 🌸 each"
+                            else "Needs $RECLAIM_COST 🌸 — you have ${streakState.flowers}",
                             fontSize = 13.sp,
                             color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -174,18 +175,10 @@ fun StreaksTab(
             }
         }
 
-        // ---- Garden: flowers and honey pots are ONE economy — ten slots fill
-        // left to right and crystallize into the next honey pot ----
-        GardenCard(
+        // ---- The flower bank: one currency, two prices ----
+        FlowerBankCard(
             state = streakState,
-            onClick = {
-                infoDialog = "🌸 The Garden" to
-                        "Each hour you rate beyond 8 in a day grows a flower (bank holds $FLOWER_CAP).\n\n" +
-                        "$HOURS_PER_SAVER flowers automatically fill a 🍯 honey pot (max $MAX_SAVERS). " +
-                        "Miss a day and one honey pot is spent for you — your hive survives. " +
-                        "No honey pots left? The hive resets.\n\n" +
-                        "You can also spend $RECLAIM_COST 🌸 to rate an hour you missed today."
-            }
+            onClick = { showRules = true }
         )
 
         // ---- Monthly calendar (info) ----
@@ -231,7 +224,7 @@ fun StreaksTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     LegendDot(color = getScoreColor(6.0), hollow = false, label = "hive day")
-                    LegendItem("🍯", "saved")
+                    LegendItem("🌸", "saved")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
@@ -286,32 +279,32 @@ fun StreaksTab(
         Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
     }
 
-    // ---- Pick which missed hour to reclaim ----
+    // ---- Pick which missed hour the bee flies back to ----
     if (showPickHour) {
         AlertDialog(
             onDismissRequest = { showPickHour = false },
-            title = { Text("Pick an hour to reclaim") },
+            title = { Text("🐝 Which hour?") },
             text = {
                 Column {
                     Text(
-                        "Each costs $RECLAIM_COST 🌸. You'll add a score and a short note.",
+                        "The bee revisits it for $RECLAIM_COST 🌸 — you'll add a score and a short note.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(12.dp))
-                    missedHoursToday.forEach { h ->
+                    reclaimableHours.forEach { startMs ->
                         Card(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
                                 .clickable {
-                                    reclaimStartHour = h
+                                    reclaimStartMillis = startMs
                                     showPickHour = false
                                 },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                "${formatHour(h)} - ${formatHour(h + 1)}",
+                                reclaimHourLabel(startMs),
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(12.dp),
                                 textAlign = TextAlign.Center
@@ -328,21 +321,18 @@ fun StreaksTab(
     }
 
     // ---- Reclaim ceremony (mandatory note) ----
-    reclaimStartHour?.let { startHour ->
+    reclaimStartMillis?.let { startMs ->
         ReclaimHourDialog(
-            startHour = startHour,
-            onDismiss = { reclaimStartHour = null },
+            startMillis = startMs,
+            onDismiss = { reclaimStartMillis = null },
             onReclaim = { score, note ->
+                val startHour = Calendar.getInstance()
+                    .apply { timeInMillis = startMs }.get(Calendar.HOUR_OF_DAY)
                 val endHour = startHour + 1
                 val entry = RatingEntry(
                     System.currentTimeMillis(),
                     score,
-                    Calendar.getInstance().apply {
-                        set(Calendar.HOUR_OF_DAY, startHour)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }.timeInMillis,
+                    startMs,
                     "$endHour${getOrdinalSuffix(endHour)}",
                     note,
                     listOf(RECLAIM_TAG)
@@ -350,7 +340,7 @@ fun StreaksTab(
                 viewModel.saveRating(context, entry)
                 recordReclaimSpend(context)
                 spendsVersion++
-                reclaimStartHour = null
+                reclaimStartMillis = null
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             }
         )
@@ -368,32 +358,20 @@ fun StreaksTab(
         )
     }
 
-    // ---- Quick explainer for a tapped info card ----
-    infoDialog?.let { (title, body) ->
-        AlertDialog(
-            onDismissRequest = { infoDialog = null },
-            title = { Text(title) },
-            text = { Text(body, fontSize = 14.sp, lineHeight = 20.sp) },
-            confirmButton = {
-                TextButton(onClick = { infoDialog = null }) { Text("Got it") }
-            }
-        )
-    }
-
-    // ---- Rules ----
+    // ---- The one explainer: how the hive works ----
     if (showRules) {
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text("How the hive works") },
+            title = { Text("🐝 How the hive works") },
             text = {
                 Column {
-                    Text("• Rate at least 8 hours in a day to build a cell — your hive grows one cell per day.", fontSize = 14.sp)
+                    Text("• Every rated hour is a foraging trip. 8 trips in a day builds one cell — the hive count is your streak.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Each extra hour beyond 8 gives you a 🌸 flower (max $FLOWER_CAP). $HOURS_PER_SAVER flowers fill a 🍯 honey pot (max $MAX_SAVERS).", fontSize = 14.sp)
+                    Text("• Hours beyond 8 gather 🌸 flowers (bank holds $FLOWER_CAP; you start with $GIFT_FLOWERS).", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Miss a day and one honey pot is used automatically. With no honey pots left, the hive resets.", fontSize = 14.sp)
+                    Text("• $RECLAIM_COST 🌸 sends a bee back to revisit any hour missed in the last $RECLAIM_WINDOW_HOURS — even into yesterday. Revisited hours count toward the 8 but gather nothing.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Spend $RECLAIM_COST 🌸 to rate an hour you missed today. Those hours count toward the 8 but don't earn flowers.", fontSize = 14.sp)
+                    Text("• Miss a day entirely and $SAVE_COST 🌸 are spent for you — the hive survives. Fewer than $SAVE_COST left? The hive resets.", fontSize = 14.sp)
                 }
             },
             confirmButton = {
@@ -489,7 +467,7 @@ private fun MonthGrid(
 /**
  * A calendar day. Repeated identical emoji carry no information, so a hive
  * day shows a dot tinted by that day's average score, a saved day shows the
- * small honey pot, and a missed day is a hollow red ring. Today gets the
+ * small flower, and a missed day is a hollow red ring. Today gets the
  * primary-color outline. Color never travels alone here — tapping any day
  * opens the stats dialog with the digits.
  */
@@ -532,7 +510,7 @@ private fun DayCell(
                     .clip(CircleShape)
                     .background(getScoreColor(avgScore ?: 0.0))
             )
-            DayOutcome.SAVED -> Text("🍯", fontSize = 11.sp)
+            DayOutcome.SAVED -> Text("🌸", fontSize = 11.sp)
             DayOutcome.MISSED -> Box(
                 Modifier
                     .size(9.dp)
@@ -544,12 +522,12 @@ private fun DayCell(
 }
 
 /**
- * The Garden: flowers and honey pots rendered as one economy. Ten slots fill
- * left to right; every full row of ten crystallizes into the next honey pot.
- * The whole card is tappable for the explainer.
+ * The flower bank: the one currency, shown as a count plus a thin fill track
+ * toward the cap, with the two prices spelled out underneath. The whole card
+ * is tappable for the hive explainer.
  */
 @Composable
-private fun GardenCard(
+private fun FlowerBankCard(
     state: StreakState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -564,7 +542,7 @@ private fun GardenCard(
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "GARDEN",
+                    "FLOWERS",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp,
@@ -573,60 +551,49 @@ private fun GardenCard(
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     Icons.Default.Info,
-                    contentDescription = "About the garden",
+                    contentDescription = "How the hive works",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.size(12.dp)
                 )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Flower slots toward the next saver
-                Row(
-                    Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    val filled = state.bankProgress.coerceAtMost(HOURS_PER_SAVER)
-                    for (i in 0 until HOURS_PER_SAVER) {
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (i < filled) Text("🌸", fontSize = 11.sp)
-                        }
-                    }
-                }
+                Spacer(Modifier.weight(1f))
                 Text(
-                    "  →  ",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
+                    "${state.flowers} 🌸",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    " / $FLOWER_CAP",
+                    fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    for (i in 0 until MAX_SAVERS) {
-                        Text(
-                            "🍯",
-                            fontSize = 17.sp,
-                            modifier = Modifier.alpha(if (i < state.savers) 1f else 0.22f)
-                        )
-                    }
-                }
             }
             Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { state.flowers / FLOWER_CAP.toFloat() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = Color(0xFFF48FB1), // flower pink — data, not interactive
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.height(10.dp))
             Text(
-                if (state.savers >= MAX_SAVERS)
-                    "Honey pots full · ${state.bankProgress}/$FLOWER_CAP 🌸 banked"
-                else
-                    "${(HOURS_PER_SAVER - state.bankProgress).coerceAtLeast(0)} more 🌸 fill your next 🍯 · " +
-                            "$RECLAIM_COST 🌸 reclaims a missed hour",
+                "$RECLAIM_COST 🌸 revisits a missed hour · " +
+                        "$SAVE_COST 🌸 saves a missed day",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
+}
+
+/** "9 - 10 PM" with a "Yesterday" prefix when the hour start falls before today. */
+private fun reclaimHourLabel(startMillis: Long): String {
+    val c = Calendar.getInstance().apply { timeInMillis = startMillis }
+    val h = c.get(Calendar.HOUR_OF_DAY)
+    val prefix = if (isSameDay(c, Calendar.getInstance())) "" else "Yesterday · "
+    return "$prefix${formatHour(h)} - ${formatHour((h + 1) % 24)}"
 }
 
 /** Stats popup for a tapped calendar day. */
@@ -659,9 +626,9 @@ private fun DayStatsDialog(
         SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
     }
     val outcomeLine = when {
-        outcome == DayOutcome.QUALIFIED -> "💐 Streak day"
-        outcome == DayOutcome.SAVED -> "🍯 Missed, but a honey pot covered it"
-        outcome == DayOutcome.MISSED -> "🥀 Missed"
+        outcome == DayOutcome.QUALIFIED -> "⬢ Cell built"
+        outcome == DayOutcome.SAVED -> "🌸 Missed, but flowers covered it"
+        outcome == DayOutcome.MISSED -> "Missed"
         isToday -> "⏳ In progress"
         else -> "No ratings"
     }
@@ -687,7 +654,7 @@ private fun DayStatsDialog(
                         StatRow("Best hour", "${formatHour(h)} - ${formatHour((h + 1) % 24)} · ${it.score}")
                     }
                     if (flowers > 0) StatRow("Flowers earned", "+$flowers 🌸")
-                    if (reclaimed > 0) StatRow("Reclaimed hours", "$reclaimed 💧")
+                    if (reclaimed > 0) StatRow("Reclaimed hours", "$reclaimed 🐝")
                     val topTags = entries.flatMap { it.tags }
                         .filter { it != RECLAIM_TAG }
                         .groupingBy { it }.eachCount()
@@ -749,7 +716,7 @@ private fun LegendDot(color: Color, hollow: Boolean, label: String) {
  */
 @Composable
 fun ReclaimHourDialog(
-    startHour: Int,
+    startMillis: Long,
     onDismiss: () -> Unit,
     onReclaim: (score: Int, note: String) -> Unit
 ) {
@@ -758,7 +725,7 @@ fun ReclaimHourDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("💧 Reclaim ${formatHour(startHour)} - ${formatHour(startHour + 1)}") },
+        title = { Text("🐝 ${reclaimHourLabel(startMillis)}") },
         text = {
             Column {
                 Text("What were you doing?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -803,7 +770,7 @@ fun ReclaimHourDialog(
             Button(
                 onClick = { score?.let { onReclaim(it, note.trim()) } },
                 enabled = score != null && note.isNotBlank()
-            ) { Text("Reclaim · $RECLAIM_COST 🌸") }
+            ) { Text("Revisit · $RECLAIM_COST 🌸") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

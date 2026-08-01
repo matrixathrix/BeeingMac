@@ -12,6 +12,12 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -620,86 +626,65 @@ fun SoulFuelTagsSection(
     allRatings: List<RatingEntry>,
     availableTags: List<String>,
     selectedTags: androidx.compose.runtime.snapshots.SnapshotStateList<String>,
-    isTagDeleteMode: Boolean,
     isEnabled: Boolean,
-    onTagDeleteModeChange: (Boolean) -> Unit,
     onTagsUpdate: (List<String>) -> Unit,
-    onShowTagDialog: () -> Unit
+    onManageTags: () -> Unit,
+    onCollapse: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
-
-    // Centered chips that read as part of the rating dial above; a single
-    // pencil toggles edit mode (delete existing tags / add new ones).
+    // Centered chips that read as part of the rating dial above; the single
+    // pencil opens the manage-tags popup (reorder / rename / delete / add).
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
-            if (isTagDeleteMode) {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = false,
-                        onClick = {
-                            val newTags = availableTags.filter { it != tag }
-                            saveTags(context, newTags)
-                            selectedTags.remove(tag)
-                            onTagsUpdate(newTags)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Delete $tag",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    )
-                }
-                // "New tag" comes last, in a neutral tone distinct from the tags
-                AssistChip(
-                    onClick = onShowTagDialog,
-                    enabled = isEnabled && availableTags.size < 30,
-                    label = { Text("New tag") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
+            availableTags.forEach { tag ->
+                InputChip(
+                    selected = tag in selectedTags,
+                    onClick = {
+                        if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                     },
-                    border = null,
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    label = { Text(tag) },
+                    enabled = isEnabled,
+                    colors = InputChipDefaults.inputChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = Color.White
                     )
                 )
-            } else {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = tag in selectedTags,
-                        onClick = {
-                            if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
             }
 
             IconButton(
-                onClick = { onTagDeleteModeChange(!isTagDeleteMode) },
+                onClick = onManageTags,
                 enabled = isEnabled,
                 modifier = Modifier.size(32.dp).align(Alignment.CenterVertically)
             ) {
                 Icon(
-                    if (isTagDeleteMode) Icons.Default.Check else Icons.Default.Edit,
-                    contentDescription = if (isTagDeleteMode) "Done editing" else "Edit tags",
+                    Icons.Default.Edit,
+                    contentDescription = "Manage tags",
                     modifier = Modifier.size(18.dp),
-                    tint = if (isTagDeleteMode) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // "Show less" rides in the same flow line as the chips so the
+            // expanded editor spends no extra vertical space on it.
+            if (onCollapse != null) {
+                FilledTonalButton(
+                    onClick = onCollapse,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(30.dp).align(Alignment.CenterVertically)
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text("Show less", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
@@ -711,29 +696,67 @@ fun NotesSection(
     onNoteChange: (String) -> Unit,
     enabled: Boolean = true
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        // Deliberately low-contrast — an optional afterthought, not a call to
-        // action. Border, label and text all sit at hint-text emphasis so the
-        // box recedes until the user actually taps into it.
-        val hint = MaterialTheme.colorScheme.onSurfaceVariant
-        OutlinedTextField(
+    // Deliberately low-contrast and collapsed by default — an optional
+    // afterthought, not a call to action. A slim "+ Add a note" row until
+    // tapped; then a compact single-row field at hint-text emphasis.
+    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    var expanded by remember { mutableStateOf(noteText.isNotEmpty()) }
+    var wantFocus by remember { mutableStateOf(false) }
+    // onFocusChanged fires once with isFocused=false when the field first
+    // attaches, so only collapse after the field has genuinely held focus.
+    var hadFocus by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    if (!expanded && noteText.isEmpty()) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled) { expanded = true; wantFocus = true }
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Add, contentDescription = null,
+                tint = hint.copy(alpha = 0.55f), modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("Add a note", fontSize = 13.sp, color = hint.copy(alpha = 0.55f))
+        }
+    } else {
+        BasicTextField(
             value = noteText,
             onValueChange = onNoteChange,
-            label = { Text("Add a note (optional)") },
-            modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
-            shape = RoundedCornerShape(16.dp),
             textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = hint),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = hint.copy(alpha = 0.35f),
-                unfocusedBorderColor = hint.copy(alpha = 0.15f),
-                focusedLabelColor = hint.copy(alpha = 0.6f),
-                unfocusedLabelColor = hint.copy(alpha = 0.4f),
-                cursorColor = hint,
-                focusedTextColor = hint,
-                unfocusedTextColor = hint
-            )
+            cursorBrush = SolidColor(hint),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus && noteText.isEmpty()) {
+                        expanded = false
+                        hadFocus = false
+                    }
+                },
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, hint.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
+                    if (noteText.isEmpty()) {
+                        Text("Add a note", fontSize = 14.sp, color = hint.copy(alpha = 0.4f))
+                    }
+                    inner()
+                }
+            }
         )
+        LaunchedEffect(wantFocus) {
+            if (wantFocus) { focusRequester.requestFocus(); wantFocus = false }
+        }
     }
 }
 

@@ -507,9 +507,9 @@ fun PastTab(
                             val kStats = remember(key, allRatings, window, refresh) {
                                 computePeriodStats(allRatings, kRange.first, kRange.second, window)
                             }
-                            val kSaversUsed = remember(key, allRatings, refresh) {
+                            val kDaysSaved = remember(key, allRatings, refresh) {
                                 computeStreakLog(allRatings, loadReclaimSpends(context))
-                                    .count { it.type == StreakEventType.SAVER_USED && it.timestamp in kRange.first until kRange.second }
+                                    .count { it.type == StreakEventType.SAVED && it.timestamp in kRange.first until kRange.second }
                             }
                             val kUnitAvgs = remember(key, allRatings, refresh) {
                                 kUnits.map { u ->
@@ -554,8 +554,8 @@ fun PastTab(
                                     )
                                     StatDivider()
                                     StatCell(
-                                        value = "🍯 $kSaversUsed",
-                                        label = "honey used",
+                                        value = "🌸 $kDaysSaved",
+                                        label = "days saved",
                                         modifier = Modifier.weight(1f)
                                     )
                                 }

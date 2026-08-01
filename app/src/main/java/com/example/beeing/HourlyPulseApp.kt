@@ -449,13 +449,13 @@ fun HourlyPulseApp(
                         Spacer(Modifier.height(12.dp))
 
                         Text(
-                            "🏆 Build Your Streak",
+                            "⬢ Build Your Hive",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate consistently and watch your streak grow! Missing ratings for more than 2 hours resets your streak, encouraging you to stay mindful.",
+                            "Rate 8 hours in a day to build one cell — the hive count is your streak. Extra hours gather 🌸 flowers: 5 send a bee back to revisit an hour you missed in the last 10, and a fully missed day spends 20 automatically to keep the hive alive.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )

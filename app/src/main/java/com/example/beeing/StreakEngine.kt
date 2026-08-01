@@ -47,12 +47,14 @@ import kotlin.math.sin
 // ============================================================
 
 const val STREAK_HOURS_REQUIRED = 8   // distinct rated hours for a day to count
-const val HOURS_PER_SAVER = 10        // banked extra hours per streak saver
-const val MAX_SAVERS = 3              // max savers a user can hold
-const val GIFTED_SAVERS = 1           // day-one gift so the first stumble doesn't reset
-const val RECLAIM_COST = 5            // flowers to rate one expired hour from today
-const val FLOWER_CAP = 20             // max flowers the bank can hold
-const val RECLAIM_TAG = "💧reclaimed" // marks hours rated via a reclaim
+const val FLOWER_CAP = 50             // max flowers the bank can hold
+const val SAVE_COST = 20              // flowers auto-spent to save a fully missed day
+const val GIFT_FLOWERS = 20           // day-one gift so the first stumble doesn't reset
+const val RECLAIM_COST = 5            // flowers to send a bee back for one expired hour
+const val RECLAIM_WINDOW_HOURS = 10   // how far back a bee can reach (clock hours, may cross midnight)
+// Stored sentinel inside persisted entries — the UI shows 🐝, but the stored
+// string must never change or old reclaims stop being recognized.
+const val RECLAIM_TAG = "💧reclaimed"
 
 // ============================================================
 // RECLAIM SPENDS  (persisted — not derivable from ratings)
@@ -75,30 +77,28 @@ data class StreakState(
     val currentStreak: Int,      // consecutive qualifying days ending today/yesterday
     val todayHours: Int,         // distinct hours rated today (may exceed 8)
     val todayQualified: Boolean, // todayHours >= STREAK_HOURS_REQUIRED
-    val savers: Int,             // 0..MAX_SAVERS
-    val bankProgress: Int,       // hours banked toward the NEXT saver (0..HOURS_PER_SAVER-1)
+    val flowers: Int,            // the one currency: 0..FLOWER_CAP
     val extraToday: Int          // hours today beyond the required 8 (UI flavour)
 )
 
 private fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
 
 /**
- * Replays the full history day-by-day so savers are spent deterministically:
+ * Replays the full history day-by-day so flowers are spent deterministically:
  *  - each calendar day with >=8 distinct rated hours counts toward the streak
- *  - extra hours (beyond 8) accumulate as flowers (bank capped at FLOWER_CAP);
- *    every 10 banked auto-forges a saver while below the saver cap
+ *  - extra hours (beyond 8) each bank one 🌸 flower (cap FLOWER_CAP)
  *  - reclaimed hours count toward the 8 but never earn flowers
  *  - each reclaim deducts RECLAIM_COST flowers on its day
- *  - a past day with <8 hours silently consumes a saver to hold the streak,
- *    or resets the streak (and the bank) if none are available
+ *  - a past day with <8 hours silently spends SAVE_COST flowers to hold the
+ *    streak, or resets the streak (and the bank) if it can't afford it
  *  - today is treated as "in progress": <8 neither counts nor breaks
- *  - everyone starts with one gifted saver
+ *  - everyone starts with GIFT_FLOWERS flowers
  */
 fun computeStreakState(
     ratings: List<RatingEntry>,
     reclaimSpends: List<Long> = emptyList()
 ): StreakState {
-    if (ratings.isEmpty()) return StreakState(0, 0, false, GIFTED_SAVERS, 0, 0)
+    if (ratings.isEmpty()) return StreakState(0, 0, false, GIFT_FLOWERS, 0)
 
     val hoursByDay = HashMap<Long, MutableSet<Int>>()
     val reclaimedByDay = HashMap<Long, MutableSet<Int>>()
@@ -129,8 +129,7 @@ fun computeStreakState(
     }
 
     var streak = 0
-    var savers = GIFTED_SAVERS
-    var bank = 0
+    var bank = GIFT_FLOWERS
 
     while (true) {
         val key = cursor.dayKey()
@@ -140,14 +139,10 @@ fun computeStreakState(
             streak += 1
             val reclaimed = reclaimedByDay[key]?.size ?: 0
             bank += (hours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            while (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
-                bank -= HOURS_PER_SAVER
-                savers += 1
-            }
             if (bank > FLOWER_CAP) bank = FLOWER_CAP
         } else if (key != todayKey) {
             // a real missed day in the past
-            if (savers > 0) savers -= 1 // auto-consume, streak holds
+            if (bank >= SAVE_COST) bank -= SAVE_COST // auto-spend, streak holds
             else { streak = 0; bank = 0 }
         }
         // today with <8 hours falls through: in progress, no effect
@@ -164,14 +159,13 @@ fun computeStreakState(
         currentStreak = streak,
         todayHours = todayHours,
         todayQualified = todayHours >= STREAK_HOURS_REQUIRED,
-        savers = savers,
-        bankProgress = bank,
+        flowers = bank,
         extraToday = maxOf(0, todayHours - STREAK_HOURS_REQUIRED)
     )
 }
 
 // ============================================================
-// DAY OUTCOMES  (calendar view: 💐 qualified / 🛡️ saved / 🥀 missed)
+// DAY OUTCOMES  (calendar view: tinted dot qualified / 🌸 saved / hollow ring missed)
 // ============================================================
 
 enum class DayOutcome { QUALIFIED, SAVED, MISSED }
@@ -214,8 +208,7 @@ fun computeDayOutcomes(
     }
 
     val outcomes = HashMap<Long, DayOutcome>()
-    var savers = GIFTED_SAVERS
-    var bank = 0
+    var bank = GIFT_FLOWERS
 
     while (true) {
         val key = cursor.dayKey()
@@ -225,14 +218,10 @@ fun computeDayOutcomes(
             outcomes[key] = DayOutcome.QUALIFIED
             val reclaimed = reclaimedByDay[key]?.size ?: 0
             bank += (hours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            while (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
-                bank -= HOURS_PER_SAVER
-                savers += 1
-            }
             if (bank > FLOWER_CAP) bank = FLOWER_CAP
         } else if (key != todayKey) {
-            if (savers > 0) {
-                savers -= 1
+            if (bank >= SAVE_COST) {
+                bank -= SAVE_COST
                 outcomes[key] = DayOutcome.SAVED
             } else {
                 bank = 0
@@ -536,7 +525,7 @@ private fun StreakRing(
 // STREAK LOG  (exhaustive, timestamped event history)
 // ============================================================
 
-enum class StreakEventType { STARTED, EXTENDED, SAVER_EARNED, SAVER_USED, RESET, BANKED, RECLAIMED }
+enum class StreakEventType { STARTED, EXTENDED, SAVED, RESET, BANKED, RECLAIMED }
 
 data class StreakEvent(
     val timestamp: Long,
@@ -546,13 +535,12 @@ data class StreakEvent(
 )
 
 private fun StreakEventType.emoji(): String = when (this) {
-    StreakEventType.STARTED -> "🌱"
+    StreakEventType.STARTED -> "🐝"
     StreakEventType.EXTENDED -> "⬢"
-    StreakEventType.SAVER_EARNED -> "🍯"
-    StreakEventType.SAVER_USED -> "🍯"
+    StreakEventType.SAVED -> "🌸"
     StreakEventType.RESET -> "💔"
     StreakEventType.BANKED -> "🌸"
-    StreakEventType.RECLAIMED -> "💧"
+    StreakEventType.RECLAIMED -> "🐝"
 }
 
 /**
@@ -599,8 +587,7 @@ fun computeStreakLog(
 
     val events = ArrayList<StreakEvent>()
     var streak = 0
-    var savers = GIFTED_SAVERS
-    var bank = 0
+    var bank = GIFT_FLOWERS
 
     while (true) {
         val key = cursor.get(Calendar.YEAR) * 1000L + cursor.get(Calendar.DAY_OF_YEAR)
@@ -626,28 +613,26 @@ fun computeStreakLog(
             val eligible = (n - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
             for (i in (n - eligible) until n) {
                 if (bank < FLOWER_CAP) bank += 1
-                if (bank >= HOURS_PER_SAVER && savers < MAX_SAVERS) {
-                    bank -= HOURS_PER_SAVER; savers += 1
-                    events.add(StreakEvent(orderedTs[i], StreakEventType.SAVER_EARNED, "Honey pot earned 🍯", "Filled $HOURS_PER_SAVER 🌸 flowers · honey pots now $savers"))
-                }
             }
             // end-of-day balance — only when extra hours were actually banked
             if (eligible > 0) {
                 events.add(
                     StreakEvent(
                         endOfDay, StreakEventType.BANKED, "End of day",
-                        "$dayLabel: +$eligible 🌸 flowers · balance ${bank} 🌸 · $savers honey pot${if (savers == 1) "" else "s"}"
+                        "$dayLabel: +$eligible 🌸 gathered · balance $bank 🌸"
                     )
                 )
             }
         } else if (key != todayKey) {
             // missed past day
-            if (savers > 0) {
-                savers -= 1
-                events.add(StreakEvent(endOfDay, StreakEventType.SAVER_USED, "Honey pot used 🍯", "$dayLabel had under 8 hours — hive saved · $savers honey pot${if (savers == 1) "" else "s"} left"))
-            } else if (streak > 0) {
+            if (bank >= SAVE_COST) {
+                bank -= SAVE_COST
+                events.add(StreakEvent(endOfDay, StreakEventType.SAVED, "Day saved 🌸", "$dayLabel had under 8 hours — spent $SAVE_COST 🌸 · balance $bank 🌸"))
+            } else {
+                if (streak > 0) {
+                    events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Hive reset 💔", "$dayLabel had under 8 hours and not enough 🌸 to save it"))
+                }
                 streak = 0; bank = 0
-                events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Hive reset 💔", "$dayLabel had under 8 hours and no honey pots left"))
             }
         }
         // today with <8 hours: in progress, no event
@@ -655,7 +640,7 @@ fun computeStreakLog(
         // reclaims spend from the bank on the day they happen
         spendsByDay[key]?.forEach { ts ->
             bank = (bank - RECLAIM_COST).coerceAtLeast(0)
-            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Hour reclaimed 💧", "Rated a missed hour · −$RECLAIM_COST 🌸 · balance $bank 🌸"))
+            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Bee sent back 🐝", "Revisited a missed hour · −$RECLAIM_COST 🌸 · balance $bank 🌸"))
         }
 
         if (key == todayKey) break

@@ -4,10 +4,12 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -17,21 +19,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToInt
 
 /**
  * NOW TAB — one job: this hour.
@@ -81,9 +92,9 @@ fun NowTab(
     val selectedTags = remember { mutableStateListOf<String>() }
     var currentNote by remember { mutableStateOf("") }
     var availableTags by remember { mutableStateOf(loadTags(context)) }
-    var isTagDeleteMode by remember { mutableStateOf(false) }
     var tagsExpanded by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
+    var showManageTags by remember { mutableStateOf(false) }
     var showWindowInfo by remember { mutableStateOf(false) }
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -235,7 +246,7 @@ fun NowTab(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header: the app title, plus the status card (cell-hive · ring ·
-            // 🍯) where taps open the Hive. The ⋮ menu carries data options
+            // 🌸) where taps open the Hive. The ⋮ menu carries data options
             // and "How it works".
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 14.dp),
@@ -400,20 +411,11 @@ fun NowTab(
                         }
 
                         Spacer(Modifier.height(12.dp))
-                        CombStrip(
-                            selectedScore = selectedScore,
-                            onScoreChange = { selectedScore = it },
-                            enabled = !isLoggedCurrent
+                        DecagonCombDial(
+                            rating = selectedScore,
+                            onRatingChange = { if (!isLoggedCurrent) selectedScore = it }
                         )
 
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            "TAG IT · PICK AT LEAST ONE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         Spacer(Modifier.height(8.dp))
                         TagPickerSection(
                             allRatings = allRatings,
@@ -421,23 +423,21 @@ fun NowTab(
                             selectedTags = selectedTags,
                             expanded = tagsExpanded,
                             onExpandedChange = { tagsExpanded = it },
-                            isTagDeleteMode = isTagDeleteMode,
-                            onTagDeleteModeChange = { isTagDeleteMode = it },
                             onTagsUpdate = {
                                 availableTags = it
                                 viewModel.triggerRefresh()
                             },
-                            onShowTagDialog = { showTagDialog = true }
+                            onManageTags = { showManageTags = true }
                         )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(6.dp))
                         NotesSection(
                             noteText = currentNote,
                             onNoteChange = { currentNote = it },
                             enabled = true
                         )
 
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(10.dp))
                         // The save button IS the state machine — its label
                         // explains what's missing instead of a dead checkmark
                         val earnsFlower = streakState.todayHours >= STREAK_HOURS_REQUIRED
@@ -593,6 +593,37 @@ fun NowTab(
             )
         }
 
+        // Manage tags: reorder (long-press drag) / rename / delete / add
+        if (showManageTags) {
+            ManageTagsDialog(
+                tags = availableTags,
+                onReorder = { newOrder ->
+                    saveTags(context, newOrder)
+                    availableTags = newOrder
+                    viewModel.triggerRefresh()
+                },
+                onRename = { old, new ->
+                    // Past entries keep the old name on purpose — a rename
+                    // only changes the picker going forward.
+                    val newTags = availableTags.map { if (it == old) new else it }
+                    saveTags(context, newTags)
+                    availableTags = newTags
+                    val i = selectedTags.indexOf(old)
+                    if (i >= 0) selectedTags[i] = new
+                    viewModel.triggerRefresh()
+                },
+                onDelete = { tag ->
+                    val newTags = availableTags.filter { it != tag }
+                    saveTags(context, newTags)
+                    availableTags = newTags
+                    selectedTags.remove(tag)
+                    viewModel.triggerRefresh()
+                },
+                onAddNew = { showTagDialog = true },
+                onDismiss = { showManageTags = false }
+            )
+        }
+
         // Edit a rated hour from the today strip (inside the 10h window)
         if (editingEntry != null) {
             ModalBottomSheet(
@@ -667,12 +698,12 @@ private fun StatusStrip(
             StripDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "🍯",
+                    "🌸",
                     fontSize = 21.sp
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "${state.savers}",
+                    "${state.flowers}",
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp
                 )
@@ -807,7 +838,7 @@ private fun TodayStripCard(
 // TAG PICKER  (capped at ~2 rows; expands to the full editor)
 // ============================================================
 
-private const val COLLAPSED_TAG_COUNT = 15
+private const val COLLAPSED_TAG_COUNT = 9
 
 @Composable
 private fun TagPickerSection(
@@ -816,10 +847,8 @@ private fun TagPickerSection(
     selectedTags: androidx.compose.runtime.snapshots.SnapshotStateList<String>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    isTagDeleteMode: Boolean,
-    onTagDeleteModeChange: (Boolean) -> Unit,
     onTagsUpdate: (List<String>) -> Unit,
-    onShowTagDialog: () -> Unit
+    onManageTags: () -> Unit
 ) {
     if (expanded) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -827,27 +856,11 @@ private fun TagPickerSection(
                 allRatings = allRatings,
                 availableTags = availableTags,
                 selectedTags = selectedTags,
-                isTagDeleteMode = isTagDeleteMode,
                 isEnabled = true,
-                // Tapping the tick means "done" — close the editor back to the
-                // tag row instead of dropping to an expanded pencil-only state.
-                onTagDeleteModeChange = { editing ->
-                    if (editing) {
-                        onTagDeleteModeChange(true)
-                    } else {
-                        onTagDeleteModeChange(false)
-                        onExpandedChange(false)
-                    }
-                },
                 onTagsUpdate = onTagsUpdate,
-                onShowTagDialog = onShowTagDialog
+                onManageTags = onManageTags,
+                onCollapse = { onExpandedChange(false) }
             )
-            TextButton(onClick = {
-                onExpandedChange(false)
-                onTagDeleteModeChange(false)
-            }) {
-                Text("Show less", fontSize = 12.sp)
-            }
         }
     } else {
         // Keep the original order, but never hide a tag that's selected
@@ -876,11 +889,10 @@ private fun TagPickerSection(
             }
             AssistChip(
                 onClick = {
-                    onExpandedChange(true)
                     // "+N more" just reveals the hidden tags; "edit tags" means
-                    // the user wants to add/delete, so drop straight into edit
-                    // mode instead of making them tap the pencil again.
-                    if (hiddenCount == 0) onTagDeleteModeChange(true)
+                    // the user wants to reorder/rename/delete/add, so open the
+                    // manage popup directly.
+                    if (hiddenCount > 0) onExpandedChange(true) else onManageTags()
                 },
                 label = {
                     Text(if (hiddenCount > 0) "+ $hiddenCount more" else "edit tags")
@@ -892,6 +904,235 @@ private fun TagPickerSection(
                 )
             )
         }
+    }
+}
+
+/**
+ * Manage-tags popup: one row per tag — long-press-drag anywhere on the row to
+ * reorder (the ☰ glyph is the affordance), pencil renames inline, ✕ deletes.
+ * A footer row adds a new tag via the existing add-tag dialog.
+ */
+@Composable
+private fun ManageTagsDialog(
+    tags: List<String>,
+    onReorder: (List<String>) -> Unit,
+    onRename: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onAddNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    val localTags = remember(tags) { tags.toMutableStateList() }
+    var draggingTag by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var renamingTag by remember { mutableStateOf<String?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var confirmDeleteTag by remember { mutableStateOf<String?>(null) }
+    val rowHeight = 46.dp
+    val rowHeightPx = with(LocalDensity.current) { rowHeight.toPx() }
+    val focusRequester = remember { FocusRequester() }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text(
+                            "Manage tags",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text("Hold & drag to reorder", fontSize = 11.sp, color = hint)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, "Close", Modifier.size(18.dp), tint = hint)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                Column(
+                    Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    localTags.forEach { tag ->
+                        key(tag) {
+                            val isDragging = draggingTag == tag
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(rowHeight)
+                                    .zIndex(if (isDragging) 1f else 0f)
+                                    .graphicsLayer {
+                                        if (isDragging) {
+                                            translationY = dragOffset
+                                            scaleX = 1.02f; scaleY = 1.02f
+                                            shadowElevation = 12f
+                                        }
+                                    }
+                                    .then(
+                                        if (isDragging) Modifier.background(
+                                            MaterialTheme.colorScheme.surfaceVariant,
+                                            RoundedCornerShape(10.dp)
+                                        ) else Modifier
+                                    )
+                                    .pointerInput(tag) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                renamingTag = null
+                                                draggingTag = tag
+                                                dragOffset = 0f
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                dragOffset += amount.y
+                                                val from = localTags.indexOf(tag)
+                                                val shift = (dragOffset / rowHeightPx).roundToInt()
+                                                val to = (from + shift).coerceIn(0, localTags.lastIndex)
+                                                if (to != from) {
+                                                    localTags.removeAt(from)
+                                                    localTags.add(to, tag)
+                                                    dragOffset -= (to - from) * rowHeightPx
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                draggingTag = null
+                                                dragOffset = 0f
+                                                onReorder(localTags.toList())
+                                            },
+                                            onDragCancel = {
+                                                draggingTag = null
+                                                dragOffset = 0f
+                                            }
+                                        )
+                                    }
+                            ) {
+                                Icon(
+                                    Icons.Default.Menu, contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = hint.copy(alpha = 0.45f)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                if (renamingTag == tag) {
+                                    val sanitized = renameText.replace(Regex("[,;|]"), " ").trim()
+                                    val valid = sanitized.isNotBlank() &&
+                                            (sanitized == tag || sanitized !in localTags)
+                                    BasicTextField(
+                                        value = renameText,
+                                        onValueChange = { if (it.length <= 20) renameText = it },
+                                        singleLine = true,
+                                        textStyle = LocalTextStyle.current.copy(
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .focusRequester(focusRequester)
+                                            .border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                                    )
+                                    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+                                    IconButton(
+                                        onClick = {
+                                            if (sanitized != tag) onRename(tag, sanitized)
+                                            renamingTag = null
+                                        },
+                                        enabled = valid,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check, "Save name",
+                                            Modifier.size(18.dp),
+                                            tint = if (valid) Color(0xFF4CAF50)
+                                            else hint.copy(alpha = 0.3f)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        tag, fontSize = 14.sp, maxLines = 1,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = { renamingTag = tag; renameText = tag },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Edit, "Rename $tag",
+                                            Modifier.size(16.dp), tint = hint
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { confirmDeleteTag = tag },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete, "Delete $tag",
+                                            Modifier.size(16.dp), tint = hint
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = localTags.size < 30) { onAddNew() }
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.Add, null, Modifier.size(16.dp), tint = hint)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (localTags.size < 30) "New tag" else "Tag limit reached (30)",
+                        fontSize = 13.sp, color = hint
+                    )
+                }
+            }
+        }
+    }
+
+    // Confirm before deleting — deletion can't be undone from the picker.
+    confirmDeleteTag?.let { tag ->
+        AlertDialog(
+            onDismissRequest = { confirmDeleteTag = null },
+            title = { Text("Delete \"$tag\"?") },
+            text = {
+                Text(
+                    "Removed from the picker. Past hours keep it.",
+                    fontSize = 14.sp, lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(tag)
+                    confirmDeleteTag = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteTag = null }) { Text("Cancel") }
+            }
+        )
     }
 }
 

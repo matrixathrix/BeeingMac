@@ -17,22 +17,29 @@ notification → rate → tag → save → lock phone → back to life.
 - Only the **last completed hour and the one before it** are ratable
   (2-hour window). Existing ratings are editable up to **10 hours** back
   (`EDIT_WINDOW_MS`).
-- Past the 8-hour mandate, each extra rated hour earns a **🌸 flower**
-  (bank cap 20). **10 flowers auto-fill a 🍯 honey pot** (max 3, 1 gifted;
-  "honey pot" is the user-facing name for a saver — the code type is still
-  `savers`). A missed day silently consumes a honey pot; none left → streak
-  resets.
-- **5 flowers reclaim** one expired hour *from today only* (mandatory note,
-  tagged `RECLAIM_TAG`; reclaimed hours count toward the 8 but earn nothing).
+- **One currency: 🌸 flowers** (bank cap 50, `GIFT_FLOWERS` 20 on day one).
+  Past the 8-hour mandate, each extra rated hour earns one flower. Honey pots
+  / savers are **gone** (2026-08 redesign).
+- **5 🌸 "sends a bee back"**: reclaim any unrated hour from the last
+  **10 clock hours** (`RECLAIM_WINDOW_HOURS`, rolling — may cross midnight
+  and retroactively qualify yesterday; the 2 normally-ratable hours are
+  excluded). Mandatory note, tagged `RECLAIM_TAG` (stored string is still
+  `"💧reclaimed"` — never change it, only display 🐝). Reclaimed hours count
+  toward the 8 but earn nothing.
+- A fully missed past day **auto-spends 20 🌸** (`SAVE_COST`) → day shows as
+  saved; can't afford it → streak (and bank) reset.
 - Constants live at the top of `StreakEngine.kt`.
 
 ### Bee lexicon (used in UI copy)
 
-Flower = extra rated hour · Honey pot 🍯 = streak insurance (the saver, renamed)
-· Cell/chamber = one qualifying day; the streak reads as a "cell hive" (⬢ N),
-no 🔥 · Comb = the rating widget · Hive = the streak tab · Waggle = celebration
-(reserved for rare milestones — never per-save; the one daily celebration is
-the ring closing).
+Flower 🌸 = the one currency (extra rated hour) · Reclaim copy is the full
+phrase "Missed rating a special hour? Send a bee back to revisit it" 🐝
+("revisit" is the owner-chosen verb) · A missed day "spends 20 🌸" = streak insurance · Cell/chamber = one
+qualifying day; the streak reads as a "cell hive" (⬢ N), no 🔥 · Comb = the
+rating widget · Hive = the streak tab · Waggle = celebration (reserved for
+rare milestones — never per-save; the one daily celebration is the ring
+closing). Honey/🍯 no longer appears in mechanics — honey gold survives only
+as an accent color.
 
 ## Verifying changes
 
@@ -67,13 +74,14 @@ case verify by static review and say so explicitly — the user compiles locally
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour |
-| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ cell-hive · ring x/8 · 🍯 honey pots — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to Hive) to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then comb→tags→notes→save. The notes box (`NotesSection`) is deliberately low-contrast (hint-level border/label/text). `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (15) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) opens the editor already in edit mode. In the expanded editor the tick (done) both exits edit mode **and** collapses back to the tag row. Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
+| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ cell-hive · ring x/8 · 🍯 honey pots — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to Hive) to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
-| `CombStrip.kt` | The rating input, now **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
-| `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), reclaim CTA (only when recoverable hours exist), `GardenCard` (flowers→savers), calendar with score-tinted dots, streak log, reclaim dialogs |
-| `StreakEngine.kt` | Pure streak logic: `computeStreakState`, `computeDayOutcomes`, `computeStreakLog` (all replay full history deterministically — they must never disagree), `StreakMeter`/`StreakRing` composables, constants |
+| `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten hexagonal cells docked on its edges, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
+| `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
+| `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (only when reachable hours exist), `FlowerBankCard` (🌸 count + progress bar to 50 + the two prices; taps open the one explainer), calendar with score-tinted dots (🌸 = saved day), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight) |
+| `StreakEngine.kt` | Pure streak logic: `computeStreakState`, `computeDayOutcomes`, `computeStreakLog` (all replay full history deterministically — they must never disagree; one 🌸 bank, `SAVE_COST` on missed days), `StreakMeter`/`StreakRing` composables, constants |
 | `PastTab.kt` | Analytics: D/W/M periods. **Charts are non-interactive except in Day view** — there is no tap-to-drill and no chart swipe; zoom levels change only via the `ZoomPicker`, periods only via the ‹ › arrows. In **Day view only**, tapping a day opens its bottom sheet and marks it via `selectedDayStart` (the white outline highlight — `highlightStartMs`); Week/Month bars/cells are inert and carry no highlight. One combined card: a **static control bar** (arrows + range label + `ZoomPicker`) over an **`AnimatedContent` region** keyed by `PastViewKey` — period steps slide L/R, zoom changes fly (`scaleIn/Out` at `zoomOriginX`), driven by `navKind`/`zoomOriginX`. The region stacks summary stats (avg · hours rated · 🍯 honey used) + `ScoreBarChart` + the **collapsed-by-default** hour-by-hour `PatternGrid` (show/hide toggle via `hourByHourExpanded`) + the folded-in **`TagScoresSection`** (short inner scroll ≈5 rows with a `FadingScrollbar`); each slot recomputes its own data from its key. `PatternGrid` is height-capped at the 7-col size (Week stops ballooning; extra width left blank), trimmed 24dp gutter, hour labels on the row seams. `DaySheetContent`, edit sheet. Also `getScoreColor(Double)` |
-| `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (opens fully expanded on one tap via `skipPartiallyExpanded`; grouped SCORE/TAGS/NOTE sections via the `SectionLabel` overline; edits score, note, **and** tags — every available tag is a toggleable `InputChip` (centered, tightened rows). Header = "Edit entry" + date on the left, time range flanked by ‹ › **seek carets** right-aligned. Carets step through that day's rated hours only (`dayEntries`, sorted; disabled at the ends), swapping `currentEntry` in place without closing; edited buffers are keyed on `currentEntry.id` so they reset per hour. Seeking mid-edit raises a save-or-discard `AlertDialog` (`pendingTarget`). Callbacks are split `onPersist`/`onClose` so an in-sheet save doesn't dismiss the sheet), `SoulFuelTagsSection` (full tag editor, used by `NowTab`'s live rating card; in edit mode the neutral-toned "New tag" `AssistChip` comes **last**, after the existing tags), `NotesSection`, `HistoryPanel`, misc format helpers (`formatHour`, `getOrdinalSuffix`), plus legacy `ProfessionalChart`/`InsightPanel` (no longer mounted) |
+| `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (opens fully expanded on one tap via `skipPartiallyExpanded`; grouped SCORE/TAGS/NOTE sections via the `SectionLabel` overline; edits score, note, **and** tags — every available tag is a toggleable `InputChip` (centered, tightened rows). Header = "Edit entry" + date on the left, time range flanked by ‹ › **seek carets** right-aligned. Carets step through that day's rated hours only (`dayEntries`, sorted; disabled at the ends), swapping `currentEntry` in place without closing; edited buffers are keyed on `currentEntry.id` so they reset per hour. Seeking mid-edit raises a save-or-discard `AlertDialog` (`pendingTarget`). Callbacks are split `onPersist`/`onClose` so an in-sheet save doesn't dismiss the sheet), `SoulFuelTagsSection` (display-only tag chips + a pencil that opens `NowTab`'s `ManageTagsDialog`; the old in-place delete mode is gone), `NotesSection` (collapsed "＋ Add a note" row → compact `BasicTextField`; a `hadFocus` flag stops the initial unfocused `onFocusChanged` event from re-collapsing it), `HistoryPanel`, misc format helpers (`formatHour`, `getOrdinalSuffix`), plus legacy `ProfessionalChart`/`InsightPanel` (no longer mounted) |
 | `StatsComponents.kt` | Period buckets, weekly report notification, legacy `InsightsContent`/`CollapsibleSection` (no longer mounted) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers |
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
@@ -161,3 +169,27 @@ case verify by static review and say so explicitly — the user compiles locally
   `TagPickerSection` shows 15 chips before "+N more"; the "edit tags" chip and
   the editor's tick now open/close edit mode without a redundant pencil step.
   Tag names are capped at 20 chars (30-tag max unchanged).
+- 2026-07-31: the rating input is now the **decagon dial** (`DecagonDial.kt`,
+  replacing `CombStrip` which is legacy/unmounted): score word Title-Cased
+  inside the core, resting core theme-aware via `colorScheme`. Rating card
+  tightened: "TAG IT" label removed, `NotesSection` collapses to a "＋ Add a
+  note" row, `COLLAPSED_TAG_COUNT` 15→9. Tag editing moved into
+  `ManageTagsDialog` (long-press-drag reorder, inline rename that migrates
+  history via `renameTagInRatings`, delete, add); `SoulFuelTagsSection` lost
+  its delete mode and `isTagDeleteMode` plumbing is gone.
+- 2026-08-01: **economy flattened to one currency** — honey pots/savers
+  removed (`StreakState.savers`/`bankProgress` → `flowers`). 🌸 cap 50,
+  20 gifted, missed day auto-spends 20 (`SAVE_COST`), reclaim = "send a bee
+  back" 🐝 for any of the last 10 clock hours (`RECLAIM_WINDOW_HOURS`,
+  crosses midnight; can retro-qualify yesterday; hour-start-millis based, no
+  longer today-only). GardenCard → `FlowerBankCard`; the two Hive explainers
+  merged into one; icon families unified (🐝/🌸/⬢, no 💐🥀💧🍯🛡️). History is
+  replayed under the new rules (savers were never persisted, so no stored
+  migration was needed). Ripples: Now `StatusStrip` shows 🌸, Past summary
+  stat is "🌸 days saved", weekly report line updated.
+- 2026-08-01 (later): tag edits are **picker-only by owner decision** — rename
+  no longer rewrites history (`renameTagInRatings` deleted from `Utils.kt`)
+  and delete asks for confirmation but never touches old entries. The
+  expanded tag editor's "✓ Show less" pill moved inline into the chip
+  `FlowRow` (`onCollapse` slot on `SoulFuelTagsSection`) to save vertical
+  space under the tags.
