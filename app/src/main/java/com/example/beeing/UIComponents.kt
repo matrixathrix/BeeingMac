@@ -447,10 +447,7 @@ fun EditEntrySheet(
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
                         label = { Text(tag) },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
+                        colors = tagChipColors()
                     )
                 }
 
@@ -543,6 +540,12 @@ fun EditEntrySheet(
 }
 
 @Composable
+internal fun tagChipColors() = InputChipDefaults.inputChipColors(
+    selectedContainerColor = MaterialTheme.colorScheme.primary,
+    selectedLabelColor = contentColorFor(MaterialTheme.colorScheme.primary)
+)
+
+@Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun SoulFuelTagsSection(
     allRatings: List<RatingEntry>,
@@ -602,10 +605,7 @@ fun SoulFuelTagsSection(
                         },
                         label = { Text(tag) },
                         enabled = isEnabled,
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
+                        colors = tagChipColors()
                     )
                 }
             }

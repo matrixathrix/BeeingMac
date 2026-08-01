@@ -33,6 +33,9 @@ import java.util.*
 import kotlin.math.cos
 import kotlin.math.sin
 
+// Shared with the "pick at least one tag" hint and BestHourCard's subtitle.
+private val NowCaptionSize = 12.sp
+
 /**
  * NOW TAB - UPDATED
  * - More top padding for status bar
@@ -202,7 +205,7 @@ fun NowTab(
             if (bothHoursRated) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF66BB6A))
+                    colors = CardDefaults.cardColors(containerColor = scoreBandColor(10))
                 ) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -241,7 +244,7 @@ fun NowTab(
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -292,11 +295,7 @@ fun NowTab(
                             contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = if (selectedScore == s) {
-                                    when {
-                                        s >= 8 -> Color(0xFF66BB6A)  // 8-10 GREEN
-                                        s >= 5 -> Color(0xFFFFB300)  // 5-7 YELLOW
-                                        else -> Color(0xFFB71C1C)     // 1-4 RED
-                                    }
+                                    scoreBandColor(s)
                                 } else {
                                     MaterialTheme.colorScheme.surfaceVariant
                                 }
@@ -356,7 +355,7 @@ fun NowTab(
                 if (selectedTags.isEmpty() && !isLoggedCurrent) {
                     Text(
                         "Pick at least one tag below to save this hour",
-                        fontSize = 12.sp,
+                        fontSize = NowCaptionSize,
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -380,7 +379,7 @@ fun NowTab(
                     onShowTagDialog = { showTagDialog = true }
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
 
                 // Notes Section
                 NotesSection(
@@ -553,7 +552,7 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
                 Text(
                     "${formatHour(startH)} - ${formatHour(endH)}" +
                             if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
-                    fontSize = 12.sp,
+                    fontSize = NowCaptionSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
