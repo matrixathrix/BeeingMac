@@ -21,8 +21,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -40,6 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import com.example.beeing.ui.theme.AccentOrange
+import com.example.beeing.ui.theme.BalooFontFamily
+import com.example.beeing.ui.theme.ChipNeutralFill
+import com.example.beeing.ui.theme.ChipNeutralText
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.RingQualifiedGreen
 import java.text.SimpleDateFormat
@@ -281,13 +287,31 @@ fun NowTab(
                     "Beeing",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black,
+                    fontFamily = BalooFontFamily,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
-                StatusStrip(
-                    state = streakState,
-                    onClick = onOpenStreaks
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    // Soft halo via a radial gradient scaled past the pill's
+                    // own bounds — no blur/RenderEffect, so it's cheap enough
+                    // to sit still behind an unrelated animation elsewhere
+                    // on screen (e.g. the rating dial) without costing frames.
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .graphicsLayer(scaleX = 1.35f, scaleY = 1.6f)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(AccentOrange.copy(alpha = 0.35f), Color.Transparent)
+                                ),
+                                RoundedCornerShape(50)
+                            )
+                    )
+                    StatusStrip(
+                        state = streakState,
+                        onClick = onOpenStreaks
+                    )
+                }
             }
 
             if (allCaughtUp) {
@@ -303,7 +327,12 @@ fun NowTab(
                         Modifier.fillMaxWidth().padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("All caught up 🐝", fontSize = NowHeroSize, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            "All caught up 🐝",
+                            fontSize = NowHeroSize,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = BalooFontFamily
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Next hour opens in $minutesToNextHour m",
@@ -321,14 +350,19 @@ fun NowTab(
                                     showEnableAccessibility = true
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.inverseSurface,
                                 contentColor = MaterialTheme.colorScheme.inverseOnSurface
                             )
                         ) {
-                            Text("🔒 Lock phone and bee mindful🐝", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "🔒 Lock phone and bee mindful🐝",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = BalooFontFamily
+                            )
                         }
                     }
                 }
@@ -355,13 +389,39 @@ fun NowTab(
                 )
             } else {
                 // ---- RATING: one card, ordered the way you act ----
+                Box(contentAlignment = Alignment.Center) {
+                    // Background glow behind the whole card — a radial
+                    // gradient scaled past the card's own bounds, not a blur.
+                    // A live RenderEffect/blur layer sitting behind an
+                    // actively-animating sibling (the dial) forced a redraw
+                    // of that layer on every frame the dial moved, at any
+                    // spin speed — that's what was making the spin stutter.
+                    // A gradient is just a shader fill: no extra compositing
+                    // pass, so it's free regardless of what's animating.
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .graphicsLayer(scaleX = 1.12f, scaleY = 1.12f)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(AccentOrange.copy(alpha = 0.28f), Color.Transparent)
+                                ),
+                                RoundedCornerShape(36.dp)
+                            )
+                    )
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) },
                     shape = RoundedCornerShape(20.dp),
+                    // Opaque, but flattened to the exact color the other
+                    // surfaceVariant-at-0.4-alpha cards render as (composited
+                    // over the scaffold background) — same look, no actual
+                    // transparency, so the glow can't show through the fill.
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            .copy(alpha = 0.4f)
+                            .compositeOver(MaterialTheme.colorScheme.background)
                     )
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -382,18 +442,22 @@ fun NowTab(
                         fun minutesFor(offset: Int) =
                             if (offset == 1) minutesToNextHour else minutesToNextHour + 60
 
-                        // Header, all on one line: prompt · picker chip (‹ › carets,
-                        // each live only when that neighbouring hour is still
-                        // pending — offset 1 = earlier/expiring, offset 0 = latest)
-                        // · countdown to the right · info at the far edge.
+                        // The question IS the hero now — a big standalone
+                        // headline, generic (not hour-specific) so it never
+                        // wraps oddly. Which hour, the countdown, and "why
+                        // these hours" all recede into one small meta row
+                        // beneath it — still fully functional, just quieter.
                         val mins = minutesFor(targetedHourOffset)
+                        Text(
+                            "How was your hour?",
+                            fontSize = 26.sp,
+                            lineHeight = 30.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = BalooFontFamily,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "How was your",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.width(8.dp))
                             HourWindowPicker(
                                 rangeLabel = hourRange(targetedHourOffset),
                                 canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
@@ -401,7 +465,7 @@ fun NowTab(
                                 onEarlier = { onTargetedHourOffsetChange(1) },
                                 onLater = { onTargetedHourOffsetChange(0) }
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(10.dp))
                             Text(
                                 "⏳${mins}m",
                                 fontSize = NowCaptionSize,
@@ -421,7 +485,7 @@ fun NowTab(
                             }
                         }
 
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(20.dp))
                         DecagonCombDial(
                             rating = selectedScore,
                             onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
@@ -455,7 +519,7 @@ fun NowTab(
                             enabled = true
                         )
 
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(18.dp))
                         // The save button IS the state machine — its label
                         // explains what's missing instead of a dead checkmark
                         val earnsFlower = streakState.todayHours >= STREAK_HOURS_REQUIRED
@@ -496,12 +560,22 @@ fun NowTab(
                                 }
                             },
                             enabled = !isLoggedCurrent && selectedScore != null && selectedTags.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentOrange,
+                                contentColor = Color.White
+                            )
                         ) {
-                            Text(saveLabel, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                saveLabel,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = BalooFontFamily
+                            )
                         }
                     }
+                }
                 }
             }
 
@@ -899,7 +973,8 @@ private fun TagPickerSection(
                         if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                     },
                     label = { Text(tag) },
-                    colors = tagChipColors()
+                    colors = tagChipColors(),
+                    border = null
                 )
             }
             AssistChip(
@@ -914,8 +989,8 @@ private fun TagPickerSection(
                 },
                 border = null,
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    containerColor = ChipNeutralFill,
+                    labelColor = ChipNeutralText
                 )
             )
         }

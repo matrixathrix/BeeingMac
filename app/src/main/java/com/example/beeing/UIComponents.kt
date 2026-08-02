@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
+import com.example.beeing.ui.theme.AccentOrange
+import com.example.beeing.ui.theme.ChipNeutralFill
+import com.example.beeing.ui.theme.ChipNeutralText
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -533,7 +536,8 @@ fun EditEntrySheet(
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
                         label = { Text(tag) },
-                        colors = tagChipColors()
+                        colors = tagChipColors(),
+                        border = null
                     )
                 }
             }
@@ -618,12 +622,15 @@ fun EditEntrySheet(
 }
 
 // Shared by every InputChip tag picker (NowTab's collapsed picker, this
-// section, EditEntrySheet) so the selected-label contrast fix can't drift
-// out of sync across call sites again.
+// section, EditEntrySheet) so the fixed-palette look can't drift out of
+// sync across call sites. Fixed orange/tan, matching the reference
+// screenshot's tag chips, in place of Material You's dynamic primary.
 @Composable
 internal fun tagChipColors() = InputChipDefaults.inputChipColors(
-    selectedContainerColor = MaterialTheme.colorScheme.primary,
-    selectedLabelColor = contentColorFor(MaterialTheme.colorScheme.primary)
+    containerColor = ChipNeutralFill,
+    labelColor = ChipNeutralText,
+    selectedContainerColor = AccentOrange,
+    selectedLabelColor = Color.White
 )
 
 @Composable
@@ -653,7 +660,8 @@ fun SoulFuelTagsSection(
                     },
                     label = { Text(tag) },
                     enabled = isEnabled,
-                    colors = tagChipColors()
+                    colors = tagChipColors(),
+                    border = null
                 )
             }
 

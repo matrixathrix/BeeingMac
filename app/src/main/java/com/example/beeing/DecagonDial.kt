@@ -102,20 +102,27 @@ private const val TICK_SAMPLE_RATE = 44100
 private const val TICK_MS = 9            // click length
 private const val TICK_VOLUME = 0.45f
 
+// Above WHIRR_V, discrete per-detent clicks stop firing entirely — retriggering
+// a short sample hundreds of times a second is what read as "stuttery messy
+// noise". A continuous whine tone was tried as a replacement but crashed the
+// audio HAL (see DialTicker.updateWhine()), so fast spin is silent except for
+// haptics.
+
 val DIAL_WORDS = mapOf(
     1 to "terrible", 2 to "bad", 3 to "rough", 4 to "meh", 5 to "okay",
     6 to "fine", 7 to "pretty good", 8 to "great", 9 to "excellent", 10 to "golden"
 )
 
-/** Smooth red -> amber -> green: HSL hue 5° -> 45° -> 125°. */
-fun dialScoreColor(score: Int): Color {
-    val t = (score - 1) / 9f
-    val hue = if (t <= 0.5f) 5f + (t / 0.5f) * 40f else 45f + ((t - 0.5f) / 0.5f) * 80f
-    return Color.hsl(hue, 0.70f, 0.46f)
-}
+/**
+ * One fixed accent for every cell, regardless of score — the previous
+ * red -> amber -> green hue sweep (HSL 5° -> 45° -> 125°) is gone from the
+ * dial by design; score-band coloring stays intact elsewhere (scoreBandColor,
+ * getScoreColor) since it's unrelated to how the rating widget itself reads.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun dialScoreColor(score: Int): Color = com.example.beeing.ui.theme.AccentOrange
 
-fun dialDigitColor(score: Int): Color =
-    if (score >= 6) Color(0xFF141404) else Color(0xFFF4F4F6)
+fun dialDigitColor(score: Int): Color = Color.White
 
 /**
  * Ring cell that is NOT under the notch: the score's hue washed most of the
@@ -184,6 +191,7 @@ private class DialTicker {
     }
 
     private var track: AudioTrack? = null
+    private var lastClickMs = 0L
 
     private fun ensureTrack(): AudioTrack? {
         track?.let { return it }
@@ -212,7 +220,20 @@ private class DialTicker {
         }.getOrNull().also { track = it }
     }
 
+    // The actual crash cause (traced via logcat, not guesswork): calling
+    // stop()+reloadStaticData()+play() on a MODE_STATIC track many times a
+    // second reliably aborts the audio HAL with a native SIGABRT (ubsan
+    // sub-overflow inside AudioTrack::processAudioBuffer) that no try/catch
+    // can stop. This floor is enforced HERE, inside play() itself, so no
+    // caller-side gating (or its absence) can ever restart the native track
+    // faster than this — the discrete "1:1 with every detent" request from
+    // earlier is capped by this to stay crash-safe, not truly unthrottled.
+    private val MIN_CLICK_GAP_MS = 20L
+
     fun play() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastClickMs < MIN_CLICK_GAP_MS) return
+        lastClickMs = now
         val t = ensureTrack() ?: return
         runCatching {
             if (t.playState != AudioTrack.PLAYSTATE_STOPPED) t.stop()
@@ -220,6 +241,19 @@ private class DialTicker {
             t.play()
         }
     }
+
+    // The whine tone (a looped MODE_STATIC AudioTrack, volume-only per-frame
+    // updates) was removed after it reliably crashed the audio HAL with a
+    // native SIGABRT (ubsan sub-overflow inside AudioTrack::processAudioBuffer)
+    // during sustained fast spins — confirmed NOT caused by pitch-shifting
+    // (removing setPlaybackParams left the identical crash) nor by the
+    // discrete click's restart rate (throttling play() didn't stop it
+    // either). Whatever the exact native trigger, it's specific to this
+    // looped-static-track construction, so updateWhine()/stopWhine() are now
+    // no-ops: fast spin is silent except for haptics, which is unaffected.
+    fun updateWhine(spinDegPerMs: Float) {}
+
+    fun stopWhine() {}
 
     fun release() {
         runCatching { track?.release() }
@@ -259,27 +293,32 @@ fun DecagonCombDial(
     var settleJob by remember { mutableStateOf<Job?>(null) }
 
     // A full fling crosses a detent every ~2 ms — far faster than the vibrator
-    // can service an 18 ms pulse. So feedback is rate-limited to one per
-    // MIN_TICK_GAP_MS and goes light above WHIRR_V, which turns a fast spin
-    // into a ratchet whirr instead of one long smeared buzz.
+    // can service an 18 ms pulse. So haptics stay rate-limited to one per
+    // MIN_TICK_GAP_MS and go light above WHIRR_V, turning a fast spin into a
+    // ratchet whirr instead of one long smeared buzz. The tick sound plays
+    // once per detent crossing, 1:1, ONLY below WHIRR_V — above it,
+    // updateWhine()'s continuous tone takes over instead of retriggering a
+    // short click hundreds of times a second (that's what read as stuttery,
+    // messy noise, not a whine).
     fun tick() {
         val now = SystemClock.uptimeMillis()
-        if (now - lastTickMs < MIN_TICK_GAP_MS) return
-        lastTickMs = now
         val fast = abs(spin) > WHIRR_V
-        val v = vibrator
-        when {
-            v != null && v.hasAmplitudeControl() ->
-                v.vibrate(VibrationEffect.createOneShot(if (fast) 10L else 18L, if (fast) 80 else 160))
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
-                v?.vibrate(
-                    VibrationEffect.createPredefined(
-                        if (fast) VibrationEffect.EFFECT_TICK else VibrationEffect.EFFECT_HEAVY_CLICK
+        if (now - lastTickMs >= MIN_TICK_GAP_MS) {
+            lastTickMs = now
+            val v = vibrator
+            when {
+                v != null && v.hasAmplitudeControl() ->
+                    v.vibrate(VibrationEffect.createOneShot(if (fast) 10L else 18L, if (fast) 80 else 160))
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                    v?.vibrate(
+                        VibrationEffect.createPredefined(
+                            if (fast) VibrationEffect.EFFECT_TICK else VibrationEffect.EFFECT_HEAVY_CLICK
+                        )
                     )
-                )
-            else -> view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                else -> view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            }
         }
-        if (tickSound) ticker.play()
+        if (tickSound && !fast) ticker.play()
     }
 
     fun detentCheck() {
@@ -311,10 +350,12 @@ fun DecagonCombDial(
             spin = (theta - prevTheta) / dtMs
             prevTheta = theta; prevT = now
             detentCheck()
+            ticker.updateWhine(spin)
             if (k >= 1f) break
         }
         theta = target
         spin = 0f
+        ticker.stopWhine()
         onRatingChange(topScore(target))
     }
 
@@ -336,9 +377,11 @@ fun DecagonCombDial(
                     spin = v
                     v *= exp(-dt / tau)
                     detentCheck()
+                    ticker.updateWhine(spin)
                 }
             }
             spin = 0f
+            ticker.stopWhine()
             animateThetaTo(nearestDetent(theta))
         }
     }
@@ -356,6 +399,7 @@ fun DecagonCombDial(
         if (rating == null) {
             settleJob?.cancel()   // cancelled mid-fling, so clear spin or the blur sticks
             theta = 0f; lastDetent = 0; awake = false; spin = 0f
+            ticker.stopWhine()
         }
     }
 
@@ -414,6 +458,7 @@ fun DecagonCombDial(
                             vTheta = 0.35f * vTheta + 0.65f * (d / dt)
                             spin = vTheta
                             detentCheck()
+                            ticker.updateWhine(spin)
                         }
                         change.consume()
                     },
@@ -421,7 +466,10 @@ fun DecagonCombDial(
                         if (engaged) {
                             if (SystemClock.uptimeMillis() - lastT > 90) vTheta = 0f  // paused: no flick
                             settleFrom(vTheta)
-                        } else spin = 0f
+                        } else {
+                            spin = 0f
+                            ticker.stopWhine()
+                        }
                     },
                     onDragCancel = { if (engaged) settleFrom(0f) }
                 )
