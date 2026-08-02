@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import com.example.beeing.ui.theme.HoneyGold
+import com.example.beeing.ui.theme.RingQualifiedGreen
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
@@ -67,6 +68,15 @@ import kotlin.math.roundToInt
  * performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN).
  */
 const val ACTION_LOCK_PHONE = "com.example.beeing.ACTION_LOCK_PHONE"
+
+// Small, NowTab-local type scale — replaces the ad hoc raw-sp literals that
+// used to be scattered per call site. Deliberately not on the shared
+// MaterialTheme.typography (titleMedium etc. are also read by StreaksTab and
+// EditEntrySheet; a global override would leak beyond this screen).
+private val NowHeroSize = 19.sp        // hero/CTA labels
+private val NowBodySize = 14.sp        // secondary text
+private val NowCaptionSize = 12.sp     // small inline text
+private val NowMicroSize = 10.sp       // tiny labels
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -250,7 +260,7 @@ fun NowTab(
             // 🌸) where taps open the Hive. The ⋮ menu carries data options
             // and "How it works".
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Hamburger — carries all data options; sized to sit level
@@ -293,11 +303,11 @@ fun NowTab(
                         Modifier.fillMaxWidth().padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("All caught up 🐝", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("All caught up 🐝", fontSize = NowHeroSize, fontWeight = FontWeight.ExtraBold)
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Next hour opens in $minutesToNextHour m",
-                            fontSize = 13.sp,
+                            fontSize = NowBodySize,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(16.dp))
@@ -327,7 +337,7 @@ fun NowTab(
                     TextButton(onClick = onOpenStreaks) {
                         Text(
                             "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · recover with 🌸 in the Hive ›",
-                            fontSize = 12.sp,
+                            fontSize = NowCaptionSize,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -394,10 +404,10 @@ fun NowTab(
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 "⏳${mins}m",
-                                fontSize = 12.sp,
+                                fontSize = NowCaptionSize,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
-                                color = if (mins <= 15) Color(0xFFFFB300)
+                                color = if (mins <= 15) HoneyGold
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.weight(1f))
@@ -411,7 +421,7 @@ fun NowTab(
                             }
                         }
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(16.dp))
                         DecagonCombDial(
                             rating = selectedScore,
                             onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
@@ -438,14 +448,14 @@ fun NowTab(
                             onManageTags = { showManageTags = true }
                         )
 
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
                         NotesSection(
                             noteText = currentNote,
                             onNoteChange = { currentNote = it },
                             enabled = true
                         )
 
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(14.dp))
                         // The save button IS the state machine — its label
                         // explains what's missing instead of a dead checkmark
                         val earnsFlower = streakState.todayHours >= STREAK_HOURS_REQUIRED
@@ -663,9 +673,9 @@ private fun StatusStrip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // A neutral gray fill (not the tinted surfaceVariant) so the strip pops off
-    // the header in both themes; grays chosen to sit above the app background.
-    val stripBg = if (isSystemInDarkTheme()) Color(0xFF3B3B3E) else Color(0xFFDDDCE0)
+    // A tonal-elevation fill (not the tinted surfaceVariant) so the strip pops
+    // off the header while still tracking dynamic color on Android 12+.
+    val stripBg = MaterialTheme.colorScheme.surfaceContainerHighest
     Card(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(50),
@@ -684,7 +694,7 @@ private fun StatusStrip(
                     "⬢",
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 21.sp,
-                    color = Color(0xFFFFB300) // honey gold — hive identity
+                    color = HoneyGold // hive identity
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
@@ -732,7 +742,7 @@ private fun StripDivider() {
 @Composable
 private fun MiniHourRing(hours: Int, qualified: Boolean) {
     val track = MaterialTheme.colorScheme.surfaceVariant
-    val fill = if (qualified) Color(0xFF66BB6A) else Color(0xFFFFB300)
+    val fill = if (qualified) RingQualifiedGreen else HoneyGold
     val fraction = (hours.toFloat() / STREAK_HOURS_REQUIRED).coerceIn(0f, 1f)
     Canvas(Modifier.size(24.dp)) {
         val stroke = 4.dp.toPx()
@@ -780,9 +790,9 @@ private fun TodayStripCard(
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
                 "TODAY SO FAR",
-                fontSize = 11.sp,
+                fontSize = NowMicroSize,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp,
+                letterSpacing = 0.6.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
@@ -818,24 +828,24 @@ private fun TodayStripCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     formatHour(window.first),
-                    fontSize = 10.sp,
+                    fontSize = NowMicroSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     formatHour((window.first + window.last) / 2),
-                    fontSize = 10.sp,
+                    fontSize = NowMicroSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     formatHour((window.last + 1) % 24),
-                    fontSize = 10.sp,
+                    fontSize = NowMicroSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(4.dp))
             Text(
                 "Tap a colored hour to edit it (up to 10 h back)",
-                fontSize = 10.sp,
+                fontSize = NowMicroSize,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
@@ -889,10 +899,7 @@ private fun TagPickerSection(
                         if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                     },
                     label = { Text(tag) },
-                    colors = InputChipDefaults.inputChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.White
-                    )
+                    colors = tagChipColors()
                 )
             }
             AssistChip(
@@ -1240,7 +1247,7 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
                 Text(
                     "${formatHour(startH)} - ${formatHour(endH)}" +
                             if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
-                    fontSize = 12.sp,
+                    fontSize = NowCaptionSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )

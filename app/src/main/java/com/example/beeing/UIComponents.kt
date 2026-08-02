@@ -533,10 +533,7 @@ fun EditEntrySheet(
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
                         label = { Text(tag) },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
+                        colors = tagChipColors()
                     )
                 }
             }
@@ -620,6 +617,15 @@ fun EditEntrySheet(
     }
 }
 
+// Shared by every InputChip tag picker (NowTab's collapsed picker, this
+// section, EditEntrySheet) so the selected-label contrast fix can't drift
+// out of sync across call sites again.
+@Composable
+internal fun tagChipColors() = InputChipDefaults.inputChipColors(
+    selectedContainerColor = MaterialTheme.colorScheme.primary,
+    selectedLabelColor = contentColorFor(MaterialTheme.colorScheme.primary)
+)
+
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun SoulFuelTagsSection(
@@ -647,10 +653,7 @@ fun SoulFuelTagsSection(
                     },
                     label = { Text(tag) },
                     enabled = isEnabled,
-                    colors = InputChipDefaults.inputChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = Color.White
-                    )
+                    colors = tagChipColors()
                 )
             }
 
