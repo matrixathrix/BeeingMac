@@ -118,7 +118,7 @@ fun buildWeeklySummaryText(context: Context): String {
     val parts = mutableListOf<String>()
     parts.add("Avg score ${String.format("%.1f", avg)} over ${week.size} hours")
     if (topTag != null) parts.add("most logged: $topTag")
-    parts.add("streak ${streak.currentStreak}🔥, savers ${streak.savers}🛡️")
+    parts.add("hive ⬢${streak.currentStreak}, ${streak.flowers}🌸")
     return parts.joinToString(" · ")
 }
 

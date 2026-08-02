@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Beeing</string>
+    <string name="lock_accessibility_service_description">Lets \"Lock phone and bee mindful\" lock your screen directly (like the power button), so Face/Fingerprint unlock keeps working next time.</string>
 </resources>

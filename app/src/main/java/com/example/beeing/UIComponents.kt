@@ -12,6 +12,15 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.clip
+import com.example.beeing.ui.theme.AccentOrange
+import com.example.beeing.ui.theme.ChipNeutralFill
+import com.example.beeing.ui.theme.ChipNeutralText
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -37,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -358,49 +368,132 @@ fun HeaderSection(
     }
 }
 
+// Compact overline used to group the edit sheet into Score / Tags / Note.
+@Composable
+private fun SectionLabel(text: String, top: Dp) {
+    Spacer(Modifier.height(top))
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.8.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(8.dp))
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditEntrySheet(
     entry: RatingEntry,
-    onUpdate: (RatingEntry) -> Unit,
+    dayEntries: List<RatingEntry>,
+    onPersist: (RatingEntry) -> Unit,
+    onClose: () -> Unit,
     onDelete: (Long) -> Unit
 ) {
-    var editedEntry by remember { mutableStateOf(entry) }
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val availableTags = remember { loadTags(context) }
 
-    var availableTags by remember { mutableStateOf(loadTags(context)) }
-    val selectedTags = remember { mutableStateListOf<String>().apply { addAll(entry.tags) } }
-    var showTagDialog by remember { mutableStateOf(false) }
+    // Today's rated hours, oldest → newest — what the ‹ › carets step through.
+    val sorted = remember(dayEntries) { dayEntries.sortedBy { it.timestamp } }
+
+    // The hour currently on screen; carets swap it without closing the sheet.
+    var currentEntry by remember { mutableStateOf(entry) }
+    val index = sorted.indexOfFirst { it.id == currentEntry.id }
+    val hasPrev = index > 0
+    val hasNext = index in 0 until sorted.size - 1
+
+    // Edited buffer + tag selection reset whenever we land on a new hour.
+    var editedEntry by remember(currentEntry.id) { mutableStateOf(currentEntry) }
+    val selectedTags = remember(currentEntry.id) { currentEntry.tags.toMutableStateList() }
+
+    val hasUnsavedEdits = editedEntry.score != currentEntry.score ||
+            editedEntry.note != currentEntry.note ||
+            selectedTags.toSet() != currentEntry.tags.toSet()
+
+    // A caret tapped mid-edit stashes the destination and asks save-or-discard.
+    var pendingTarget by remember { mutableStateOf<RatingEntry?>(null) }
+    fun seekTo(target: RatingEntry) {
+        if (hasUnsavedEdits) pendingTarget = target else currentEntry = target
+    }
+
+    val cal = remember(currentEntry.timestamp) { Calendar.getInstance().apply { timeInMillis = currentEntry.timestamp } }
+    val startH = cal.get(Calendar.HOUR_OF_DAY)
+    val endH = if (startH == 23) 0 else startH + 1
+    val dateLabel = remember(currentEntry.timestamp) { SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(cal.time) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            Text(
-                text = "Edit Entry",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = "Edit entry",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(top = 6.dp)
+                )
+                // Time period + seek carets in a pill, with the date centered below.
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { sorted.getOrNull(index - 1)?.let { seekTo(it) } },
+                                enabled = hasPrev,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowLeft, "Previous rated hour")
+                            }
+                            Text(
+                                text = "${formatHour(startH)} – ${formatHour(endH)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            IconButton(
+                                onClick = { sorted.getOrNull(index + 1)?.let { seekTo(it) } },
+                                enabled = hasNext,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowRight, "Next rated hour")
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = dateLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(16.dp))
-            Text("Select new score:")
-            Spacer(Modifier.height(12.dp))
-
+            SectionLabel("SCORE", top = 18.dp)
             Row(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
             ) {
                 (1..10).forEach { score ->
                     val isSelected = editedEntry.score == score
                     Box(
                         modifier = Modifier
-                            .size(if (isSelected) 56.dp else 48.dp)
+                            .size(if (isSelected) 42.dp else 36.dp)
                             .background(
                                 when {
                                     score >= 8 -> Color(0xFF66BB6A).copy(alpha = if (isSelected) 1f else 0.3f)
@@ -414,7 +507,7 @@ fun EditEntrySheet(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                             .border(
-                                width = if (isSelected) 3.dp else 0.dp,
+                                width = if (isSelected) 2.dp else 0.dp,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                 shape = CircleShape
                             ),
@@ -422,7 +515,7 @@ fun EditEntrySheet(
                     ) {
                         Text(
                             text = "$score",
-                            fontSize = if (isSelected) 20.sp else 16.sp,
+                            fontSize = if (isSelected) 15.sp else 13.sp,
                             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                             color = if (score >= 5) Color.Black else Color.White
                         )
@@ -430,15 +523,11 @@ fun EditEntrySheet(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text("Tags:", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-
-            @OptIn(ExperimentalLayoutApi::class)
+            SectionLabel("TAGS", top = 14.dp)
             FlowRow(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy((-6).dp)
             ) {
                 availableTags.forEach { tag ->
                     InputChip(
@@ -447,26 +536,23 @@ fun EditEntrySheet(
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
                         label = { Text(tag) },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-
-                IconButton(
-                    onClick = { showTagDialog = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add tag",
-                        modifier = Modifier.size(18.dp)
+                        colors = tagChipColors(),
+                        border = null
                     )
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            SectionLabel("NOTE", top = 14.dp)
+            OutlinedTextField(
+                value = editedEntry.note,
+                onValueChange = { editedEntry = editedEntry.copy(note = it) },
+                placeholder = { Text("Add a note") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            )
+
+            Spacer(Modifier.height(20.dp))
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -474,8 +560,8 @@ fun EditEntrySheet(
             ) {
                 IconButton(
                     onClick = {
-                        val deletedEntry = editedEntry
-                        onDelete(entry.id)
+                        val deletedEntry = currentEntry
+                        onDelete(currentEntry.id)
                         scope.launch {
                             val result = snackbarHostState.showSnackbar(
                                 message = "Entry deleted",
@@ -493,7 +579,8 @@ fun EditEntrySheet(
                 }
                 Button(
                     onClick = {
-                        onUpdate(editedEntry.copy(tags = selectedTags.toList()))
+                        onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                        onClose()
                     },
                     modifier = Modifier.weight(0.8f)
                 ) {
@@ -511,36 +598,40 @@ fun EditEntrySheet(
         )
     }
 
-    if (showTagDialog) {
-        var newTag by remember { mutableStateOf("") }
+    // Save-or-discard before a caret moves us off an edited hour.
+    pendingTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { showTagDialog = false },
-            title = { Text("Add new tag") },
-            text = {
-                OutlinedTextField(
-                    newTag,
-                    onValueChange = { newTag = it },
-                    label = { Text("Tag name") }
-                )
-            },
+            onDismissRequest = { pendingTarget = null },
+            title = { Text("Save changes?") },
+            text = { Text("You have unsaved edits to this hour.") },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTag.isNotBlank()) {
-                            availableTags = (availableTags + newTag.trim()).distinct()
-                            saveTags(context, availableTags)
-                            selectedTags.add(newTag.trim())
-                        }
-                        showTagDialog = false
-                    },
-                    enabled = newTag.isNotBlank()
-                ) {
-                    Text("Add")
-                }
+                TextButton(onClick = {
+                    onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                    currentEntry = target
+                    pendingTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    currentEntry = target
+                    pendingTarget = null
+                }) { Text("Discard") }
             }
         )
     }
 }
+
+// Shared by every InputChip tag picker (NowTab's collapsed picker, this
+// section, EditEntrySheet) so the fixed-palette look can't drift out of
+// sync across call sites. Fixed orange/tan, matching the reference
+// screenshot's tag chips, in place of Material You's dynamic primary.
+@Composable
+internal fun tagChipColors() = InputChipDefaults.inputChipColors(
+    containerColor = ChipNeutralFill,
+    labelColor = ChipNeutralText,
+    selectedContainerColor = AccentOrange,
+    selectedLabelColor = Color.White
+)
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -548,79 +639,63 @@ fun SoulFuelTagsSection(
     allRatings: List<RatingEntry>,
     availableTags: List<String>,
     selectedTags: androidx.compose.runtime.snapshots.SnapshotStateList<String>,
-    isTagDeleteMode: Boolean,
     isEnabled: Boolean,
-    onTagDeleteModeChange: (Boolean) -> Unit,
     onTagsUpdate: (List<String>) -> Unit,
-    onShowTagDialog: () -> Unit
+    onManageTags: () -> Unit,
+    onCollapse: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
-
-    // Centered chips that read as part of the rating dial above; a single
-    // pencil toggles edit mode (delete existing tags / add new ones).
+    // Centered chips that read as part of the rating dial above; the single
+    // pencil opens the manage-tags popup (reorder / rename / delete / add).
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
-            if (isTagDeleteMode) {
-                AssistChip(
-                    onClick = onShowTagDialog,
-                    enabled = isEnabled && availableTags.size < 30,
-                    label = { Text("New tag") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
-                    }
+            availableTags.forEach { tag ->
+                InputChip(
+                    selected = tag in selectedTags,
+                    onClick = {
+                        if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
+                    },
+                    label = { Text(tag) },
+                    enabled = isEnabled,
+                    colors = tagChipColors(),
+                    border = null
                 )
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = false,
-                        onClick = {
-                            val newTags = availableTags.filter { it != tag }
-                            saveTags(context, newTags)
-                            selectedTags.remove(tag)
-                            onTagsUpdate(newTags)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Delete $tag",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    )
-                }
-            } else {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = tag in selectedTags,
-                        onClick = {
-                            if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
             }
 
             IconButton(
-                onClick = { onTagDeleteModeChange(!isTagDeleteMode) },
+                onClick = onManageTags,
                 enabled = isEnabled,
                 modifier = Modifier.size(32.dp).align(Alignment.CenterVertically)
             ) {
                 Icon(
-                    if (isTagDeleteMode) Icons.Default.Check else Icons.Default.Edit,
-                    contentDescription = if (isTagDeleteMode) "Done editing" else "Edit tags",
+                    Icons.Default.Edit,
+                    contentDescription = "Manage tags",
                     modifier = Modifier.size(18.dp),
-                    tint = if (isTagDeleteMode) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // "Show less" rides in the same flow line as the chips so the
+            // expanded editor spends no extra vertical space on it.
+            if (onCollapse != null) {
+                FilledTonalButton(
+                    onClick = onCollapse,
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(30.dp).align(Alignment.CenterVertically)
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text("Show less", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
@@ -632,16 +707,67 @@ fun NotesSection(
     onNoteChange: (String) -> Unit,
     enabled: Boolean = true
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        OutlinedTextField(
+    // Deliberately low-contrast and collapsed by default — an optional
+    // afterthought, not a call to action. A slim "+ Add a note" row until
+    // tapped; then a compact single-row field at hint-text emphasis.
+    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    var expanded by remember { mutableStateOf(noteText.isNotEmpty()) }
+    var wantFocus by remember { mutableStateOf(false) }
+    // onFocusChanged fires once with isFocused=false when the field first
+    // attaches, so only collapse after the field has genuinely held focus.
+    var hadFocus by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    if (!expanded && noteText.isEmpty()) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled) { expanded = true; wantFocus = true }
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Add, contentDescription = null,
+                tint = hint.copy(alpha = 0.55f), modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("Add a note", fontSize = 13.sp, color = hint.copy(alpha = 0.55f))
+        }
+    } else {
+        BasicTextField(
             value = noteText,
             onValueChange = onNoteChange,
-            label = { Text("Add a note (optional)") },
-            modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
-            shape = RoundedCornerShape(16.dp),
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = hint),
+            cursorBrush = SolidColor(hint),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus && noteText.isEmpty()) {
+                        expanded = false
+                        hadFocus = false
+                    }
+                },
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, hint.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
+                    if (noteText.isEmpty()) {
+                        Text("Add a note", fontSize = 14.sp, color = hint.copy(alpha = 0.4f))
+                    }
+                    inner()
+                }
+            }
         )
+        LaunchedEffect(wantFocus) {
+            if (wantFocus) { focusRequester.requestFocus(); wantFocus = false }
+        }
     }
 }
 

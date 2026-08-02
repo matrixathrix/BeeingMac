@@ -463,6 +463,48 @@ class BackupReceiver : android.content.BroadcastReceiver() {
     }
 }
 
+// --- ACTIVE WINDOW ---
+// The stable hour range the day-strip and pattern grid render. Smallest
+// contiguous range covering ~90% of the hours rated in the trailing 30 days,
+// never narrower than 8 hours. Ratings outside it still count everywhere —
+// the UI shows them via compact "early/late" cap rows instead of dead rows.
+const val EDIT_WINDOW_MS = 10L * 3600_000L // ratings editable up to 10h back
+
+fun computeActiveWindow(ratings: List<RatingEntry>): IntRange {
+    val cutoff = System.currentTimeMillis() - 30L * 24 * 3600_000L
+    val counts = IntArray(24)
+    var total = 0
+    val cal = Calendar.getInstance()
+    for (e in ratings) {
+        if (e.timestamp < cutoff) continue
+        cal.timeInMillis = e.timestamp
+        counts[cal.get(Calendar.HOUR_OF_DAY)]++
+        total++
+    }
+    if (total == 0) return 7..22
+
+    var lo = 0
+    var hi = 23
+    while (lo < hi && counts[lo] == 0) lo++
+    while (hi > lo && counts[hi] == 0) hi--
+
+    var kept = 0
+    for (h in lo..hi) kept += counts[h]
+    val minKeep = Math.ceil(total * 0.9).toInt()
+    while (hi - lo >= 8) {
+        val trimLow = counts[lo] <= counts[hi]
+        val edgeCount = if (trimLow) counts[lo] else counts[hi]
+        if (kept - edgeCount < minKeep) break
+        kept -= edgeCount
+        if (trimLow) lo++ else hi--
+    }
+    // A strip narrower than 8 hours looks broken; widen symmetrically
+    while (hi - lo < 7) {
+        if (lo > 0) lo-- else if (hi < 23) hi++ else break
+    }
+    return lo..hi
+}
+
 fun calculateStreak(r: List<RatingEntry>): Int {
     if (r.isEmpty()) return 0
     fun hasRatingForHour(offset: Int): Boolean {
