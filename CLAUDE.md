@@ -13,7 +13,9 @@ notification → rate → tag → save → lock phone → back to life.
 
 ### Product rules (no currency — 2026-08-03 simplification)
 
-- Rate **8 distinct hours/day** → that day counts toward the streak.
+- Rate **8 distinct hours/day** (`STREAK_HOURS_REQUIRED`) → that day counts
+  toward the streak. In **beginner mode** the goal is
+  `BEGINNER_HOURS_REQUIRED` (4) — see below.
 - Only the **last completed hour and the one before it** are ratable
   (2-hour window). Existing ratings are editable up to **10 hours** back
   (`EDIT_WINDOW_MS`).
@@ -30,8 +32,36 @@ notification → rate → tag → save → lock phone → back to life.
   and retroactively qualify yesterday; the 2 normally-ratable hours are
   excluded). Mandatory note, tagged `RECLAIM_TAG` (stored string is still
   `"💧reclaimed"` — never change it; display is 🐝 in the Hive, 🕐 as the
-  badge in history lists). Reclaimed hours count toward the 8.
+  badge in history lists). Reclaimed hours count toward the 8 (or the 4).
 - Constants live at the top of `StreakEngine.kt`.
+
+### Beginner mode (2026-08-04 — softens the day-one cliff)
+
+- **The goal drops to `BEGINNER_HOURS_REQUIRED` (4) hours/day.** Every daily
+  goal in the UI is `state.hoursRequired`, never the raw constant.
+- **Mode is replayable state, not a live flag.** An append-only log under
+  SharedPreferences `"b"` key `"mode_events"` (`ModeEvent(timestamp,
+  enteredBeginner)`), mirroring `reclaim_spends`. A day's mode is the mode in
+  effect **at that day's END**, so a mid-day toggle re-scores the whole day
+  under the mode it finished in. All three engine readers take the same
+  `modeEvents` list, so they cannot disagree.
+- **Beginner days are transparent to the streak** — that is what "paused"
+  means in replay: ≥4 distinct rated hours → `DayOutcome.BEGINNER_COMPLETE`;
+  under 4 → **no outcome at all** (no MISSED, no rest-day consumption, no
+  reset). The streak neither extends nor breaks, and resumes at its old count
+  on the next Master-mode day.
+- **Reclaim stays fully available** in beginner mode (free, 2/day, 🕐 badge,
+  counts toward the 4) — it improves the record, which is the point.
+- **Fresh installs land in beginner mode**: on startup, if `"mode_events"` is
+  absent AND there are zero ratings, a beginner-enter event is written
+  (`ensureModeInitialized`, same "key absent ⇒ never configured" idiom as
+  `tags_v2`). Existing users with ratings stay in Master, no event written.
+- **Graduation nudge**: a one-time dialog (flag `"beginner_graduation_shown"`,
+  set the moment it appears) at `BEGINNER_GRADUATION_DAYS` (3) completed
+  beginner days — "Level up" / "Not yet". Declining costs nothing and never
+  repeats; the toggle in the menu is always there.
+- The ring-closed celebration still fires at 4 hours (it's the one daily
+  ceremony) but announces "N BEGINNER DAYS", never a day streak.
 
 ### Lexicon (used in UI copy — 2026-08-03 copy pass)
 
@@ -49,7 +79,11 @@ a qualifying day is a **complete day** ("Day complete", "⬢ Day complete",
 calendar legend "complete"), and the count reads "**N-day streak**" /
 "Day N of your streak", never a cell count · **History** = the event log on
 the Streak tab · 🌙 **Rest day** = the one free forgiven day per week
-("the streak held") · 🕐 = an hour rated from memory (a reclaimed entry), so
+("the streak held") · 🌱 **Beginner day** = a completed 4-hour day in
+**beginner mode** ("Beginner day complete", calendar legend "beginner day");
+the opposite mode is **Master mode** (8 hours) and a streak inside beginner
+mode is **paused**, never lost ("Streak paused at N", "Resumes in Master
+mode") · 🕐 = an hour rated from memory (a reclaimed entry), so
 it reads apart from in-the-moment ratings · celebration is reserved for rare
 milestones — never per-save; the one daily celebration is the ring closing.
 Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics — honey gold
@@ -91,20 +125,20 @@ case verify by static review and say so explicitly — the user compiles locally
 
 | File | What lives there |
 |---|---|
-| `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
-| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour |
-| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ streak · ring x/8 — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to the Streak tab; merged semantics announce "N-day streak · H of 8 hours rated today" with the click label "Open Streak tab") to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
+| `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling, `ensureModeInitialized` (fresh install ⇒ beginner mode, before `setContent`) |
+| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
+| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ streak · ring x/goal — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to the Streak tab; merged semantics announce "N-day streak · H of G hours rated today" with the click label "Open Streak tab". In **beginner mode** the ⬢ becomes 🌱, the ring/ratio read x/4 via `state.hoursRequired`, and the description leads with "Beginner mode · streak paused at N") to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten hexagonal cells docked on its edges, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
 | `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
-| `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (shown when reachable hours exist; disabled once the day's 2 bees are spent), calendar with score-tinted dots (🌙 = rest day, hollow red ring = missed), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight; the cap is re-checked in `onReclaim` because the dialog can outlive the tap). No currency card |
-| `StreakEngine.kt` | Pure streak logic. **`replayDays` is the single walk over history** — private, returns one `ReplayDay` per calendar day (outcome, streak after, `brokeStreak`, that day's hour timestamps + reclaim spends); `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` are thin readers over it, so they *cannot* disagree. Also `DayOutcome` (QUALIFIED/REST/MISSED), `reclaimsUsedToday`, the `isReclaimed`/`visibleTags()` entry extensions, `StreakMeter`/`StreakRing` composables, constants |
-| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; tapping an hour opens `EditEntrySheet` **with no edit-window gate** (same latitude `HistoryPanel` always had — the journal would be pointless otherwise). `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **Zoom is Weeks (across a month) / Months (across a year) only** — no Day level, no `DaySheetContent`, and every chart is a pure readout (no taps, no highlight). Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
+| `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (shown when reachable hours exist; disabled once the day's 2 bees are spent), calendar with score-tinted dots (🌱 = completed beginner day, 🌙 = rest day, hollow red ring = missed — 🌱 is a glyph, not a hollow tinted dot, which would collide with the missed ring at 9dp), a `FlowRow` legend (four keys + the info button no longer fit one line), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight; the cap is re-checked in `onReclaim` because the dialog can outlive the tap), and the rules explainer, which swaps to a "🌱 How beginner mode works" body in beginner mode. No currency card |
+| `StreakEngine.kt` | Pure streak logic. **`replayDays` is the single walk over history** — private, returns one `ReplayDay` per calendar day (outcome, streak after, `brokeStreak`, `beginner`, that day's hour timestamps + reclaim spends); `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` are thin readers over it and all three take the same `modeEvents` list, so they *cannot* disagree. Also `DayOutcome` (QUALIFIED/REST/MISSED/**BEGINNER_COMPLETE**), the **mode-event layer** (`ModeEvent`, `loadModeEvents`/`recordModeEvent`, `isBeginnerMode`, `hoursRequiredFor`, private `beginnerAt(timeMs, events)` = the mode at an instant, `ensureModeInitialized`, `beginnerGraduationShown`/`markBeginnerGraduationShown`), `reclaimsUsedToday`, the `isReclaimed`/`visibleTags()` entry extensions, `StreakMeter`/`StreakRing` composables (`StreakRing` takes `hoursRequired`, so the ring is 4 segments in beginner mode; `StreakMeter` reads `state.hoursRequired` and shows "Beginner day complete ✓" / "Streak paused at N" + "Resumes in Master mode"), constants |
+| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; tapping an hour opens `EditEntrySheet` **with no edit-window gate** (same latitude `HistoryPanel` always had — the journal would be pointless otherwise). `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days — counted off `computeStreakLog`, now passed `loadModeEvents(context)`, so beginner stretches correctly contribute none) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **Zoom is Weeks (across a month) / Months (across a year) only** — no Day level, no `DaySheetContent`, and every chart is a pure readout (no taps, no highlight). Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
 | `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (opens fully expanded on one tap via `skipPartiallyExpanded`; grouped SCORE/TAGS/NOTE sections via the `SectionLabel` overline; edits score, note, **and** tags — every available tag is a toggleable `InputChip` (centered, tightened rows). Header = "Edit entry" + date on the left, time range flanked by ‹ › **seek carets** right-aligned. Carets step through that day's rated hours only (`dayEntries`, sorted; disabled at the ends), swapping `currentEntry` in place without closing; edited buffers are keyed on `currentEntry.id` so they reset per hour. Seeking mid-edit raises a save-or-discard `AlertDialog` (`pendingTarget`). Callbacks are split `onPersist`/`onClose` so an in-sheet save doesn't dismiss the sheet), `SoulFuelTagsSection` (display-only tag chips + a pencil that opens `NowTab`'s `ManageTagsDialog`; the old in-place delete mode is gone), `NotesSection` (collapsed "＋ Add a note" row → compact `BasicTextField`; a `hadFocus` flag stops the initial unfocused `onFocusChanged` event from re-collapsing it), `HistoryPanel` (🕐 badge + `visibleTags()`; legacy — unmounted since the Past tab became a journal, which supersedes it), misc format helpers (`formatHour`, `getOrdinalSuffix`, `isSameDay`) |
-| `StatsComponents.kt` | Just the weekly report notification now (`buildWeeklySummaryText`, `showWeeklyReportNotification`, `schedule`/`cancelWeeklyReport`) |
-| `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers |
+| `StatsComponents.kt` | Just the weekly report notification now (`buildWeeklySummaryText` — third line is mode-aware: "streak ⬢N", or "🌱 N beginner days · streak paused at M" — `showWeeklyReportNotification`, `schedule`/`cancelWeeklyReport`) |
+| `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers, plus `modeEvents` / `beginnerMode` / `setBeginnerMode` — the mode lives here (not per-tab like `spendsVersion`) because it is replay input: one toggle has to re-derive the meter, calendar and log in the same composition |
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
-| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`) |
+| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete! 🌱" |
 
 ## Data model & persistence gotchas
 
@@ -119,6 +153,12 @@ case verify by static review and say so explicitly — the user compiles locally
   derivable from ratings. Now that reclaims are free they exist only to enforce
   the `RECLAIM_PER_DAY` cap and to date the "bee sent back" log rows — the key
   and format are unchanged, so old data still reads.
+- Mode toggles persist under `"mode_events"` for the same reason: a single
+  boolean would rewrite history every time it flipped. Format is
+  `"<millis>:<0|1>"` records joined by `,` (1 = entered beginner). Absence of
+  the key means "never configured" and is what `ensureModeInitialized` tests;
+  the graduation flag is the separate boolean `"beginner_graduation_shown"`.
+  Neither is exported in the CSV.
 - Tags: key `"tags_v2"`, max 30, defaults in `DEFAULT_TAGS`.
 
 ## Design system (agreed with the owner — keep these rules)
@@ -380,3 +420,46 @@ case verify by static review and say so explicitly — the user compiles locally
   which is now just the weekly report; and the orphaned `ChartView` enum from
   `Utils.kt`. `isSameDay` was kept (StreaksTab uses it). ~430 lines gone.
   `HeaderSection`/`HistoryPanel` were left alone — still unmounted, not charts.
+- 2026-08-04 (Beginner mode): **day one is a 4-hour day, not an 8-hour cliff.**
+  (1) **Mode is replayed, never a live flag.** A boolean would make history lie
+  — yesterday's outcome would change the instant the toggle moved. So the
+  toggle appends `ModeEvent(timestamp, enteredBeginner)` records to
+  `"mode_events"` (same idiom as `reclaim_spends`), and `replayDays` asks
+  `beginnerAt(dayEndMs, events)` per day: **the mode at the day's END wins**, so
+  a mid-day toggle re-scores that whole day. `dayEndMs` is derived from the next
+  day's start rather than `+24h`, so DST days still end where they end. All
+  three readers (`computeStreakState`/`computeDayOutcomes`/`computeStreakLog`)
+  take the same `modeEvents` list — the 2026-08-03 "cannot disagree" guarantee
+  extends to mode.
+  (2) **Beginner days are transparent to the streak**, which is what "paused"
+  means in replay: ≥`BEGINNER_HOURS_REQUIRED` (4) hours → the new
+  `DayOutcome.BEGINNER_COMPLETE`; under 4 → **no outcome at all**, so no MISSED,
+  no rest-day burn, no reset. `streakAfter` carries the old count forward
+  untouched and it resumes on the next Master day.
+  (3) **The goal is threaded, not re-read.** `StreakState` gained
+  `beginnerMode`/`hoursRequired`/`beginnerDaysCompleted` + a `streakPaused`
+  helper, and every daily-goal site now reads `state.hoursRequired`:
+  `StreakMeter` (both layouts), `StreakRing` (a new `hoursRequired` param — the
+  ring is genuinely 4 segments), `StatusStrip`/`MiniHourRing`. Mode-aware copy
+  swept through the engine log ("Beginner day complete 🌱 — … streak paused at
+  N"), `StreakLogContent`'s empty state, the Streak-tab rules dialog, "How
+  Beeing works" (new 🌱 paragraph) and the weekly report line.
+  (4) **The mode lives in `RatingsViewModel`**, not per-tab like `spendsVersion`
+  — one toggle must re-derive meter, calendar and log in the same composition.
+  (5) **Fresh install ⇒ beginner** via `ensureModeInitialized` in
+  `MainActivity.onCreate` (key absent AND zero ratings). Existing users get no
+  event, so their history replays byte-identically. Note the consequence: a user
+  who deletes every rating lands back in beginner mode next launch.
+  (6) **Graduation nudge** at 3 completed beginner days — one dialog, ever;
+  the flag is written *when it shows*, so "Not yet" never re-asks.
+  (7) UI ripples: calendar 🌱 at 11sp in the slot the old 🌸 used (a glyph, not
+  a hollow tinted dot, which would collide with the missed ring); the legend
+  became a `FlowRow` to fit a fourth key; `RingClosedCelebration` now takes a
+  `RingCelebration(count, beginner)` so the one daily ceremony still fires at 4
+  hours without claiming a day streak; `StatusStrip` shows 🌱 instead of ⬢ so
+  the mode is visible from the main screen. Reclaim is untouched and stays
+  available in beginner mode by design.
+  (8) One guard worth keeping: **lowering the goal also flips
+  `todayQualified`**, so `NowTab`'s celebration effect now also keys on
+  `hoursRequired` and re-baselines without firing when the goal itself changed
+  — a settings toggle must never trigger the daily takeover.

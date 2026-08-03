@@ -57,12 +57,19 @@ private val CONFETTI_COLORS = listOf(
 )
 
 /**
+ * What closed, and under which mode. The ceremony is the same either way — it
+ * is the one daily celebration — but a beginner day must not be announced as a
+ * day streak, because the streak is paused and did not move.
+ */
+data class RingCelebration(val count: Int, val beginner: Boolean)
+
+/**
  * Full-screen ~2s takeover when the daily ring closes, Duolingo style:
  * rising haptic ticks into a strong buzz, a golden ring slams shut around the
  * streak number, a glow flash, and a confetti burst with gravity.
  */
 @Composable
-fun RingClosedCelebration(streakDays: Int, onDone: () -> Unit) {
+fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
     val context = LocalContext.current
 
     // Master timeline 0..1 over 4.2s; every visual is keyed off it
@@ -176,13 +183,15 @@ fun RingClosedCelebration(streakDays: Int, onDone: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "$streakDays",
+                "${celebration.count}",
                 fontSize = 88.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFFFFD54F)
             )
             Text(
-                "DAY STREAK",
+                if (celebration.beginner) {
+                    if (celebration.count == 1) "BEGINNER DAY" else "BEGINNER DAYS"
+                } else "DAY STREAK",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 5.sp,
@@ -193,7 +202,8 @@ fun RingClosedCelebration(streakDays: Int, onDone: () -> Unit) {
         // Caption slides up beneath the ring once everything has landed
         val captionIn = ((progress - 0.35f) / 0.2f).coerceIn(0f, 1f)
         Text(
-            "Ring closed — day secured! 🐝",
+            if (celebration.beginner) "Ring closed — beginner day complete! 🌱"
+            else "Ring closed — day secured! 🐝",
             fontSize = 19.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,

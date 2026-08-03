@@ -99,7 +99,7 @@ fun NowTab(
     onMenuClick: () -> Unit = {},
     pendingScore: Int? = null,
     onPendingScoreConsumed: () -> Unit = {},
-    onRingClosed: (Int) -> Unit = {}
+    onRingClosed: (RingCelebration) -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -172,17 +172,30 @@ fun NowTab(
 
     val allCaughtUp = isLatestHourLogged && isPreviousHourLogged
 
-    val streakState = remember(allRatings, viewModel.refreshTrigger) {
-        computeStreakState(allRatings, loadReclaimSpends(context))
+    val streakState = remember(allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+        computeStreakState(allRatings, loadReclaimSpends(context), viewModel.modeEvents)
     }
 
-    // Fire the full-screen celebration exactly when today flips to qualified
+    // Fire the full-screen celebration exactly when today flips to qualified —
+    // at 4 hours in beginner mode, 8 in Master. It's the one daily ceremony
+    // either way; only what it announces changes.
+    // Lowering the goal can also flip todayQualified — but a settings toggle is
+    // not a ring closing, so a goal change only re-baselines, never celebrates.
     var wasQualified by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(streakState.todayQualified) {
+    var lastGoal by remember { mutableIntStateOf(streakState.hoursRequired) }
+    LaunchedEffect(streakState.todayQualified, streakState.hoursRequired) {
         val prev = wasQualified
+        val goalChanged = lastGoal != streakState.hoursRequired
         wasQualified = streakState.todayQualified
-        if (prev == false && streakState.todayQualified) {
-            onRingClosed(streakState.currentStreak)
+        lastGoal = streakState.hoursRequired
+        if (prev == false && streakState.todayQualified && !goalChanged) {
+            onRingClosed(
+                RingCelebration(
+                    count = if (streakState.beginnerMode) streakState.beginnerDaysCompleted
+                    else streakState.currentStreak,
+                    beginner = streakState.beginnerMode
+                )
+            )
         }
     }
 
@@ -738,7 +751,7 @@ fun NowTab(
 }
 
 // ============================================================
-// STATUS STRIP  (⬢ cell hive · ring x/8)
+// STATUS STRIP  (⬢ streak · ring x/goal — 🌱 x/4 in beginner mode)
 // ============================================================
 
 @Composable
@@ -752,10 +765,14 @@ private fun StatusStrip(
     val stripBg = MaterialTheme.colorScheme.surfaceContainerHighest
     // Screen readers would otherwise announce the bare glyphs ("⬢ 5", "3/8"),
     // so the strip speaks as one labelled target instead of its two children.
-    val streakLabel = if (state.currentStreak > 0)
-        "${state.currentStreak}-day streak" else "No streak yet"
+    val streakLabel = when {
+        state.streakPaused -> "Beginner mode · streak paused at ${state.currentStreak}"
+        state.beginnerMode -> "Beginner mode · no streak yet"
+        state.currentStreak > 0 -> "${state.currentStreak}-day streak"
+        else -> "No streak yet"
+    }
     val stripDescription =
-        "$streakLabel · ${state.todayHours} of $STREAK_HOURS_REQUIRED hours rated today"
+        "$streakLabel · ${state.todayHours} of ${state.hoursRequired} hours rated today"
     Card(
         modifier = modifier
             .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
@@ -772,12 +789,19 @@ private fun StatusStrip(
             horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "⬢",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 21.sp,
-                    color = HoneyGold // hive identity
-                )
+                // 🌱 replaces the hexagon while beginner mode is on: the mode
+                // has to be visible from the main screen, and the paused count
+                // beside it reads as held, not lost.
+                if (state.beginnerMode) {
+                    Text("🌱", fontSize = 17.sp)
+                } else {
+                    Text(
+                        "⬢",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 21.sp,
+                        color = HoneyGold // hive identity
+                    )
+                }
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "${state.currentStreak}",
@@ -788,10 +812,11 @@ private fun StatusStrip(
             StripDivider()
             MiniHourRing(
                 hours = state.todayHours,
+                hoursRequired = state.hoursRequired,
                 qualified = state.todayQualified
             )
             Text(
-                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                "${state.todayHours}/${state.hoursRequired}",
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 18.sp
             )
@@ -809,10 +834,10 @@ private fun StripDivider() {
 }
 
 @Composable
-private fun MiniHourRing(hours: Int, qualified: Boolean) {
+private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val fill = if (qualified) RingQualifiedGreen else HoneyGold
-    val fraction = (hours.toFloat() / STREAK_HOURS_REQUIRED).coerceIn(0f, 1f)
+    val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
     Canvas(Modifier.size(24.dp)) {
         val stroke = 4.dp.toPx()
         val inset = stroke / 2

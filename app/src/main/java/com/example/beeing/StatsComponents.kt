@@ -27,12 +27,19 @@ fun buildWeeklySummaryText(context: Context): String {
     val topTag = week.flatMap { it.tags }
         .groupingBy { it }.eachCount()
         .maxByOrNull { it.value }?.key
-    val streak = computeStreakState(ratings, loadReclaimSpends(context))
+    val streak = computeStreakState(ratings, loadReclaimSpends(context), loadModeEvents(context))
 
     val parts = mutableListOf<String>()
     parts.add("Avg score ${String.format("%.1f", avg)} over ${week.size} hours")
     if (topTag != null) parts.add("most logged: $topTag")
-    parts.add("streak ⬢${streak.currentStreak}")
+    // Beginner weeks have no streak to report — say what actually happened
+    parts.add(
+        when {
+            streak.streakPaused -> "🌱 ${streak.beginnerDaysCompleted} beginner days · streak paused at ${streak.currentStreak}"
+            streak.beginnerMode -> "🌱 ${streak.beginnerDaysCompleted} beginner days"
+            else -> "streak ⬢${streak.currentStreak}"
+        }
+    )
     return parts.joinToString(" · ")
 }
 

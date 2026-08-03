@@ -1189,7 +1189,9 @@ private fun TrendsView(
                             computePeriodStats(allRatings, kRange.first, kRange.second, window)
                         }
                         val kRestDays = remember(key, allRatings, refresh) {
-                            computeStreakLog(allRatings, loadReclaimSpends(context))
+                            // Mode events re-read on refresh (a toggle bumps it),
+                            // so this replays under the same rules as the meter.
+                            computeStreakLog(allRatings, loadReclaimSpends(context), loadModeEvents(context))
                                 .count { it.type == StreakEventType.REST && it.timestamp in kRange.first until kRange.second }
                         }
                         val kUnitAvgs = remember(key, allRatings, refresh) {

@@ -61,11 +61,12 @@ fun StreaksTab(
 
     var spendsVersion by remember { mutableIntStateOf(0) }
     val reclaimSpends = remember(spendsVersion) { loadReclaimSpends(context) }
-    val streakState = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
-        computeStreakState(allRatings, reclaimSpends)
+    val modeEvents = viewModel.modeEvents
+    val streakState = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+        computeStreakState(allRatings, reclaimSpends, modeEvents)
     }
-    val outcomes = remember(allRatings, viewModel.refreshTrigger, spendsVersion) {
-        computeDayOutcomes(allRatings, reclaimSpends)
+    val outcomes = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+        computeDayOutcomes(allRatings, reclaimSpends, modeEvents)
     }
     // Per-day average score — tints the calendar dots
     val dayAvgs = remember(allRatings, viewModel.refreshTrigger) {
@@ -214,12 +215,17 @@ fun StreaksTab(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                Row(
+                // Four keys plus the info button no longer fit one line on a
+                // narrow phone, so the legend flows onto a second row instead
+                // of clipping.
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
                     LegendDot(color = getScoreColor(6.0), hollow = false, label = "complete")
+                    LegendItem("🌱", "beginner day")
                     LegendItem("🌙", "rest day")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
@@ -266,6 +272,7 @@ fun StreaksTab(
                     Spacer(Modifier.height(8.dp))
                     StreakLogContent(
                         ratings = allRatings,
+                        modeEvents = modeEvents,
                         refreshKey = viewModel.refreshTrigger + spendsVersion
                     )
                 }
@@ -363,18 +370,32 @@ fun StreaksTab(
 
     // ---- The one explainer: how the hive works ----
     if (showRules) {
+        val beginner = streakState.beginnerMode
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text("🐝 How streaks work") },
+            title = { Text(if (beginner) "🌱 How beginner mode works" else "🐝 How streaks work") },
             text = {
                 Column {
-                    Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
+                    if (beginner) {
+                        Text("• Rate $BEGINNER_HOURS_REQUIRED hours in a day and it's a 🌱 beginner day — one goal, no pressure.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (streakState.currentStreak > 0)
+                                "• Beginner days sit outside the streak: yours is paused at ${streakState.currentStreak} and picks up there in Master mode. A short day can't break it."
+                            else "• Beginner days sit outside the streak — nothing to break, nothing to lose. Streaks start once you switch to Master mode.",
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Master mode asks for $STREAK_HOURS_REQUIRED hours a day and turns complete days into a streak. Switch any time from the menu.", fontSize = 14.sp)
+                    } else {
+                        Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Come up short one day and it becomes a 🌙 rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
+                    }
                     Spacer(Modifier.height(8.dp))
-                    Text("• Come up short one day and it becomes a 🌙 rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("• Send a bee back to revisit any hour missed in the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Revisited hours count toward the $STREAK_HOURS_REQUIRED.", fontSize = 14.sp)
+                    Text("• Send a bee back to revisit any hour missed in the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Revisited hours count toward the ${streakState.hoursRequired}.", fontSize = 14.sp)
                 }
             },
             confirmButton = {
@@ -470,9 +491,10 @@ private fun MonthGrid(
 /**
  * A calendar day. Repeated identical emoji carry no information, so a hive
  * day shows a dot tinted by that day's average score, a rest day shows the
- * small moon, and a missed day is a hollow red ring. Today gets the
- * primary-color outline. Color never travels alone here — tapping any day
- * opens the stats dialog with the digits.
+ * small moon, and a missed day is a hollow red ring. A completed beginner day
+ * gets 🌱 — a glyph, not a hollow tinted dot, which would read as the missed
+ * ring at 9dp. Today gets the primary-color outline. Color never travels alone
+ * here — tapping any day opens the stats dialog with the digits.
  */
 @Composable
 private fun DayCell(
@@ -513,6 +535,7 @@ private fun DayCell(
                     .clip(CircleShape)
                     .background(getScoreColor(avgScore ?: 0.0))
             )
+            DayOutcome.BEGINNER_COMPLETE -> Text("🌱", fontSize = 11.sp)
             DayOutcome.REST -> Text("🌙", fontSize = 11.sp)
             DayOutcome.MISSED -> Box(
                 Modifier
@@ -562,6 +585,7 @@ private fun DayStatsDialog(
     }
     val outcomeLine = when {
         outcome == DayOutcome.QUALIFIED -> "⬢ Day complete"
+        outcome == DayOutcome.BEGINNER_COMPLETE -> "🌱 Beginner day complete"
         outcome == DayOutcome.REST -> "🌙 Rest day — the streak held"
         outcome == DayOutcome.MISSED -> "Missed"
         isToday -> "⏳ In progress"

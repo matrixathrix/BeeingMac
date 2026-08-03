@@ -95,6 +95,10 @@ fun HourlyPulseApp(
     var autoBackupEnabled by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) }
     var lastBackupTime by remember { mutableStateOf(context.getSharedPreferences("b", 0).getLong("last_backup", 0L)) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    // Entering beginner mode with a live streak pauses it — that needs saying
+    // out loud before it happens, not after.
+    var showBeginnerConfirm by remember { mutableStateOf(false) }
+    var showGraduation by remember { mutableStateOf(false) }
 
     // Notification handling state
     var targetedHourOffset by remember { mutableIntStateOf(0) }
@@ -123,7 +127,24 @@ fun HourlyPulseApp(
     }
 
     // Full-screen celebration when the daily ring closes (streak day secured)
-    var ringCelebrationDays by remember { mutableStateOf<Int?>(null) }
+    var ringCelebration by remember { mutableStateOf<RingCelebration?>(null) }
+
+    // Mode + streak, shared by the menu copy, the explainer and the nudge
+    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+        computeStreakState(viewModel.allRatings, loadReclaimSpends(context), viewModel.modeEvents)
+    }
+
+    // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
+    // as shown the moment it appears, so declining is not re-asked.
+    LaunchedEffect(streakState.beginnerMode, streakState.beginnerDaysCompleted) {
+        if (streakState.beginnerMode &&
+            streakState.beginnerDaysCompleted >= BEGINNER_GRADUATION_DAYS &&
+            !beginnerGraduationShown(context)
+        ) {
+            markBeginnerGraduationShown(context)
+            showGraduation = true
+        }
+    }
 
     // Back press handling (double tap to exit)
     var lastBackPress by remember { mutableLongStateOf(0L) }
@@ -156,6 +177,7 @@ fun HourlyPulseApp(
     // Initial data load
     LaunchedEffect(Unit) {
         viewModel.loadRatings(context)
+        viewModel.loadModeEvents(context)
     }
 
     // Lifecycle observer for app resume
@@ -163,6 +185,7 @@ fun HourlyPulseApp(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.loadRatings(context)
+                viewModel.loadModeEvents(context)
                 viewModel.triggerRefresh()
 
                 // Auto-focus logic
@@ -256,7 +279,7 @@ fun HourlyPulseApp(
                     onMenuClick = { showMenu = true },
                     pendingScore = pendingScore,
                     onPendingScoreConsumed = { pendingScore = null },
-                    onRingClosed = { ringCelebrationDays = it }
+                    onRingClosed = { ringCelebration = it }
                 )
 
                 2 -> PastTab(
@@ -361,6 +384,43 @@ fun HourlyPulseApp(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+                        // Beginner mode: a softer daily goal while the habit is
+                        // young. Leaving it needs no ceremony; entering it with
+                        // a live streak does, so that path routes via a confirm.
+                        val toggleBeginner: (Boolean) -> Unit = { wantBeginner ->
+                            if (wantBeginner && streakState.currentStreak > 0) {
+                                showMenu = false
+                                showBeginnerConfirm = true
+                            } else {
+                                viewModel.setBeginnerMode(context, wantBeginner)
+                            }
+                        }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { toggleBeginner(!streakState.beginnerMode) }
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Beginner mode ($BEGINNER_HOURS_REQUIRED-hour days)")
+                                Text(
+                                    if (streakState.streakPaused)
+                                        "Streak paused at ${streakState.currentStreak}"
+                                    else "Streaks pause while it's on",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Checkbox(
+                                checked = streakState.beginnerMode,
+                                onCheckedChange = { toggleBeginner(it) }
+                            )
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
                         // How it works — moved here now that the header's info
                         // button is gone
                         Row(
@@ -455,7 +515,21 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate 8 hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a 🌙 rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last 10 — free, twice a day.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a 🌙 rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last $RECLAIM_WINDOW_HOURS — free, twice a day.",
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        Text(
+                            "🌱 Beginner Mode",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "New here? Beginner mode asks for $BEGINNER_HOURS_REQUIRED hours a day instead of $STREAK_HOURS_REQUIRED, and those days sit outside the streak entirely — nothing to break, nothing to lose. Any streak you already have is paused and waiting when you switch back. Send a bee back still works. Turn it on or off any time in the menu." +
+                                    if (streakState.beginnerMode) "\n\nIt's on right now — today's goal is $BEGINNER_HOURS_REQUIRED hours." else "",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
@@ -523,6 +597,61 @@ fun HourlyPulseApp(
             )
         }
 
+        // Entering beginner mode with a streak running: say what "paused" means
+        if (showBeginnerConfirm) {
+            AlertDialog(
+                onDismissRequest = { showBeginnerConfirm = false },
+                title = { Text("🌱 Turn on beginner mode?") },
+                text = {
+                    Text(
+                        "Your ${streakState.currentStreak}-day streak pauses — it won't grow and it " +
+                                "can't break while beginner mode is on. Days need only " +
+                                "$BEGINNER_HOURS_REQUIRED rated hours and are marked 🌱 on the " +
+                                "calendar. Switch back any time and the streak picks up at " +
+                                "${streakState.currentStreak} again.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        viewModel.setBeginnerMode(context, true)
+                        showBeginnerConfirm = false
+                    }) { Text("Pause and switch") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBeginnerConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // The one-time graduation nudge — declining costs nothing and never repeats
+        if (showGraduation) {
+            AlertDialog(
+                onDismissRequest = { showGraduation = false },
+                title = { Text("🌱 → ⬢ Ready for more?") },
+                text = {
+                    Text(
+                        "You've completed $BEGINNER_GRADUATION_DAYS beginner days. " +
+                                "Level up to Master mode ($STREAK_HOURS_REQUIRED hours)? " +
+                                "Complete days start counting toward a streak again. " +
+                                "No rush — you can switch whenever you like from the menu.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        viewModel.setBeginnerMode(context, false)
+                        showGraduation = false
+                    }) { Text("Level up") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showGraduation = false }) { Text("Not yet") }
+                }
+            )
+        }
+
         // Import confirmation
         if (pendingImportUri != null) {
             AlertDialog(
@@ -551,10 +680,10 @@ fun HourlyPulseApp(
 
     // Duolingo-style full-screen takeover when today's ring closes —
     // drawn above everything, header and nav pill included
-    ringCelebrationDays?.let { days ->
+    ringCelebration?.let { celebration ->
         RingClosedCelebration(
-            streakDays = days,
-            onDone = { ringCelebrationDays = null }
+            celebration = celebration,
+            onDone = { ringCelebration = null }
         )
     }
     }

@@ -47,6 +47,8 @@ import kotlin.math.sin
 // ============================================================
 
 const val STREAK_HOURS_REQUIRED = 8   // distinct rated hours for a day to count
+const val BEGINNER_HOURS_REQUIRED = 4 // ...and the softer day-one goal in beginner mode
+const val BEGINNER_GRADUATION_DAYS = 3 // completed beginner days before the one-time nudge
 const val FORGIVE_WINDOW_DAYS = 7     // a rest day needs the previous 6 days clear of another
 const val RECLAIM_WINDOW_HOURS = 10   // how far back a bee can reach (clock hours, may cross midnight)
 const val RECLAIM_PER_DAY = 2         // free bees a calendar day may send back
@@ -77,6 +79,73 @@ fun recordReclaimSpend(context: android.content.Context) {
     prefs.edit().putString("reclaim_spends", next).apply()
 }
 
+// ============================================================
+// MODE EVENTS  (persisted — beginner mode is replayed, never a live flag)
+// ============================================================
+//
+// Storing "the user is in beginner mode" as one boolean would make history lie:
+// yesterday's outcome would silently change the moment the toggle moved. So the
+// toggle is an append-only log of (timestamp, enteredBeginner) instead, exactly
+// like reclaim_spends, and every replay asks it what the mode was on each day.
+
+private const val MODE_EVENTS_KEY = "mode_events"
+private const val GRADUATION_SHOWN_KEY = "beginner_graduation_shown"
+
+/** One flip of the mode toggle. `enteredBeginner == false` means "back to Master". */
+data class ModeEvent(val timestamp: Long, val enteredBeginner: Boolean)
+
+/** Oldest first — the replay and `isBeginnerMode` both rely on that order. */
+fun loadModeEvents(context: android.content.Context): List<ModeEvent> =
+    (context.getSharedPreferences("b", 0).getString(MODE_EVENTS_KEY, "") ?: "")
+        .split(",")
+        .mapNotNull { record ->
+            val parts = record.split(":")
+            if (parts.size != 2) return@mapNotNull null
+            val ts = parts[0].toLongOrNull() ?: return@mapNotNull null
+            ModeEvent(ts, parts[1] == "1")
+        }
+        .sortedBy { it.timestamp }
+
+fun recordModeEvent(context: android.content.Context, enteredBeginner: Boolean) {
+    val prefs = context.getSharedPreferences("b", 0)
+    val cur = prefs.getString(MODE_EVENTS_KEY, "") ?: ""
+    val record = "${System.currentTimeMillis()}:${if (enteredBeginner) 1 else 0}"
+    prefs.edit().putString(MODE_EVENTS_KEY, if (cur.isBlank()) record else "$cur,$record").apply()
+}
+
+/** The mode in effect right now — i.e. the latest event. No events = Master. */
+fun isBeginnerMode(events: List<ModeEvent>): Boolean =
+    events.lastOrNull()?.enteredBeginner == true
+
+/** The daily goal a mode asks for. */
+fun hoursRequiredFor(beginner: Boolean): Int =
+    if (beginner) BEGINNER_HOURS_REQUIRED else STREAK_HOURS_REQUIRED
+
+/** The mode in effect at a given instant — Master before the first event. */
+private fun beginnerAt(timeMs: Long, events: List<ModeEvent>): Boolean =
+    events.lastOrNull { it.timestamp <= timeMs }?.enteredBeginner ?: false
+
+/**
+ * Fresh installs land in beginner mode so day one is a 4-hour day, not an
+ * 8-hour cliff. Same "key absent ⇒ never configured" idiom as tags_v2: anyone
+ * who already has ratings is an existing user and stays in Master, with no
+ * event written (so their whole history replays unchanged).
+ */
+fun ensureModeInitialized(context: android.content.Context) {
+    val prefs = context.getSharedPreferences("b", 0)
+    if (prefs.contains(MODE_EVENTS_KEY)) return
+    if (loadRatings(context).isNotEmpty()) return
+    recordModeEvent(context, true)
+}
+
+/** The graduation nudge is once per install, whatever the user answers. */
+fun beginnerGraduationShown(context: android.content.Context): Boolean =
+    context.getSharedPreferences("b", 0).getBoolean(GRADUATION_SHOWN_KEY, false)
+
+fun markBeginnerGraduationShown(context: android.content.Context) {
+    context.getSharedPreferences("b", 0).edit().putBoolean(GRADUATION_SHOWN_KEY, true).apply()
+}
+
 /** Bees already sent back today — the reclaim is free but capped per day. */
 fun reclaimsUsedToday(spends: List<Long>): Int {
     val todayKey = Calendar.getInstance().dayKey()
@@ -86,10 +155,16 @@ fun reclaimsUsedToday(spends: List<Long>): Int {
 
 data class StreakState(
     val currentStreak: Int,      // consecutive qualifying days ending today/yesterday
-    val todayHours: Int,         // distinct hours rated today (may exceed 8)
-    val todayQualified: Boolean, // todayHours >= STREAK_HOURS_REQUIRED
-    val extraToday: Int          // hours today beyond the required 8 (UI flavour)
-)
+    val todayHours: Int,         // distinct hours rated today (may exceed the goal)
+    val todayQualified: Boolean, // todayHours >= hoursRequired
+    val extraToday: Int,         // hours today beyond the goal (UI flavour)
+    val beginnerMode: Boolean,   // today's mode
+    val hoursRequired: Int,      // today's goal: 4 in beginner mode, else 8
+    val beginnerDaysCompleted: Int // 🌱 days ever completed (drives the graduation nudge)
+) {
+    /** In beginner mode the streak is frozen, not lost — say so, don't hide it. */
+    val streakPaused: Boolean get() = beginnerMode && currentStreak > 0
+}
 
 private fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
 
@@ -97,7 +172,7 @@ private fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.
 // THE REPLAY  (one walk over history; every reader below shares it)
 // ============================================================
 
-enum class DayOutcome { QUALIFIED, REST, MISSED }
+enum class DayOutcome { QUALIFIED, REST, MISSED, BEGINNER_COMPLETE }
 
 private class ReplayDay(
     val key: Long,                     // year * 1000 + dayOfYear
@@ -105,9 +180,10 @@ private class ReplayDay(
     val hourTimestamps: List<Long>,    // distinct rated hours -> earliest ts each, sorted
     val reclaimedHours: Int,
     val spends: List<Long>,            // wall-clock ts of bees sent back this day
-    val outcome: DayOutcome?,          // null = today, still in progress
+    val outcome: DayOutcome?,          // null = today, or a beginner day under the goal
     val streakAfter: Int,
     val brokeStreak: Boolean,          // this miss is the one that reset the hive
+    val beginner: Boolean,             // the mode in effect at this day's END
     val isToday: Boolean
 )
 
@@ -125,10 +201,19 @@ private class ReplayDay(
  *  - a miss with no streak running just MISSES — there is nothing to forgive,
  *    and it does not burn the rest day
  *  - today is in progress: under 8 hours neither counts nor breaks
+ *
+ * BEGINNER DAYS ARE TRANSPARENT. A day whose mode at midnight was beginner is
+ * scored against BEGINNER_HOURS_REQUIRED and then steps aside entirely: 4+ hours
+ * is a BEGINNER_COMPLETE, under 4 has no outcome at all. Either way the streak
+ * neither extends nor breaks and no rest day is consumed, so a streak entering
+ * beginner mode is paused and resumes at its old count on the next Master day.
+ * The mode is read at each day's END, so a mid-day toggle re-scores that whole
+ * day under the mode the user finished it in.
  */
 private fun replayDays(
     ratings: List<RatingEntry>,
-    reclaimSpends: List<Long>
+    reclaimSpends: List<Long>,
+    modeEvents: List<ModeEvent>
 ): List<ReplayDay> {
     if (ratings.isEmpty()) return emptyList()
 
@@ -168,10 +253,18 @@ private fun replayDays(
         val key = cursor.dayKey()
         val isToday = key == todayKey
         val hourTs = hourTsByDay[key]?.values?.sorted() ?: emptyList()
+        // The last instant of this calendar day — derived from the next day's
+        // start so DST-shortened/lengthened days still end where they end.
+        val dayEndMs = (cursor.clone() as Calendar)
+            .apply { add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis - 1
+        val beginner = beginnerAt(dayEndMs, modeEvents)
 
         var brokeStreak = false
         val lastRest = lastRestIndex
         val outcome: DayOutcome? = when {
+            // Beginner days never touch the streak — they only record themselves
+            beginner -> if (hourTs.size >= BEGINNER_HOURS_REQUIRED)
+                DayOutcome.BEGINNER_COMPLETE else null
             hourTs.size >= STREAK_HOURS_REQUIRED -> {
                 streak += 1
                 DayOutcome.QUALIFIED
@@ -199,6 +292,7 @@ private fun replayDays(
                 outcome = outcome,
                 streakAfter = streak,
                 brokeStreak = brokeStreak,
+                beginner = beginner,
                 isToday = isToday
             )
         )
@@ -213,16 +307,24 @@ private fun replayDays(
 /** Current streak plus today's progress, read off the shared replay. */
 fun computeStreakState(
     ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
+    reclaimSpends: List<Long> = emptyList(),
+    modeEvents: List<ModeEvent> = emptyList()
 ): StreakState {
-    val days = replayDays(ratings, reclaimSpends)
+    val days = replayDays(ratings, reclaimSpends, modeEvents)
     val today = days.lastOrNull()?.takeIf { it.isToday }
     val todayHours = today?.hourTimestamps?.size ?: 0
+    // Today's mode comes from the events, not the replay: with no ratings at
+    // all the replay is empty, and a brand-new install is exactly that case.
+    val beginner = isBeginnerMode(modeEvents)
+    val required = hoursRequiredFor(beginner)
     return StreakState(
         currentStreak = days.lastOrNull()?.streakAfter ?: 0,
         todayHours = todayHours,
-        todayQualified = todayHours >= STREAK_HOURS_REQUIRED,
-        extraToday = maxOf(0, todayHours - STREAK_HOURS_REQUIRED)
+        todayQualified = todayHours >= required,
+        extraToday = maxOf(0, todayHours - required),
+        beginnerMode = beginner,
+        hoursRequired = required,
+        beginnerDaysCompleted = days.count { it.outcome == DayOutcome.BEGINNER_COMPLETE }
     )
 }
 
@@ -236,9 +338,10 @@ fun computeStreakState(
  */
 fun computeDayOutcomes(
     ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
+    reclaimSpends: List<Long> = emptyList(),
+    modeEvents: List<ModeEvent> = emptyList()
 ): Map<Long, DayOutcome> =
-    replayDays(ratings, reclaimSpends)
+    replayDays(ratings, reclaimSpends, modeEvents)
         .mapNotNull { day -> day.outcome?.let { day.key to it } }
         .toMap()
 
@@ -254,14 +357,15 @@ fun StreakMeter(
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val filled = state.todayHours.coerceAtMost(STREAK_HOURS_REQUIRED)
+    val goal = state.hoursRequired
+    val filled = state.todayHours.coerceAtMost(goal)
     val animatedFill by animateFloatAsState(
         targetValue = filled.toFloat(),
         animationSpec = tween(700),
         label = "streakFill"
     )
-    // Hours beyond 8 grow the pointy overflow head past 12 o'clock
-    val extraHours = (state.todayHours - STREAK_HOURS_REQUIRED).coerceAtLeast(0)
+    // Hours beyond the goal grow the pointy overflow head past 12 o'clock
+    val extraHours = (state.todayHours - goal).coerceAtLeast(0)
     val animatedExtra by animateFloatAsState(
         targetValue = extraHours.toFloat(),
         animationSpec = tween(700),
@@ -299,11 +403,21 @@ fun StreakMeter(
 
     // The ring shows TODAY's hours, so the count inside is hours; the hive
     // (one cell built per qualifying day) lives outside the ring.
-    val streakTitle = if (state.currentStreak > 0)
-        "${state.currentStreak}-day streak" else "No streak yet"
-    val remaining = (STREAK_HOURS_REQUIRED - state.todayHours).coerceAtLeast(0)
-    val statusText = if (state.todayQualified) "Today is secured ✓"
-    else "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
+    val streakTitle = when {
+        state.streakPaused -> "Streak paused at ${state.currentStreak}"
+        state.beginnerMode -> "Beginner mode 🌱"
+        state.currentStreak > 0 -> "${state.currentStreak}-day streak"
+        else -> "No streak yet"
+    }
+    val remaining = (goal - state.todayHours).coerceAtLeast(0)
+    val statusText = when {
+        state.todayQualified && state.beginnerMode -> "Beginner day complete ✓"
+        state.todayQualified -> "Today is secured ✓"
+        state.beginnerMode -> "$remaining more hour${if (remaining == 1) "" else "s"} to complete today"
+        else -> "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
+    }
+    // A paused streak has to say it is paused, or beginner mode reads as a loss
+    val pausedNote = if (state.streakPaused) "Resumes in Master mode" else null
 
     val card = Modifier
         .fillMaxWidth()
@@ -334,13 +448,14 @@ fun StreakMeter(
                         animatedExtra = animatedExtra,
                         ringColor = ringColor,
                         trackColor = track,
+                        hoursRequired = goal,
                         ringSize = 240.dp,
                         strokeWidth = 30.dp,
                         scale = ringScale.value
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                                "${state.todayHours}/$goal",
                                 fontSize = 44.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -360,6 +475,9 @@ fun StreakMeter(
                         color = if (state.todayQualified) done
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    pausedNote?.let {
+                        Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             } else {
                 Row(
@@ -372,13 +490,14 @@ fun StreakMeter(
                         animatedExtra = animatedExtra,
                         ringColor = ringColor,
                         trackColor = track,
+                        hoursRequired = goal,
                         ringSize = 112.dp,
                         strokeWidth = 15.dp,
                         scale = ringScale.value
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "${state.todayHours}/$STREAK_HOURS_REQUIRED",
+                                "${state.todayHours}/$goal",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -398,6 +517,9 @@ fun StreakMeter(
                             color = if (state.todayQualified) done
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        pausedNote?.let {
+                            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -406,10 +528,11 @@ fun StreakMeter(
 }
 
 /**
- * The 8-segment hour ring: flat start edge at 12 o'clock, convex leading tip
- * while filling. Once closed it becomes one seamless circle, and hours beyond
- * 8 grow a pointy head past 12 o'clock (toward 1 o'clock), its color darkening
- * toward the tip.
+ * The hour ring: one segment per hour the active mode asks for (8 in Master,
+ * 4 in beginner mode), flat start edge at 12 o'clock, convex leading tip while
+ * filling. Once closed it becomes one seamless circle, and hours beyond the
+ * goal grow a pointy head past 12 o'clock (toward 1 o'clock), its color
+ * darkening toward the tip.
  */
 @Composable
 private fun StreakRing(
@@ -417,6 +540,7 @@ private fun StreakRing(
     animatedExtra: Float,
     ringColor: Color,
     trackColor: Color,
+    hoursRequired: Int,
     ringSize: Dp,
     strokeWidth: Dp,
     scale: Float,
@@ -434,17 +558,17 @@ private fun StreakRing(
         Canvas(Modifier.fillMaxSize()) {
             val stroke = strokeWidth.toPx()
             val gapDeg = 6f
-            val slotDeg = 360f / STREAK_HOURS_REQUIRED
+            val slotDeg = 360f / hoursRequired
             val segSweep = slotDeg - gapDeg
             val inset = stroke / 2
             val arcSize = Size(size.width - stroke, size.height - stroke)
             val topLeft = Offset(inset, inset)
             val a0 = -90f + gapDeg / 2
             val ringRadius = (size.minDimension - stroke) / 2f
-            val complete = animatedFill >= STREAK_HOURS_REQUIRED - 0.001f
+            val complete = animatedFill >= hoursRequired - 0.001f
 
             // Track: all segments drawn FIRST so the fill always sits on top
-            for (i in 0 until STREAK_HOURS_REQUIRED) {
+            for (i in 0 until hoursRequired) {
                 drawArc(
                     color = trackColor,
                     startAngle = a0 + i * slotDeg, sweepAngle = segSweep, useCenter = false,
@@ -495,7 +619,7 @@ private fun StreakRing(
                 // Filling: ONE merged arc over the track. Butt cap keeps the
                 // 12-o'clock starting edge a straight line; a half-disc at the
                 // leading end makes it convex, pointing in the fill direction.
-                val whole = animatedFill.toInt().coerceIn(0, STREAK_HOURS_REQUIRED)
+                val whole = animatedFill.toInt().coerceIn(0, hoursRequired)
                 val frac = animatedFill - whole
                 val fillSweep = when {
                     frac > 0f -> whole * slotDeg + segSweep * frac
@@ -529,7 +653,7 @@ private fun StreakRing(
 // STREAK LOG  (exhaustive, timestamped event history)
 // ============================================================
 
-enum class StreakEventType { COMPLETED, REST, RESET, RECLAIMED }
+enum class StreakEventType { COMPLETED, BEGINNER, REST, RESET, RECLAIMED }
 
 data class StreakEvent(
     val timestamp: Long,
@@ -540,6 +664,7 @@ data class StreakEvent(
 
 private fun StreakEventType.emoji(): String = when (this) {
     StreakEventType.COMPLETED -> "⬢"
+    StreakEventType.BEGINNER -> "🌱"
     StreakEventType.REST -> "🌙"
     StreakEventType.RESET -> "💔"
     StreakEventType.RECLAIMED -> "🐝"
@@ -551,12 +676,13 @@ private fun StreakEventType.emoji(): String = when (this) {
  */
 fun computeStreakLog(
     ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
+    reclaimSpends: List<Long> = emptyList(),
+    modeEvents: List<ModeEvent> = emptyList()
 ): List<StreakEvent> {
     val dateFmt = SimpleDateFormat("d MMM", Locale.getDefault())
     val events = ArrayList<StreakEvent>()
 
-    for (day in replayDays(ratings, reclaimSpends)) {
+    for (day in replayDays(ratings, reclaimSpends, modeEvents)) {
         val dayLabel = dateFmt.format(Date(day.dayStartMs))
         val endOfDay = day.dayStartMs + 23L * 3600000L + 59L * 60000L
 
@@ -568,6 +694,16 @@ fun computeStreakLog(
                     StreakEventType.COMPLETED,
                     if (day.streakAfter == 1) "Streak started" else "Day complete",
                     "Day ${day.streakAfter} of your streak — $STREAK_HOURS_REQUIRED hours on $dayLabel"
+                )
+            )
+            // the 4th distinct hour closes a beginner day; the streak is untouched
+            DayOutcome.BEGINNER_COMPLETE -> events.add(
+                StreakEvent(
+                    day.hourTimestamps[BEGINNER_HOURS_REQUIRED - 1],
+                    StreakEventType.BEGINNER,
+                    "Beginner day complete 🌱",
+                    "$BEGINNER_HOURS_REQUIRED hours on $dayLabel" +
+                            if (day.streakAfter > 0) " — streak paused at ${day.streakAfter}" else ""
                 )
             )
             DayOutcome.REST -> events.add(
@@ -583,7 +719,7 @@ fun computeStreakLog(
                     "$dayLabel came up short, and a rest day was already used this week"
                 )
             )
-            null -> {} // today, still in progress
+            null -> {} // today in progress, or a beginner day under the goal
         }
 
         day.spends.forEach { ts ->
@@ -600,17 +736,23 @@ fun computeStreakLog(
 }
 
 @Composable
-fun StreakLogContent(ratings: List<RatingEntry>, refreshKey: Int = 0) {
+fun StreakLogContent(
+    ratings: List<RatingEntry>,
+    modeEvents: List<ModeEvent>,
+    refreshKey: Int = 0
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val events = remember(ratings, refreshKey) {
+    val events = remember(ratings, modeEvents, refreshKey) {
         // Only the last 3 months of history
         val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
-        computeStreakLog(ratings, loadReclaimSpends(context)).filter { it.timestamp >= cutoff }
+        computeStreakLog(ratings, loadReclaimSpends(context), modeEvents)
+            .filter { it.timestamp >= cutoff }
     }
     val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
+    val goal = hoursRequiredFor(isBeginnerMode(modeEvents))
 
     if (events.isEmpty()) {
-        Text("Nothing in the last 3 months — rate 8 hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Nothing in the last 3 months — rate $goal hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
             events.take(60).forEach { ev ->

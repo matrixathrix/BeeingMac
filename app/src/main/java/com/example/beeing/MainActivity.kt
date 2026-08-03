@@ -43,6 +43,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         createNotificationChannel(this)
         scheduleWeeklyReport(this)
+        // A first-ever launch starts in beginner mode (4-hour days). Runs before
+        // any composition so the first frame already knows its goal.
+        ensureModeInitialized(this)
         consumePendingRating(intent)
 
         val requestPermissionLauncher = registerForActivityResult(
