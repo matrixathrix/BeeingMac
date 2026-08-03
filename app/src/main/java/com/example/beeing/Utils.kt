@@ -24,8 +24,6 @@ data class RatingEntry(
     val tags: List<String> = emptyList()
 )
 
-enum class ChartView { HOURLY, DAY, WEEK, MONTH }
-
 /** A score chosen on the hourly notification, waiting to be finished in-app. */
 data class PendingRating(val score: Int, val targetTs: Long, val label: String)
 

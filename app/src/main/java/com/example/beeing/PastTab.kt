@@ -60,27 +60,30 @@ import java.util.*
  *   opens its hours inline; tapping an hour opens the edit sheet. The header's
  *   date-jump puts any past hour two taps away.
  *
- *   Everything that used to BE this tab — summary stats, the D/W/M bar chart,
- *   the hour-by-hour pattern grid and the tag table — moved wholesale behind
- *   the header's "Trends" button, which opens as a full-screen view over the
- *   journal (system back returns).
+ *   Analytics live behind the header's "Trends" button, which opens as a
+ *   full-screen view over the journal (system back returns). Trends is for the
+ *   rare deep-dive, so it is deliberately short: summary stats, one written
+ *   line of insight, the bar chart, the hour-by-hour grid, the tag table.
+ *   It zooms only to Weeks (across a month) and Months (across a year) —
+ *   there is no day level, because looking up a day is what the journal is for.
  *
- * The pattern grid is still the reason an hourly app exists: rows pinned to the
+ * The pattern grid is the reason an hourly app exists: rows pinned to the
  * stable active window so the same hour lands on the same row in every period.
  * Ratings outside the window collapse into cap pills instead of stretching the
  * grid — the journal's day strips follow the same rule.
  */
 
-private enum class Zoom { D, W, M }
+/** Trends only zooms to periods a single screen can't already show you: weeks
+ *  across a month, months across a year. Day-level lookup is the journal's job. */
+private enum class Zoom { W, M }
 
-/** Lower rank = finer grain. Drilling M→W→D lowers the rank (a zoom-in). */
-private fun Zoom.rank(): Int = when (this) { Zoom.D -> 0; Zoom.W -> 1; Zoom.M -> 2 }
+/** Lower rank = finer grain. Drilling M→W lowers the rank (a zoom-in). */
+private fun Zoom.rank(): Int = when (this) { Zoom.W -> 0; Zoom.M -> 1 }
 
 /** Identifies exactly what the animated region is showing, so a change to any
  *  field drives one transition. */
 private data class PastViewKey(
     val zoom: Zoom,
-    val weekOffset: Int,
     val monthOffset: Int,
     val yearOffset: Int
 )
@@ -95,8 +98,7 @@ private data class PeriodUnit(
     val startMs: Long,
     val endMs: Long,          // exclusive
     val future: Boolean,
-    val isCurrent: Boolean,
-    val drillStartMs: Long    // canonical start of the day/week/month for drilling
+    val isCurrent: Boolean
 )
 
 private data class PeriodStats(
@@ -145,30 +147,10 @@ private fun shiftMonth(monthStartMs: Long, delta: Int): Long = Calendar.getInsta
     add(Calendar.MONTH, delta)
 }.timeInMillis
 
-private fun buildUnits(zoom: Zoom, weekOffset: Int, monthOffset: Int, yearOffset: Int): List<PeriodUnit> {
+private fun buildUnits(zoom: Zoom, monthOffset: Int, yearOffset: Int): List<PeriodUnit> {
     val now = System.currentTimeMillis()
-    val today = atMidnight(Calendar.getInstance())
     val units = ArrayList<PeriodUnit>()
     when (zoom) {
-        Zoom.D -> {
-            val ws = weekStartOf(Calendar.getInstance()).apply { add(Calendar.DAY_OF_YEAR, -7 * weekOffset) }
-            val dayLetters = listOf("S", "M", "T", "W", "T", "F", "S")
-            for (i in 0 until 7) {
-                val start = (ws.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }
-                val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
-                units.add(
-                    PeriodUnit(
-                        label = "${start.get(Calendar.DAY_OF_MONTH)}",
-                        colLabel = dayLetters[start.get(Calendar.DAY_OF_WEEK) - 1],
-                        startMs = start.timeInMillis,
-                        endMs = end.timeInMillis,
-                        future = start.timeInMillis > now,
-                        isCurrent = start.timeInMillis == today.timeInMillis,
-                        drillStartMs = start.timeInMillis
-                    )
-                )
-            }
-        }
         Zoom.W -> {
             val monthStart = atMidnight(Calendar.getInstance()).apply {
                 set(Calendar.DAY_OF_MONTH, 1); add(Calendar.MONTH, -monthOffset)
@@ -190,8 +172,7 @@ private fun buildUnits(zoom: Zoom, weekOffset: Int, monthOffset: Int, yearOffset
                         startMs = selStart,
                         endMs = selEndExcl,
                         future = selStart > now,
-                        isCurrent = ws.timeInMillis == curWeekStartMs,
-                        drillStartMs = ws.timeInMillis
+                        isCurrent = ws.timeInMillis == curWeekStartMs
                     )
                 )
                 ws = weekEndExcl
@@ -214,8 +195,7 @@ private fun buildUnits(zoom: Zoom, weekOffset: Int, monthOffset: Int, yearOffset
                         startMs = start.timeInMillis,
                         endMs = end.timeInMillis,
                         future = start.timeInMillis > now,
-                        isCurrent = year == cur.get(Calendar.YEAR) && m == cur.get(Calendar.MONTH),
-                        drillStartMs = start.timeInMillis
+                        isCurrent = year == cur.get(Calendar.YEAR) && m == cur.get(Calendar.MONTH)
                     )
                 )
             }
@@ -224,13 +204,8 @@ private fun buildUnits(zoom: Zoom, weekOffset: Int, monthOffset: Int, yearOffset
     return units
 }
 
-private fun periodRange(zoom: Zoom, weekOffset: Int, monthOffset: Int, yearOffset: Int): Pair<Long, Long> {
+private fun periodRange(zoom: Zoom, monthOffset: Int, yearOffset: Int): Pair<Long, Long> {
     return when (zoom) {
-        Zoom.D -> {
-            val ws = weekStartOf(Calendar.getInstance()).apply { add(Calendar.DAY_OF_YEAR, -7 * weekOffset) }
-            val end = (ws.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 7) }
-            ws.timeInMillis to end.timeInMillis
-        }
         Zoom.W -> {
             val ms = atMidnight(Calendar.getInstance()).apply {
                 set(Calendar.DAY_OF_MONTH, 1); add(Calendar.MONTH, -monthOffset)
@@ -310,6 +285,72 @@ private fun computeTagStats(
     }
     return if (sortByScore) stats.sortedByDescending { it.avg }
     else stats.sortedByDescending { it.count }
+}
+
+// ---------- the one-line insight ----------
+
+/** Below this many rated hours in the period, any "pattern" is noise — say
+ *  nothing rather than something confidently wrong. */
+private const val INSIGHT_MIN_HOURS = 20
+/** A part of day / a tag needs this many ratings before it can be named. */
+private const val INSIGHT_MIN_SAMPLES = 3
+/** Gaps under this are within the rounding of a 1–10 scale. */
+private const val INSIGHT_MIN_GAP = 0.5
+
+private data class DayPart(val cap: String, val lower: String, val hours: IntRange)
+
+private val DAY_PARTS = listOf(
+    DayPart("Mornings", "mornings", 5..11),
+    DayPart("Afternoons", "afternoons", 12..16),
+    DayPart("Evenings", "evenings", 17..23)
+)
+
+private fun oneDecimal(v: Double) = String.format(Locale.getDefault(), "%.1f", v)
+
+/**
+ * One sentence about the period, or null when the data can't support one.
+ *
+ * Two clauses, either of which may be missing: the widest gap between parts of
+ * the day, and the tag that scores worst. Both are gated on sample size — the
+ * whole point of a single auto-written line is that it is never wrong, so it
+ * stays silent far more readily than it speaks.
+ */
+private fun buildInsight(entries: List<RatingEntry>, ratedHours: Int): String? {
+    if (ratedHours < INSIGHT_MIN_HOURS) return null
+    val cal = Calendar.getInstance()
+    val parts = mutableListOf<String>()
+
+    val partScores = HashMap<Int, MutableList<Int>>()
+    for (e in entries) {
+        cal.timeInMillis = e.timestamp
+        val h = cal.get(Calendar.HOUR_OF_DAY)
+        val idx = DAY_PARTS.indexOfFirst { h in it.hours }
+        if (idx >= 0) partScores.getOrPut(idx) { mutableListOf() }.add(e.score)
+    }
+    val partAvgs = partScores
+        .filterValues { it.size >= INSIGHT_MIN_SAMPLES }
+        .mapValues { (_, scores) -> scores.average() }
+    if (partAvgs.size >= 2) {
+        val best = partAvgs.maxByOrNull { it.value }!!
+        val worst = partAvgs.minByOrNull { it.value }!!
+        val gap = best.value - worst.value
+        if (gap >= INSIGHT_MIN_GAP) {
+            parts += "${DAY_PARTS[best.key].cap} average ${oneDecimal(gap)} " +
+                    "higher than ${DAY_PARTS[worst.key].lower}"
+        }
+    }
+
+    val tagAvgs = entries
+        .flatMap { e -> e.visibleTags().map { it to e.score } }
+        .groupBy({ it.first }, { it.second })
+        .filterValues { it.size >= INSIGHT_MIN_SAMPLES }
+        .mapValues { (_, scores) -> scores.average() }
+    if (tagAvgs.size >= 2) {
+        val low = tagAvgs.minByOrNull { it.value }!!
+        parts += "lowest tag: ${low.key} (${oneDecimal(low.value)})"
+    }
+
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
 /** Groups every rating into its calendar day, newest day first. Days without a
@@ -424,7 +465,6 @@ fun PastTab(
                     window = window,
                     scrollState = scrollState,
                     onBack = { showTrends = false },
-                    onEdit = { editingEntry = it },
                     onChartYPosition = onChartYPosition
                 )
             } else {
@@ -731,11 +771,7 @@ private fun JournalDayCard(
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
                     )
-                    HourEntryRow(
-                        entry = entry,
-                        showEditIcon = true,
-                        onClick = { onEditEntry(entry) }
-                    )
+                    HourEntryRow(entry = entry, onClick = { onEditEntry(entry) })
                 }
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
@@ -778,15 +814,13 @@ private fun TickCapPill(text: String) {
 }
 
 /**
- * One rated hour: time range, score chip, tags (🕐 when it was rated from
- * memory), note preview. Shared by the journal's expanded day and the Trends
- * day sheet so the two can't drift.
+ * One rated hour inside an expanded journal day: time range, score chip, tags
+ * (🕐 when it was rated from memory), note preview.
  */
 @Composable
 private fun HourEntryRow(
     entry: RatingEntry,
-    showEditIcon: Boolean,
-    onClick: (() -> Unit)?
+    onClick: () -> Unit
 ) {
     val startH = remember(entry.timestamp) {
         Calendar.getInstance().apply { timeInMillis = entry.timestamp }.get(Calendar.HOUR_OF_DAY)
@@ -794,7 +828,7 @@ private fun HourEntryRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -841,14 +875,12 @@ private fun HourEntryRow(
                 )
             }
         }
-        if (showEditIcon) {
-            Icon(
-                Icons.Default.Edit,
-                contentDescription = "Edit this hour",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(15.dp)
-            )
-        }
+        Icon(
+            Icons.Default.Edit,
+            contentDescription = "Edit this hour",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp)
+        )
     }
 }
 
@@ -974,7 +1006,6 @@ private fun DateJumpDialog(
 // TRENDS  (the former Past tab, relocated behind one button)
 // ============================================================
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TrendsView(
     allRatings: List<RatingEntry>,
@@ -982,49 +1013,31 @@ private fun TrendsView(
     window: IntRange,
     scrollState: ScrollState,
     onBack: () -> Unit,
-    onEdit: (RatingEntry) -> Unit,
     onChartYPosition: (Float) -> Unit
 ) {
     val context = LocalContext.current
 
-    var zoom by remember { mutableStateOf(Zoom.D) }
-    var weekOffset by remember { mutableIntStateOf(0) }
+    var zoom by remember { mutableStateOf(Zoom.W) }
     var monthOffset by remember { mutableIntStateOf(0) }
     var yearOffset by remember { mutableIntStateOf(0) }
     var sortByScore by remember { mutableStateOf(true) }
     var gridExpanded by remember { mutableStateOf(false) }
-    // The whole hour-by-hour pattern grid is folded away by default.
-    var hourByHourExpanded by remember { mutableStateOf(false) }
-    var sheetDayStart by remember { mutableStateOf<Long?>(null) }
-    // The day the user last tapped in Day view — drives the white outline
-    // highlight (Day view only). Week/Month bars carry no highlight.
-    var selectedDayStart by remember { mutableStateOf<Long?>(null) }
-    val daySheetState = rememberModalBottomSheetState()
+    // The pattern grid is the reason to come here, so at the year scale it is
+    // open on arrival; the toggle only exists to get it out of the way.
+    var hourByHourExpanded by remember { mutableStateOf(true) }
 
-    // How the next view change should animate, and the horizontal anchor for a
-    // zoom (0..1 across the bar row) — set by the action that triggers it.
+    // How the next view change should animate — set by the action that triggers it.
     var navKind by remember { mutableStateOf(PastNav.None) }
-    var zoomOriginX by remember { mutableFloatStateOf(0.5f) }
 
-    // Kept at the top only for the control bar (range label) and to map a
-    // tapped bar back to its column index for the zoom origin. All the per-view
+    // Kept at the top only for the control bar's range label. All the per-view
     // data (stats, avgs, grid cells, tags) is computed inside the animated
     // region so the outgoing and incoming levels each render their own.
-    val range = remember(zoom, weekOffset, monthOffset, yearOffset) {
-        periodRange(zoom, weekOffset, monthOffset, yearOffset)
+    val range = remember(zoom, monthOffset, yearOffset) {
+        periodRange(zoom, monthOffset, yearOffset)
     }
 
-    val rangeLabel = remember(zoom, weekOffset, monthOffset, yearOffset) {
+    val rangeLabel = remember(zoom, monthOffset, yearOffset) {
         when (zoom) {
-            Zoom.D -> {
-                val a = Calendar.getInstance().apply { timeInMillis = range.first }
-                val b = Calendar.getInstance().apply { timeInMillis = range.second - 1 }
-                val fmtShort = SimpleDateFormat("d", Locale.getDefault())
-                val fmtLong = SimpleDateFormat("d MMM", Locale.getDefault())
-                if (a.get(Calendar.MONTH) == b.get(Calendar.MONTH))
-                    "${fmtShort.format(a.time)} – ${fmtLong.format(b.time)}"
-                else "${fmtLong.format(a.time)} – ${fmtLong.format(b.time)}"
-            }
             Zoom.W -> SimpleDateFormat("MMMM yyyy", Locale.getDefault())
                 .format(Date(range.first))
             Zoom.M -> SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(range.first))
@@ -1034,7 +1047,6 @@ private fun TrendsView(
     fun goEarlier() {
         navKind = PastNav.StepPrev
         when (zoom) {
-            Zoom.D -> weekOffset++
             Zoom.W -> monthOffset++
             Zoom.M -> yearOffset++
         }
@@ -1043,19 +1055,9 @@ private fun TrendsView(
     fun goLater() {
         navKind = PastNav.StepNext
         when (zoom) {
-            Zoom.D -> if (weekOffset > 0) weekOffset--
             Zoom.W -> if (monthOffset > 0) monthOffset--
             Zoom.M -> if (yearOffset > 0) yearOffset--
         }
-    }
-
-    // Tapping is a Day-view-only affordance now: it opens that day's sheet and
-    // marks the day as selected (white outline). Zoom levels change only through
-    // the D/W/M picker; Week/Month bars and cells are inert.
-    fun openDay(unit: PeriodUnit) {
-        if (unit.future) return
-        selectedDayStart = unit.drillStartMs
-        sheetDayStart = unit.drillStartMs
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -1082,11 +1084,10 @@ private fun TrendsView(
             // ---- One card: control bar (static) + an animated region that
             // slides on period steps and flies into the tapped bar on drill ----
             val canForward = when (zoom) {
-                Zoom.D -> weekOffset > 0
                 Zoom.W -> monthOffset > 0
                 Zoom.M -> yearOffset > 0
             }
-            val viewKey = PastViewKey(zoom, weekOffset, monthOffset, yearOffset)
+            val viewKey = PastViewKey(zoom, monthOffset, yearOffset)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1135,7 +1136,6 @@ private fun TrendsView(
                                 if (target != zoom) {
                                     navKind = if (target.rank() < zoom.rank())
                                         PastNav.ZoomIn else PastNav.ZoomOut
-                                    zoomOriginX = 0.5f
                                     zoom = target
                                 }
                             }
@@ -1149,7 +1149,7 @@ private fun TrendsView(
                         transitionSpec = {
                             val fspec = tween<Float>(360, easing = FastOutSlowInEasing)
                             val ispec = tween<IntOffset>(360, easing = FastOutSlowInEasing)
-                            val origin = TransformOrigin(zoomOriginX, 0.28f)
+                            val origin = TransformOrigin(0.5f, 0.28f)
                             when (navKind) {
                                 PastNav.StepNext ->
                                     (slideInHorizontally(ispec) { it } + fadeIn(fspec)) togetherWith
@@ -1173,15 +1173,14 @@ private fun TrendsView(
                         // the outgoing and incoming levels each show their own
                         // data during the transition.
                         val kUnits = remember(key, allRatings, refresh) {
-                            buildUnits(key.zoom, key.weekOffset, key.monthOffset, key.yearOffset)
+                            buildUnits(key.zoom, key.monthOffset, key.yearOffset)
                         }
                         val kRange = remember(key) {
-                            periodRange(key.zoom, key.weekOffset, key.monthOffset, key.yearOffset)
+                            periodRange(key.zoom, key.monthOffset, key.yearOffset)
                         }
                         val kPrevRange = remember(key) {
                             periodRange(
                                 key.zoom,
-                                if (key.zoom == Zoom.D) key.weekOffset + 1 else key.weekOffset,
                                 if (key.zoom == Zoom.W) key.monthOffset + 1 else key.monthOffset,
                                 if (key.zoom == Zoom.M) key.yearOffset + 1 else key.yearOffset
                             )
@@ -1215,6 +1214,9 @@ private fun TrendsView(
                         val kTagStats = remember(key, allRatings, sortByScore, refresh) {
                             computeTagStats(allRatings, kRange.first, kRange.second, kPrevRange.first, kPrevRange.second, sortByScore)
                         }
+                        val kInsight = remember(kPeriodEntries, kStats) {
+                            buildInsight(kPeriodEntries, kStats.ratedHours)
+                        }
 
                         Column(Modifier.fillMaxWidth()) {
                             // Summary for the selected period
@@ -1242,6 +1244,20 @@ private fun TrendsView(
                                 )
                             }
 
+                            // One auto-written line under the numbers, or nothing
+                            // at all when the period is too thin to say anything.
+                            if (kInsight != null) {
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    kInsight,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 17.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
                             Spacer(Modifier.height(16.dp))
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
@@ -1251,71 +1267,63 @@ private fun TrendsView(
                             // Scores chart
                             SectionLabel(
                                 when (key.zoom) {
-                                    Zoom.D -> "DAY SCORES"
                                     Zoom.W -> "WEEK SCORES"
                                     Zoom.M -> "MONTH SCORES"
                                 }
                             )
                             Spacer(Modifier.height(10.dp))
-                            ScoreBarChart(
-                                units = kUnits,
-                                avgs = kUnitAvgs,
-                                highlightStartMs = if (key.zoom == Zoom.D) selectedDayStart else null,
-                                onUnitClick = if (key.zoom == Zoom.D) ::openDay else null
-                            )
+                            ScoreBarChart(units = kUnits, avgs = kUnitAvgs)
 
-                            Spacer(Modifier.height(18.dp))
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
-                            )
-                            Spacer(Modifier.height(16.dp))
+                            // Hour-by-hour pattern grid. Only at the year scale:
+                            // a month's worth of weeks leaves cells averaging a
+                            // handful of ratings, which reads as noise.
+                            if (key.zoom == Zoom.M) {
+                                Spacer(Modifier.height(18.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                                )
+                                Spacer(Modifier.height(16.dp))
 
-                            // Hour-by-hour pattern grid — collapsed by default
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable { hourByHourExpanded = !hourByHourExpanded },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                SectionLabel(
-                                    when (key.zoom) {
-                                        Zoom.D -> "YOUR WEEK, HOUR BY HOUR"
-                                        Zoom.W -> "YOUR MONTH, HOUR BY HOUR"
-                                        Zoom.M -> "YOUR YEAR, HOUR BY HOUR"
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    if (hourByHourExpanded) "hide" else "show",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            if (hourByHourExpanded) {
-                                Spacer(Modifier.height(10.dp))
-                                if (!gridExpanded && kEarly > 0) {
-                                    CapPill(
-                                        "▲ $kEarly early rating${if (kEarly == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
-                                    ) { gridExpanded = true }
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { hourByHourExpanded = !hourByHourExpanded },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    SectionLabel(
+                                        "YOUR YEAR, HOUR BY HOUR",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        if (hourByHourExpanded) "hide" else "show",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
-                                if (gridExpanded) {
-                                    CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
-                                        gridExpanded = false
+                                if (hourByHourExpanded) {
+                                    Spacer(Modifier.height(10.dp))
+                                    if (!gridExpanded && kEarly > 0) {
+                                        CapPill(
+                                            "▲ $kEarly early rating${if (kEarly == 1) "" else "s"} (before ${formatHour(window.first)}) · show full day"
+                                        ) { gridExpanded = true }
                                     }
-                                }
-                                PatternGrid(
-                                    units = kUnits,
-                                    ratings = kPeriodEntries,
-                                    hourRange = if (gridExpanded) 0..23 else window,
-                                    highlightStartMs = if (key.zoom == Zoom.D) selectedDayStart else null,
-                                    onColumnClick = if (key.zoom == Zoom.D) ::openDay else null
-                                )
-                                if (!gridExpanded && kLate > 0) {
-                                    Spacer(Modifier.height(6.dp))
-                                    CapPill(
-                                        "▼ $kLate late rating${if (kLate == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
-                                    ) { gridExpanded = true }
+                                    if (gridExpanded) {
+                                        CapPill("collapse to active window (${formatHour(window.first)} – ${formatHour((window.last + 1) % 24)})") {
+                                            gridExpanded = false
+                                        }
+                                    }
+                                    PatternGrid(
+                                        units = kUnits,
+                                        ratings = kPeriodEntries,
+                                        hourRange = if (gridExpanded) 0..23 else window
+                                    )
+                                    if (!gridExpanded && kLate > 0) {
+                                        Spacer(Modifier.height(6.dp))
+                                        CapPill(
+                                            "▼ $kLate late rating${if (kLate == 1) "" else "s"} (after ${formatHour((window.last + 1) % 24)}) · show full day"
+                                        ) { gridExpanded = true }
+                                    }
                                 }
                             }
 
@@ -1338,24 +1346,6 @@ private fun TrendsView(
             }
 
             Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
-        }
-    }
-
-    // ---- Day sheet: the terminal zoom level ----
-    sheetDayStart?.let { dayStart ->
-        ModalBottomSheet(
-            onDismissRequest = { sheetDayStart = null },
-            sheetState = daySheetState
-        ) {
-            DaySheetContent(
-                dayStartMs = dayStart,
-                ratings = allRatings,
-                window = window,
-                onEdit = { entry ->
-                    sheetDayStart = null
-                    onEdit(entry)
-                }
-            )
         }
     }
 }
@@ -1413,15 +1403,14 @@ private fun StatDivider() {
 }
 
 private fun Zoom.fullLabel(): String = when (this) {
-    Zoom.D -> "Days"
     Zoom.W -> "Weeks"
     Zoom.M -> "Months"
 }
 
 /**
- * The D/W/M zoom selector: a stadium-shaped pill. The active level expands into
- * a filled primary stadium showing its full word (Days/Weeks/Months); the
- * others collapse to a single bare letter. The width change is animated.
+ * The W/M zoom selector: a stadium-shaped pill. The active level expands into
+ * a filled primary stadium showing its full word (Weeks/Months); the other
+ * collapses to a single bare letter. The width change is animated.
  */
 @Composable
 private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
@@ -1489,16 +1478,13 @@ private fun CapPill(text: String, onClick: () -> Unit) {
 
 /**
  * Band-colored bars over a light grid. The goal line is dashed with its
- * label INSIDE the plot; only the best unit carries a value label. In Day
- * view a tapped day opens its sheet and carries a white outline; Week/Month
- * bars are inert (no tap, no highlight).
+ * label INSIDE the plot; only the best unit carries a value label. The bars
+ * are a readout, not a control — nothing here is tappable.
  */
 @Composable
 private fun ScoreBarChart(
     units: List<PeriodUnit>,
-    avgs: List<Double?>,
-    highlightStartMs: Long?,
-    onUnitClick: ((PeriodUnit) -> Unit)?
+    avgs: List<Double?>
 ) {
     val plotHeight = 150.dp
     val labelZone = 18.dp
@@ -1615,14 +1601,6 @@ private fun ScoreBarChart(
                                     barModifier
                                         .height((animFrac * plotHeight.value).dp.coerceAtLeast(6.dp))
                                         .background(animColor)
-                                        .then(
-                                            if (u.drillStartMs == highlightStartMs) Modifier.border(2.dp, Color.White, barShape)
-                                            else Modifier
-                                        )
-                                        .then(
-                                            if (onUnitClick != null) Modifier.clickable { onUnitClick(u) }
-                                            else Modifier
-                                        )
                                 )
                             }
                         }
@@ -1647,18 +1625,15 @@ private fun ScoreBarChart(
 }
 
 /**
- * Hour-of-day rows × period columns. At W and M zoom each cell is that
- * hour's average across the unit, so the same slump stays visible from the
- * year level all the way down. Rows are pinned to the active window so
- * periods stay comparable; cells drill exactly like the bars above them.
+ * Hour-of-day rows × period columns — each cell that hour's average across the
+ * whole column, so a recurring slump reads as a band straight down the grid.
+ * Rows are pinned to the active window so periods stay comparable.
  */
 @Composable
 private fun PatternGrid(
     units: List<PeriodUnit>,
     ratings: List<RatingEntry>,
-    hourRange: IntRange,
-    highlightStartMs: Long?,
-    onColumnClick: ((PeriodUnit) -> Unit)?
+    hourRange: IntRange
 ) {
     // hour -> per-column average
     val cellAvgs = remember(units, ratings, hourRange) {
@@ -1746,20 +1721,11 @@ private fun PatternGrid(
                             animationSpec = tween(450),
                             label = "cell"
                         )
-                        val cellShape = RoundedCornerShape(3.dp)
                         Box(
                             Modifier
                                 .size(cell)
-                                .clip(cellShape)
+                                .clip(RoundedCornerShape(3.dp))
                                 .background(cellColor)
-                                .then(
-                                    if (u.drillStartMs == highlightStartMs) Modifier.border(1.5.dp, Color.White, cellShape)
-                                    else Modifier
-                                )
-                                .then(
-                                    if (onColumnClick != null && !u.future) Modifier.clickable { onColumnClick(u) }
-                                    else Modifier
-                                )
                         )
                     }
                 }
@@ -1893,119 +1859,6 @@ private fun TagStatRow(stat: TagStat) {
             modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
             color = getScoreColor(stat.avg),
             trackColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    }
-}
-
-/**
- * The day sheet behind the Trends bar chart and pattern grid: the day strip for
- * bearings, every rated hour as a readable row, and an honest footer (recovery
- * only reaches into today).
- */
-@Composable
-private fun DaySheetContent(
-    dayStartMs: Long,
-    ratings: List<RatingEntry>,
-    window: IntRange,
-    onEdit: (RatingEntry) -> Unit
-) {
-    val dayCal = remember(dayStartMs) { Calendar.getInstance().apply { timeInMillis = dayStartMs } }
-    val now = System.currentTimeMillis()
-    val isToday = remember(dayStartMs) { isSameDay(Calendar.getInstance(), dayCal) }
-
-    val dayEntries = remember(dayStartMs, ratings) {
-        ratings.filter {
-            val c = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-            isSameDay(c, dayCal)
-        }.sortedBy { it.timestamp }
-    }
-    val byHour = remember(dayEntries) {
-        dayEntries.associateBy {
-            Calendar.getInstance().apply { timeInMillis = it.timestamp }.get(Calendar.HOUR_OF_DAY)
-        }
-    }
-    val avg = if (dayEntries.isEmpty()) null else dayEntries.map { it.score }.average()
-
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                SimpleDateFormat("EEEE d MMM", Locale.getDefault()).format(dayCal.time),
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f)
-            )
-            if (avg != null) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(getScoreColor(avg))
-                        .padding(horizontal = 11.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        "avg ${String.format(Locale.getDefault(), "%.1f", avg)}",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        // Day strip over the active window
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            for (h in window) {
-                val entry = byHour[h]
-                val hourEnd = dayStartMs + (h + 1) * 3600_000L
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .height(22.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(
-                            when {
-                                entry != null -> scoreBandColor(entry.score)
-                                hourEnd > now -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        )
-                )
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatHour(window.first), fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(formatHour((window.first + window.last) / 2), fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(formatHour((window.last + 1) % 24), fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(10.dp))
-
-        dayEntries.forEach { entry ->
-            val editable = now - entry.timestamp <= EDIT_WINDOW_MS
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-            HourEntryRow(
-                entry = entry,
-                showEditIcon = editable,
-                onClick = if (editable) ({ onEdit(entry) }) else null
-            )
-        }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-        Spacer(Modifier.height(10.dp))
-        val elapsedWindowHours = window.count { h -> dayStartMs + (h + 1) * 3600_000L <= now }
-        val ratedInWindow = byHour.keys.count { it in window }
-        val unrated = (elapsedWindowHours - ratedInWindow).coerceAtLeast(0)
-        Text(
-            when {
-                dayEntries.isEmpty() && unrated == 0 -> "Nothing here yet"
-                unrated == 0 -> "Every hour rated 🐝"
-                isToday -> "$unrated hour${if (unrated == 1) "" else "s"} unrated so far · send a bee back from the Streak tab"
-                else -> "$unrated hour${if (unrated == 1) "" else "s"} went unrated · past days can't be recovered"
-            },
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
         )
     }
 }
