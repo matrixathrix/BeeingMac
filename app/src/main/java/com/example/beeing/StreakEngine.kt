@@ -300,7 +300,7 @@ fun StreakMeter(
     // The ring shows TODAY's hours, so the count inside is hours; the hive
     // (one cell built per qualifying day) lives outside the ring.
     val streakTitle = if (state.currentStreak > 0)
-        "${state.currentStreak}-cell hive" else "No hive yet"
+        "${state.currentStreak}-day streak" else "No streak yet"
     val remaining = (STREAK_HOURS_REQUIRED - state.todayHours).coerceAtLeast(0)
     val statusText = if (state.todayQualified) "Today is secured ✓"
     else "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
@@ -566,20 +566,20 @@ fun computeStreakLog(
                 StreakEvent(
                     day.hourTimestamps[STREAK_HOURS_REQUIRED - 1],
                     StreakEventType.COMPLETED,
-                    if (day.streakAfter == 1) "Hive started" else "Cell added",
-                    "Cell ${day.streakAfter} — reached $STREAK_HOURS_REQUIRED hours on $dayLabel"
+                    if (day.streakAfter == 1) "Streak started" else "Day complete",
+                    "Day ${day.streakAfter} of your streak — $STREAK_HOURS_REQUIRED hours on $dayLabel"
                 )
             )
             DayOutcome.REST -> events.add(
                 StreakEvent(
                     endOfDay, StreakEventType.REST, "Rest day 🌙",
-                    "$dayLabel came up short — the hive held anyway"
+                    "$dayLabel came up short — the streak held anyway"
                 )
             )
             // a miss with no streak running is not an event, only a reset is
             DayOutcome.MISSED -> if (day.brokeStreak) events.add(
                 StreakEvent(
-                    endOfDay, StreakEventType.RESET, "Hive reset 💔",
+                    endOfDay, StreakEventType.RESET, "Streak reset 💔",
                     "$dayLabel came up short, and a rest day was already used this week"
                 )
             )

@@ -449,13 +449,13 @@ fun HourlyPulseApp(
                         Spacer(Modifier.height(12.dp))
 
                         Text(
-                            "⬢ Build Your Hive",
+                            "⬢ Build Your Streak",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate 8 hours in a day to build one cell — the hive count is your streak. Come up short one day and it becomes a 🌙 rest day: the hive holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last 10 — free, twice a day.",
+                            "Rate 8 hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a 🌙 rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last 10 — free, twice a day.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
@@ -563,7 +563,7 @@ fun HourlyPulseApp(
 private data class NavItem(val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(
-    NavItem("Hive", Icons.Default.Star),
+    NavItem("Streak", Icons.Default.Star),
     NavItem("Now", Icons.Default.Home),
     NavItem("Past", Icons.Default.DateRange)
 )

@@ -219,13 +219,13 @@ fun StreaksTab(
                     horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "hive day")
+                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "complete")
                     LegendItem("🌙", "rest day")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = "How the hive works",
+                            contentDescription = "How streaks work",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
                         )
@@ -251,7 +251,7 @@ fun StreaksTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Hive log",
+                        "History",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f)
@@ -365,14 +365,14 @@ fun StreaksTab(
     if (showRules) {
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text("🐝 How the hive works") },
+            title = { Text("🐝 How streaks work") },
             text = {
                 Column {
-                    Text("• Every rated hour is a foraging trip. $STREAK_HOURS_REQUIRED trips in a day builds one cell — the hive count is your streak.", fontSize = 14.sp)
+                    Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Come up short one day and it becomes a 🌙 rest day — the hive holds. One rest day a week, no charge.", fontSize = 14.sp)
+                    Text("• Come up short one day and it becomes a 🌙 rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("• Come up short twice inside a week and the hive resets.", fontSize = 14.sp)
+                    Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
                     Text("• Send a bee back to revisit any hour missed in the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Revisited hours count toward the $STREAK_HOURS_REQUIRED.", fontSize = 14.sp)
                 }
@@ -561,8 +561,8 @@ private fun DayStatsDialog(
         SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
     }
     val outcomeLine = when {
-        outcome == DayOutcome.QUALIFIED -> "⬢ Cell built"
-        outcome == DayOutcome.REST -> "🌙 Rest day — the hive held"
+        outcome == DayOutcome.QUALIFIED -> "⬢ Day complete"
+        outcome == DayOutcome.REST -> "🌙 Rest day — the streak held"
         outcome == DayOutcome.MISSED -> "Missed"
         isToday -> "⏳ In progress"
         else -> "No ratings"

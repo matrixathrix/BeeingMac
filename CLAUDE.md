@@ -33,17 +33,32 @@ notification → rate → tag → save → lock phone → back to life.
   badge in history lists). Reclaimed hours count toward the 8.
 - Constants live at the top of `StreakEngine.kt`.
 
-### Bee lexicon (used in UI copy)
+### Lexicon (used in UI copy — 2026-08-03 copy pass)
 
-Reclaim copy is the full phrase "Missed rating a special hour? Send a bee back
-to revisit it" 🐝 ("revisit" is the owner-chosen verb) · 🕐 = an hour rated
-from memory (a reclaimed entry), so it reads apart from in-the-moment ratings ·
-🌙 Rest day = the one free forgiven day per week · Cell/chamber = one
-qualifying day; the streak reads as a "cell hive" (⬢ N), no 🔥 · Comb = the
-rating widget · Hive = the streak tab · Waggle = celebration (reserved for
-rare milestones — never per-save; the one daily celebration is the ring
-closing). Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics —
-honey gold survives only as an accent color.
+**Plain words win.** Bee metaphor survives only where it earns its place; the
+forced vocabulary (hive, cell, comb, forage, waggle) is gone from every
+user-visible string.
+
+Kept deliberately: the app name **Beeing** · the reclaim phrase "Missed rating
+a special hour? Send a bee back to revisit it" 🐝 ("revisit" is the
+owner-chosen verb) · the "🔒 Lock phone and bee mindful🐝" button · the ⬢
+hexagon as a pure visual motif (no "cell" wording attached to it).
+
+Current vocabulary: **Streak** = the tab (nav label) and the long game;
+a qualifying day is a **complete day** ("Day complete", "⬢ Day complete",
+calendar legend "complete"), and the count reads "**N-day streak**" /
+"Day N of your streak", never a cell count · **History** = the event log on
+the Streak tab · 🌙 **Rest day** = the one free forgiven day per week
+("the streak held") · 🕐 = an hour rated from memory (a reclaimed entry), so
+it reads apart from in-the-moment ratings · celebration is reserved for rare
+milestones — never per-save; the one daily celebration is the ring closing.
+Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics — honey gold
+survives only as an accent color.
+
+**Internal names still use the old words** (`StreaksTab.kt` is the "Hive tab",
+`DecagonCombDial`, `CombStrip.kt`, `HoneyGold`, comments): identifiers were
+left alone on purpose to keep the copy diff small. When reading this file's
+tables below, "Hive" means the Streak tab.
 
 ## Verifying changes
 
@@ -78,7 +93,7 @@ case verify by static review and say so explicitly — the user compiles locally
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling |
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour |
-| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ cell-hive · ring x/8 — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to Hive) to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
+| `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ streak · ring x/8 — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to the Streak tab; merged semantics announce "N-day streak · H of 8 hours rated today" with the click label "Open Streak tab") to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten hexagonal cells docked on its edges, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
 | `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
@@ -285,3 +300,24 @@ case verify by static review and say so explicitly — the user compiles locally
   History is **replayed** under the new rules, so days that used to read
   "saved" may now read as rest days or resets — accepted by the owner, same
   precedent as the 2026-08-01 change.
+- 2026-08-03 (copy pass): **forced bee vocabulary pruned from every visible
+  string** — strings only, no identifiers or filenames touched (see the
+  Lexicon section above for the resulting vocabulary). Nav tab "Hive" →
+  **"Streak"** (the nav icon's `contentDescription` derives from the same
+  label, so it followed); `StreakMeter` title "N-cell hive"/"No hive yet" →
+  "N-day streak"/"No streak yet"; calendar legend "hive day" → "complete" and
+  its info icon "How the hive works" → "How streaks work"; "Hive log" →
+  **"History"**; day-stats "⬢ Cell built" → "⬢ Day complete" and "🌙 Rest day —
+  the hive held" → "— the streak held"; log events "Hive started"/"Cell added"
+  → "Streak started"/"Day complete" with the detail line "Day N of your streak
+  — 8 hours on <date>", "Hive reset 💔" → "Streak reset 💔"; both explainers
+  (the ⋮ "How Beeing works" dialog and the Streak-tab rules dialog) rewritten —
+  "every rated hour is a foraging trip … builds one cell" became "rate 8 hours
+  in a day and that day is complete — complete days are your streak"; weekly
+  report line "hive ⬢N" → "streak ⬢N"; the Now and Past pointers "send a bee
+  back from the Hive" → "…from the Streak tab". `StatusStrip` had no
+  accessibility description to rename (it was an unlabelled `Card` whose
+  children announced as the bare glyphs "⬢ 5", "3/8"), so one was **added**:
+  `semantics(mergeDescendants = true)` with "N-day streak · H of 8 hours rated
+  today" (or "No streak yet · …"), plus `onClickLabel = "Open Streak tab"` on
+  the `clickable`. This is the one non-string change in the pass.

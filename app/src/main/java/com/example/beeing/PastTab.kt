@@ -1446,7 +1446,7 @@ private fun DaySheetContent(
             when {
                 dayEntries.isEmpty() && unrated == 0 -> "Nothing here yet"
                 unrated == 0 -> "Every hour rated 🐝"
-                isToday -> "$unrated hour${if (unrated == 1) "" else "s"} unrated so far · send a bee back from the Hive"
+                isToday -> "$unrated hour${if (unrated == 1) "" else "s"} unrated so far · send a bee back from the Streak tab"
                 else -> "$unrated hour${if (unrated == 1) "" else "s"} went unrated · past days can't be recovered"
             },
             fontSize = 12.sp,

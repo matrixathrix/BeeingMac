@@ -34,6 +34,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -370,7 +372,7 @@ fun NowTab(
                 if (missedHoursToday.isNotEmpty()) {
                     TextButton(onClick = onOpenStreaks) {
                         Text(
-                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · send a bee back from the Hive ›",
+                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · send a bee back from the Streak tab ›",
                             fontSize = NowCaptionSize,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -748,8 +750,16 @@ private fun StatusStrip(
     // A tonal-elevation fill (not the tinted surfaceVariant) so the strip pops
     // off the header while still tracking dynamic color on Android 12+.
     val stripBg = MaterialTheme.colorScheme.surfaceContainerHighest
+    // Screen readers would otherwise announce the bare glyphs ("⬢ 5", "3/8"),
+    // so the strip speaks as one labelled target instead of its two children.
+    val streakLabel = if (state.currentStreak > 0)
+        "${state.currentStreak}-day streak" else "No streak yet"
+    val stripDescription =
+        "$streakLabel · ${state.todayHours} of $STREAK_HOURS_REQUIRED hours rated today"
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = stripDescription },
         shape = RoundedCornerShape(50),
         colors = CardDefaults.cardColors(
             containerColor = stripBg,
