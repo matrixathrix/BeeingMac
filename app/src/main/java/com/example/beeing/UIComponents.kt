@@ -297,9 +297,12 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                                 "$dateStr, $range (${item.hourLabel} hour)",
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            if (item.tags.isNotEmpty()) {
+                            val shownTags = item.visibleTags()
+                            if (shownTags.isNotEmpty() || item.isReclaimed) {
                                 Text(
-                                    item.tags.joinToString(", "),
+                                    // 🕐 = rated from memory via a bee
+                                    (if (item.isReclaimed) "🕐 " else "") +
+                                            shownTags.joinToString(", "),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1

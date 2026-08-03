@@ -507,9 +507,9 @@ fun PastTab(
                             val kStats = remember(key, allRatings, window, refresh) {
                                 computePeriodStats(allRatings, kRange.first, kRange.second, window)
                             }
-                            val kDaysSaved = remember(key, allRatings, refresh) {
+                            val kRestDays = remember(key, allRatings, refresh) {
                                 computeStreakLog(allRatings, loadReclaimSpends(context))
-                                    .count { it.type == StreakEventType.SAVED && it.timestamp in kRange.first until kRange.second }
+                                    .count { it.type == StreakEventType.REST && it.timestamp in kRange.first until kRange.second }
                             }
                             val kUnitAvgs = remember(key, allRatings, refresh) {
                                 kUnits.map { u ->
@@ -554,8 +554,8 @@ fun PastTab(
                                     )
                                     StatDivider()
                                     StatCell(
-                                        value = "🌸 $kDaysSaved",
-                                        label = "days saved",
+                                        value = "🌙 $kRestDays",
+                                        label = "rest days",
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -1405,11 +1405,18 @@ private fun DaySheetContent(
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        if (entry.tags.isEmpty()) "—" else entry.tags.joinToString(" · "),
-                        fontSize = 12.5.sp,
-                        maxLines = 1
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 🕐 = rated from memory via a bee, not in the moment
+                        if (entry.isReclaimed) {
+                            Text("🕐", fontSize = 11.sp, modifier = Modifier.padding(end = 4.dp))
+                        }
+                        val shown = entry.visibleTags()
+                        Text(
+                            if (shown.isEmpty()) "—" else shown.joinToString(" · "),
+                            fontSize = 12.5.sp,
+                            maxLines = 1
+                        )
+                    }
                     if (entry.note.isNotBlank()) {
                         Text(
                             "📝 ${entry.note}",
@@ -1439,7 +1446,7 @@ private fun DaySheetContent(
             when {
                 dayEntries.isEmpty() && unrated == 0 -> "Nothing here yet"
                 unrated == 0 -> "Every hour rated 🐝"
-                isToday -> "$unrated hour${if (unrated == 1) "" else "s"} unrated so far · recover with 🌸 in the Hive"
+                isToday -> "$unrated hour${if (unrated == 1) "" else "s"} unrated so far · send a bee back from the Hive"
                 else -> "$unrated hour${if (unrated == 1) "" else "s"} went unrated · past days can't be recovered"
             },
             fontSize = 12.sp,

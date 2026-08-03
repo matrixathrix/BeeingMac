@@ -455,7 +455,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate 8 hours in a day to build one cell — the hive count is your streak. Extra hours gather 🌸 flowers: 5 send a bee back to revisit an hour you missed in the last 10, and a fully missed day spends 20 automatically to keep the hive alive.",
+                            "Rate 8 hours in a day to build one cell — the hive count is your streak. Come up short one day and it becomes a 🌙 rest day: the hive holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last 10 — free, twice a day.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )

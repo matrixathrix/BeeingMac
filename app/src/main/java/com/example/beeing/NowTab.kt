@@ -61,7 +61,7 @@ import kotlin.math.roundToInt
  *  - none pending: caught-up hero with the next-hour countdown and the Lock
  *    phone button — the ONLY place lock exists — plus the today strip
  *
- * Status (streak / ring / flowers) is a slim strip, not a hero; it expands
+ * Status (streak / ring) is a slim strip, not a hero; it expands
  * into the full meter on the Hive tab. No per-save ceremony: the state change
  * plus one haptic IS the feedback; celebrations stay reserved for the ring
  * closing (full-screen, existing) and rare milestones.
@@ -262,8 +262,8 @@ fun NowTab(
                 .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header: the app title, plus the status card (cell-hive · ring ·
-            // 🌸) where taps open the Hive. The ⋮ menu carries data options
+            // Header: the app title, plus the status card (cell-hive · ring)
+            // where taps open the Hive. The ⋮ menu carries data options
             // and "How it works".
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -370,7 +370,7 @@ fun NowTab(
                 if (missedHoursToday.isNotEmpty()) {
                     TextButton(onClick = onOpenStreaks) {
                         Text(
-                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · recover with 🌸 in the Hive ›",
+                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · send a bee back from the Hive ›",
                             fontSize = NowCaptionSize,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -522,11 +522,9 @@ fun NowTab(
                         Spacer(Modifier.height(18.dp))
                         // The save button IS the state machine — its label
                         // explains what's missing instead of a dead checkmark
-                        val earnsFlower = streakState.todayHours >= STREAK_HOURS_REQUIRED
                         val saveLabel = when {
                             selectedScore == null -> "Pick a rating"
                             selectedTags.isEmpty() -> "Tag it to save"
-                            earnsFlower -> "Save ${displayHourInfo.first} · +1 🌸"
                             else -> "Save ${displayHourInfo.first}"
                         }
                         Button(
@@ -738,7 +736,7 @@ fun NowTab(
 }
 
 // ============================================================
-// STATUS STRIP  (🔥 streak · ring x/8 · 🌸 flowers)
+// STATUS STRIP  (⬢ cell hive · ring x/8)
 // ============================================================
 
 @Composable
@@ -787,19 +785,6 @@ private fun StatusStrip(
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 18.sp
             )
-            StripDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🌸",
-                    fontSize = 21.sp
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "${state.flowers}",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp
-                )
-            }
         }
     }
 }
@@ -1321,7 +1306,7 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
                 Text("⭐ Today's best hour", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text(
                     "${formatHour(startH)} - ${formatHour(endH)}" +
-                            if (bestHour.tags.isNotEmpty()) " · ${bestHour.tags.joinToString(", ")}" else "",
+                            bestHour.visibleTags().let { if (it.isEmpty()) "" else " · ${it.joinToString(", ")}" },
                     fontSize = NowCaptionSize,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1

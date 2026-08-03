@@ -47,14 +47,18 @@ import kotlin.math.sin
 // ============================================================
 
 const val STREAK_HOURS_REQUIRED = 8   // distinct rated hours for a day to count
-const val FLOWER_CAP = 50             // max flowers the bank can hold
-const val SAVE_COST = 20              // flowers auto-spent to save a fully missed day
-const val GIFT_FLOWERS = 20           // day-one gift so the first stumble doesn't reset
-const val RECLAIM_COST = 5            // flowers to send a bee back for one expired hour
+const val FORGIVE_WINDOW_DAYS = 7     // a rest day needs the previous 6 days clear of another
 const val RECLAIM_WINDOW_HOURS = 10   // how far back a bee can reach (clock hours, may cross midnight)
-// Stored sentinel inside persisted entries — the UI shows 🐝, but the stored
+const val RECLAIM_PER_DAY = 2         // free bees a calendar day may send back
+// Stored sentinel inside persisted entries — the UI shows 🕐/🐝, but the stored
 // string must never change or old reclaims stop being recognized.
 const val RECLAIM_TAG = "💧reclaimed"
+
+/** True when this entry was rated from memory via "send a bee back". */
+val RatingEntry.isReclaimed: Boolean get() = RECLAIM_TAG in tags
+
+/** Tags fit to show: the reclaim sentinel is carried by the 🕐 badge instead. */
+fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
 
 // ============================================================
 // RECLAIM SPENDS  (persisted — not derivable from ratings)
@@ -73,34 +77,62 @@ fun recordReclaimSpend(context: android.content.Context) {
     prefs.edit().putString("reclaim_spends", next).apply()
 }
 
+/** Bees already sent back today — the reclaim is free but capped per day. */
+fun reclaimsUsedToday(spends: List<Long>): Int {
+    val todayKey = Calendar.getInstance().dayKey()
+    val cal = Calendar.getInstance()
+    return spends.count { cal.timeInMillis = it; cal.dayKey() == todayKey }
+}
+
 data class StreakState(
     val currentStreak: Int,      // consecutive qualifying days ending today/yesterday
     val todayHours: Int,         // distinct hours rated today (may exceed 8)
     val todayQualified: Boolean, // todayHours >= STREAK_HOURS_REQUIRED
-    val flowers: Int,            // the one currency: 0..FLOWER_CAP
     val extraToday: Int          // hours today beyond the required 8 (UI flavour)
 )
 
 private fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
 
-/**
- * Replays the full history day-by-day so flowers are spent deterministically:
- *  - each calendar day with >=8 distinct rated hours counts toward the streak
- *  - extra hours (beyond 8) each bank one 🌸 flower (cap FLOWER_CAP)
- *  - reclaimed hours count toward the 8 but never earn flowers
- *  - each reclaim deducts RECLAIM_COST flowers on its day
- *  - a past day with <8 hours silently spends SAVE_COST flowers to hold the
- *    streak, or resets the streak (and the bank) if it can't afford it
- *  - today is treated as "in progress": <8 neither counts nor breaks
- *  - everyone starts with GIFT_FLOWERS flowers
- */
-fun computeStreakState(
-    ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
-): StreakState {
-    if (ratings.isEmpty()) return StreakState(0, 0, false, GIFT_FLOWERS, 0)
+// ============================================================
+// THE REPLAY  (one walk over history; every reader below shares it)
+// ============================================================
 
-    val hoursByDay = HashMap<Long, MutableSet<Int>>()
+enum class DayOutcome { QUALIFIED, REST, MISSED }
+
+private class ReplayDay(
+    val key: Long,                     // year * 1000 + dayOfYear
+    val dayStartMs: Long,
+    val hourTimestamps: List<Long>,    // distinct rated hours -> earliest ts each, sorted
+    val reclaimedHours: Int,
+    val spends: List<Long>,            // wall-clock ts of bees sent back this day
+    val outcome: DayOutcome?,          // null = today, still in progress
+    val streakAfter: Int,
+    val brokeStreak: Boolean,          // this miss is the one that reset the hive
+    val isToday: Boolean
+)
+
+/**
+ * Walks every calendar day from the first rating through today and decides its
+ * outcome. `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` all
+ * read this one list, so they cannot disagree.
+ *
+ *  - a day with >=STREAK_HOURS_REQUIRED distinct rated hours QUALIFIES and
+ *    extends the streak (reclaimed hours count toward the 8)
+ *  - a missed past day is forgiven as a REST day when a streak is actually
+ *    running and no other rest day falls inside the previous
+ *    FORGIVE_WINDOW_DAYS - 1 days (so ~1 per week, rolling)
+ *  - a second miss inside that window MISSES and resets the streak
+ *  - a miss with no streak running just MISSES — there is nothing to forgive,
+ *    and it does not burn the rest day
+ *  - today is in progress: under 8 hours neither counts nor breaks
+ */
+private fun replayDays(
+    ratings: List<RatingEntry>,
+    reclaimSpends: List<Long>
+): List<ReplayDay> {
+    if (ratings.isEmpty()) return emptyList()
+
+    val hourTsByDay = HashMap<Long, HashMap<Int, Long>>()
     val reclaimedByDay = HashMap<Long, MutableSet<Int>>()
     var earliest = Long.MAX_VALUE
     val tmp = Calendar.getInstance()
@@ -108,96 +140,16 @@ fun computeStreakState(
         tmp.timeInMillis = e.timestamp
         val key = tmp.dayKey()
         val hour = tmp.get(Calendar.HOUR_OF_DAY)
-        hoursByDay.getOrPut(key) { mutableSetOf() }.add(hour)
-        if (RECLAIM_TAG in e.tags) reclaimedByDay.getOrPut(key) { mutableSetOf() }.add(hour)
+        val map = hourTsByDay.getOrPut(key) { HashMap() }
+        val existing = map[hour]
+        if (existing == null || e.timestamp < existing) map[hour] = e.timestamp
+        if (e.isReclaimed) reclaimedByDay.getOrPut(key) { mutableSetOf() }.add(hour)
         if (e.timestamp < earliest) earliest = e.timestamp
     }
-    val spendsByDay = HashMap<Long, Int>()
+    val spendsByDay = HashMap<Long, MutableList<Long>>()
     for (p in reclaimSpends) {
         tmp.timeInMillis = p
-        spendsByDay[tmp.dayKey()] = (spendsByDay[tmp.dayKey()] ?: 0) + 1
-    }
-
-    val today = Calendar.getInstance()
-    val todayKey = today.dayKey()
-    val todayHours = hoursByDay[todayKey]?.size ?: 0
-
-    val cursor = Calendar.getInstance().apply {
-        timeInMillis = earliest
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
-
-    var streak = 0
-    var bank = GIFT_FLOWERS
-
-    while (true) {
-        val key = cursor.dayKey()
-        val hours = hoursByDay[key]?.size ?: 0
-
-        if (hours >= STREAK_HOURS_REQUIRED) {
-            streak += 1
-            val reclaimed = reclaimedByDay[key]?.size ?: 0
-            bank += (hours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            if (bank > FLOWER_CAP) bank = FLOWER_CAP
-        } else if (key != todayKey) {
-            // a real missed day in the past
-            if (bank >= SAVE_COST) bank -= SAVE_COST // auto-spend, streak holds
-            else { streak = 0; bank = 0 }
-        }
-        // today with <8 hours falls through: in progress, no effect
-
-        // reclaims spend from the bank on the day they happen
-        bank -= RECLAIM_COST * (spendsByDay[key] ?: 0)
-        if (bank < 0) bank = 0
-
-        if (key == todayKey) break
-        cursor.add(Calendar.DAY_OF_YEAR, 1)
-    }
-
-    return StreakState(
-        currentStreak = streak,
-        todayHours = todayHours,
-        todayQualified = todayHours >= STREAK_HOURS_REQUIRED,
-        flowers = bank,
-        extraToday = maxOf(0, todayHours - STREAK_HOURS_REQUIRED)
-    )
-}
-
-// ============================================================
-// DAY OUTCOMES  (calendar view: tinted dot qualified / 🌸 saved / hollow ring missed)
-// ============================================================
-
-enum class DayOutcome { QUALIFIED, SAVED, MISSED }
-
-/**
- * Per-day outcome for every day from the first rating through yesterday,
- * replaying the exact same rules as computeStreakState so the calendar can
- * never disagree with the meter. Today appears only once it has qualified.
- * Key = year * 1000 + dayOfYear.
- */
-fun computeDayOutcomes(
-    ratings: List<RatingEntry>,
-    reclaimSpends: List<Long> = emptyList()
-): Map<Long, DayOutcome> {
-    if (ratings.isEmpty()) return emptyMap()
-
-    val hoursByDay = HashMap<Long, MutableSet<Int>>()
-    val reclaimedByDay = HashMap<Long, MutableSet<Int>>()
-    var earliest = Long.MAX_VALUE
-    val tmp = Calendar.getInstance()
-    for (e in ratings) {
-        tmp.timeInMillis = e.timestamp
-        val key = tmp.dayKey()
-        val hour = tmp.get(Calendar.HOUR_OF_DAY)
-        hoursByDay.getOrPut(key) { mutableSetOf() }.add(hour)
-        if (RECLAIM_TAG in e.tags) reclaimedByDay.getOrPut(key) { mutableSetOf() }.add(hour)
-        if (e.timestamp < earliest) earliest = e.timestamp
-    }
-    val spendsByDay = HashMap<Long, Int>()
-    for (p in reclaimSpends) {
-        tmp.timeInMillis = p
-        spendsByDay[tmp.dayKey()] = (spendsByDay[tmp.dayKey()] ?: 0) + 1
+        spendsByDay.getOrPut(tmp.dayKey()) { mutableListOf() }.add(p)
     }
 
     val todayKey = Calendar.getInstance().dayKey()
@@ -207,36 +159,88 @@ fun computeDayOutcomes(
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }
 
-    val outcomes = HashMap<Long, DayOutcome>()
-    var bank = GIFT_FLOWERS
+    val days = ArrayList<ReplayDay>()
+    var streak = 0
+    var dayIndex = 0            // calendar days since the first rating
+    var lastRestIndex: Int? = null
 
     while (true) {
         val key = cursor.dayKey()
-        val hours = hoursByDay[key]?.size ?: 0
+        val isToday = key == todayKey
+        val hourTs = hourTsByDay[key]?.values?.sorted() ?: emptyList()
 
-        if (hours >= STREAK_HOURS_REQUIRED) {
-            outcomes[key] = DayOutcome.QUALIFIED
-            val reclaimed = reclaimedByDay[key]?.size ?: 0
-            bank += (hours - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            if (bank > FLOWER_CAP) bank = FLOWER_CAP
-        } else if (key != todayKey) {
-            if (bank >= SAVE_COST) {
-                bank -= SAVE_COST
-                outcomes[key] = DayOutcome.SAVED
-            } else {
-                bank = 0
-                outcomes[key] = DayOutcome.MISSED
+        var brokeStreak = false
+        val lastRest = lastRestIndex
+        val outcome: DayOutcome? = when {
+            hourTs.size >= STREAK_HOURS_REQUIRED -> {
+                streak += 1
+                DayOutcome.QUALIFIED
+            }
+            isToday -> null                       // in progress, no verdict yet
+            streak == 0 -> DayOutcome.MISSED      // nothing to forgive
+            lastRest == null || dayIndex - lastRest >= FORGIVE_WINDOW_DAYS -> {
+                lastRestIndex = dayIndex
+                DayOutcome.REST
+            }
+            else -> {
+                streak = 0
+                brokeStreak = true
+                DayOutcome.MISSED
             }
         }
 
-        bank -= RECLAIM_COST * (spendsByDay[key] ?: 0)
-        if (bank < 0) bank = 0
+        days.add(
+            ReplayDay(
+                key = key,
+                dayStartMs = cursor.timeInMillis,
+                hourTimestamps = hourTs,
+                reclaimedHours = reclaimedByDay[key]?.size ?: 0,
+                spends = spendsByDay[key]?.sorted() ?: emptyList(),
+                outcome = outcome,
+                streakAfter = streak,
+                brokeStreak = brokeStreak,
+                isToday = isToday
+            )
+        )
 
-        if (key == todayKey) break
+        if (isToday) break
         cursor.add(Calendar.DAY_OF_YEAR, 1)
+        dayIndex += 1
     }
-    return outcomes
+    return days
 }
+
+/** Current streak plus today's progress, read off the shared replay. */
+fun computeStreakState(
+    ratings: List<RatingEntry>,
+    reclaimSpends: List<Long> = emptyList()
+): StreakState {
+    val days = replayDays(ratings, reclaimSpends)
+    val today = days.lastOrNull()?.takeIf { it.isToday }
+    val todayHours = today?.hourTimestamps?.size ?: 0
+    return StreakState(
+        currentStreak = days.lastOrNull()?.streakAfter ?: 0,
+        todayHours = todayHours,
+        todayQualified = todayHours >= STREAK_HOURS_REQUIRED,
+        extraToday = maxOf(0, todayHours - STREAK_HOURS_REQUIRED)
+    )
+}
+
+// ============================================================
+// DAY OUTCOMES  (calendar: tinted dot built / 🌙 rest / hollow ring missed)
+// ============================================================
+
+/**
+ * Per-day outcome for every day from the first rating through yesterday.
+ * Today appears only once it has qualified. Key = year * 1000 + dayOfYear.
+ */
+fun computeDayOutcomes(
+    ratings: List<RatingEntry>,
+    reclaimSpends: List<Long> = emptyList()
+): Map<Long, DayOutcome> =
+    replayDays(ratings, reclaimSpends)
+        .mapNotNull { day -> day.outcome?.let { day.key to it } }
+        .toMap()
 
 // ============================================================
 // STREAK METER  (8-segment ring; grows full-width when the dial rests)
@@ -525,7 +529,7 @@ private fun StreakRing(
 // STREAK LOG  (exhaustive, timestamped event history)
 // ============================================================
 
-enum class StreakEventType { STARTED, EXTENDED, SAVED, RESET, BANKED, RECLAIMED }
+enum class StreakEventType { COMPLETED, REST, RESET, RECLAIMED }
 
 data class StreakEvent(
     val timestamp: Long,
@@ -535,116 +539,61 @@ data class StreakEvent(
 )
 
 private fun StreakEventType.emoji(): String = when (this) {
-    StreakEventType.STARTED -> "🐝"
-    StreakEventType.EXTENDED -> "⬢"
-    StreakEventType.SAVED -> "🌸"
+    StreakEventType.COMPLETED -> "⬢"
+    StreakEventType.REST -> "🌙"
     StreakEventType.RESET -> "💔"
-    StreakEventType.BANKED -> "🌸"
     StreakEventType.RECLAIMED -> "🐝"
 }
 
 /**
- * Replays history at hour granularity to emit an exhaustive, timestamped log of
- * streak milestones. Returned newest-first.
+ * Timestamped log of the four things that happen to a hive: a day completed,
+ * a rest day taken, the streak reset, a bee sent back. Newest-first.
  */
 fun computeStreakLog(
     ratings: List<RatingEntry>,
     reclaimSpends: List<Long> = emptyList()
 ): List<StreakEvent> {
-    if (ratings.isEmpty()) return emptyList()
-
-    // For each day: distinct hours mapped to the earliest timestamp they were rated.
-    val byDay = HashMap<Long, HashMap<Int, Long>>()
-    val reclaimedByDay = HashMap<Long, MutableSet<Int>>()
-    var earliest = Long.MAX_VALUE
-    val tmp = Calendar.getInstance()
-    for (e in ratings) {
-        tmp.timeInMillis = e.timestamp
-        val key = tmp.get(Calendar.YEAR) * 1000L + tmp.get(Calendar.DAY_OF_YEAR)
-        val hour = tmp.get(Calendar.HOUR_OF_DAY)
-        val map = byDay.getOrPut(key) { HashMap() }
-        val existing = map[hour]
-        if (existing == null || e.timestamp < existing) map[hour] = e.timestamp
-        if (RECLAIM_TAG in e.tags) reclaimedByDay.getOrPut(key) { mutableSetOf() }.add(hour)
-        if (e.timestamp < earliest) earliest = e.timestamp
-    }
-    val spendsByDay = HashMap<Long, MutableList<Long>>()
-    for (p in reclaimSpends) {
-        tmp.timeInMillis = p
-        val key = tmp.get(Calendar.YEAR) * 1000L + tmp.get(Calendar.DAY_OF_YEAR)
-        spendsByDay.getOrPut(key) { mutableListOf() }.add(p)
-    }
-
-    val today = Calendar.getInstance()
-    val todayKey = today.get(Calendar.YEAR) * 1000L + today.get(Calendar.DAY_OF_YEAR)
-
-    val cursor = Calendar.getInstance().apply {
-        timeInMillis = earliest
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
     val dateFmt = SimpleDateFormat("d MMM", Locale.getDefault())
-
     val events = ArrayList<StreakEvent>()
-    var streak = 0
-    var bank = GIFT_FLOWERS
 
-    while (true) {
-        val key = cursor.get(Calendar.YEAR) * 1000L + cursor.get(Calendar.DAY_OF_YEAR)
-        val dayStart = cursor.timeInMillis
-        val endOfDay = dayStart + 23L * 3600000L + 59L * 60000L
-        val dayLabel = dateFmt.format(cursor.time)
+    for (day in replayDays(ratings, reclaimSpends)) {
+        val dayLabel = dateFmt.format(Date(day.dayStartMs))
+        val endOfDay = day.dayStartMs + 23L * 3600000L + 59L * 60000L
 
-        val orderedTs = byDay[key]?.values?.sorted() ?: emptyList()
-        val n = orderedTs.size
-
-        if (n >= STREAK_HOURS_REQUIRED) {
-            // 8th distinct hour -> start/extend
-            val qualifyTs = orderedTs[STREAK_HOURS_REQUIRED - 1]
-            if (streak == 0) {
-                streak = 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.STARTED, "Hive started", "Cell 1 — reached 8 hours on $dayLabel"))
-            } else {
-                streak += 1
-                events.add(StreakEvent(qualifyTs, StreakEventType.EXTENDED, "Cell added", "Cell $streak — reached 8 hours on $dayLabel"))
-            }
-            // extra hours -> bank flowers one by one (reclaimed hours never earn)
-            val reclaimed = reclaimedByDay[key]?.size ?: 0
-            val eligible = (n - STREAK_HOURS_REQUIRED - reclaimed).coerceAtLeast(0)
-            for (i in (n - eligible) until n) {
-                if (bank < FLOWER_CAP) bank += 1
-            }
-            // end-of-day balance — only when extra hours were actually banked
-            if (eligible > 0) {
-                events.add(
-                    StreakEvent(
-                        endOfDay, StreakEventType.BANKED, "End of day",
-                        "$dayLabel: +$eligible 🌸 gathered · balance $bank 🌸"
-                    )
+        when (day.outcome) {
+            // the 8th distinct hour is the moment the cell closed
+            DayOutcome.QUALIFIED -> events.add(
+                StreakEvent(
+                    day.hourTimestamps[STREAK_HOURS_REQUIRED - 1],
+                    StreakEventType.COMPLETED,
+                    if (day.streakAfter == 1) "Hive started" else "Cell added",
+                    "Cell ${day.streakAfter} — reached $STREAK_HOURS_REQUIRED hours on $dayLabel"
                 )
-            }
-        } else if (key != todayKey) {
-            // missed past day
-            if (bank >= SAVE_COST) {
-                bank -= SAVE_COST
-                events.add(StreakEvent(endOfDay, StreakEventType.SAVED, "Day saved 🌸", "$dayLabel had under 8 hours — spent $SAVE_COST 🌸 · balance $bank 🌸"))
-            } else {
-                if (streak > 0) {
-                    events.add(StreakEvent(endOfDay, StreakEventType.RESET, "Hive reset 💔", "$dayLabel had under 8 hours and not enough 🌸 to save it"))
-                }
-                streak = 0; bank = 0
-            }
-        }
-        // today with <8 hours: in progress, no event
-
-        // reclaims spend from the bank on the day they happen
-        spendsByDay[key]?.forEach { ts ->
-            bank = (bank - RECLAIM_COST).coerceAtLeast(0)
-            events.add(StreakEvent(ts, StreakEventType.RECLAIMED, "Bee sent back 🐝", "Revisited a missed hour · −$RECLAIM_COST 🌸 · balance $bank 🌸"))
+            )
+            DayOutcome.REST -> events.add(
+                StreakEvent(
+                    endOfDay, StreakEventType.REST, "Rest day 🌙",
+                    "$dayLabel came up short — the hive held anyway"
+                )
+            )
+            // a miss with no streak running is not an event, only a reset is
+            DayOutcome.MISSED -> if (day.brokeStreak) events.add(
+                StreakEvent(
+                    endOfDay, StreakEventType.RESET, "Hive reset 💔",
+                    "$dayLabel came up short, and a rest day was already used this week"
+                )
+            )
+            null -> {} // today, still in progress
         }
 
-        if (key == todayKey) break
-        cursor.add(Calendar.DAY_OF_YEAR, 1)
+        day.spends.forEach { ts ->
+            events.add(
+                StreakEvent(
+                    ts, StreakEventType.RECLAIMED, "Bee sent back 🐝",
+                    "Revisited an hour from memory"
+                )
+            )
+        }
     }
 
     return events.sortedByDescending { it.timestamp }
