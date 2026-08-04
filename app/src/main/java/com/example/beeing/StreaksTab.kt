@@ -38,6 +38,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.tagDisplayText
+import com.example.beeing.ui.icons.tagLabelOf
+import com.example.beeing.ui.icons.tagSym
+import com.example.beeing.ui.icons.SymTitle
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -140,7 +146,11 @@ fun StreaksTab(
                         .alpha(if (reclaimEnabled) 1f else 0.55f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🐝", fontSize = 26.sp)
+                    BeeIcon(
+                        Sym.Reclaim, size = 26.dp, contentDescription = null,
+                        tint = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -225,8 +235,8 @@ fun StreaksTab(
                     verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
                     LegendDot(color = getScoreColor(6.0), hollow = false, label = "complete")
-                    LegendItem("🌱", "beginner day")
-                    LegendItem("🌙", "rest day")
+                    LegendItem(Sym.Beginner, "beginner day")
+                    LegendItem(Sym.Rest, "rest day")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
@@ -279,14 +289,14 @@ fun StreaksTab(
             }
         }
 
-        Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
+        Spacer(Modifier.height(24.dp)) // trailing breathing room (nav is a bottomBar)
     }
 
     // ---- Pick which missed hour the bee flies back to ----
     if (showPickHour) {
         AlertDialog(
             onDismissRequest = { showPickHour = false },
-            title = { Text("🐝 Which hour?") },
+            title = { SymTitle(Sym.Reclaim, "Which hour?") },
             text = {
                 Column {
                     Text(
@@ -373,11 +383,16 @@ fun StreaksTab(
         val beginner = streakState.beginnerMode
         AlertDialog(
             onDismissRequest = { showRules = false },
-            title = { Text(if (beginner) "🌱 How beginner mode works" else "🐝 How streaks work") },
+            title = {
+                SymTitle(
+                    if (beginner) Sym.Beginner else Sym.Fire,
+                    if (beginner) "How beginner mode works" else "How streaks work"
+                )
+            },
             text = {
                 Column {
                     if (beginner) {
-                        Text("• Rate $BEGINNER_HOURS_REQUIRED hours in a day and it's a 🌱 beginner day — one goal, no pressure.", fontSize = 14.sp)
+                        Text("• Rate $BEGINNER_HOURS_REQUIRED hours in a day and it's a beginner day — one goal, no pressure.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             if (streakState.currentStreak > 0)
@@ -390,7 +405,7 @@ fun StreaksTab(
                     } else {
                         Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("• Come up short one day and it becomes a 🌙 rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
+                        Text("• Come up short one day and it becomes a rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
                         Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
                     }
@@ -492,7 +507,7 @@ private fun MonthGrid(
  * A calendar day. Repeated identical emoji carry no information, so a hive
  * day shows a dot tinted by that day's average score, a rest day shows the
  * small moon, and a missed day is a hollow red ring. A completed beginner day
- * gets 🌱 — a glyph, not a hollow tinted dot, which would read as the missed
+ * gets the beginner icon — not a hollow tinted dot, which would read as the missed
  * ring at 9dp. Today gets the primary-color outline. Color never travels alone
  * here — tapping any day opens the stats dialog with the digits.
  */
@@ -535,8 +550,8 @@ private fun DayCell(
                     .clip(CircleShape)
                     .background(getScoreColor(avgScore ?: 0.0))
             )
-            DayOutcome.BEGINNER_COMPLETE -> Text("🌱", fontSize = 11.sp)
-            DayOutcome.REST -> Text("🌙", fontSize = 11.sp)
+            DayOutcome.BEGINNER_COMPLETE -> BeeIcon(Sym.Beginner, size = 11.dp)
+            DayOutcome.REST -> BeeIcon(Sym.Rest, size = 11.dp)
             DayOutcome.MISSED -> Box(
                 Modifier
                     .size(9.dp)
@@ -583,12 +598,19 @@ private fun DayStatsDialog(
     val title = remember(dayMillis) {
         SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
     }
+    val outcomeSym = when {
+        outcome == DayOutcome.QUALIFIED -> Sym.Streak
+        outcome == DayOutcome.BEGINNER_COMPLETE -> Sym.Beginner
+        outcome == DayOutcome.REST -> Sym.Rest
+        outcome == null && isToday -> Sym.Hourglass
+        else -> null   // missed / nothing rated: the words stand alone
+    }
     val outcomeLine = when {
-        outcome == DayOutcome.QUALIFIED -> "⬢ Day complete"
-        outcome == DayOutcome.BEGINNER_COMPLETE -> "🌱 Beginner day complete"
-        outcome == DayOutcome.REST -> "🌙 Rest day — the streak held"
+        outcome == DayOutcome.QUALIFIED -> "Day complete"
+        outcome == DayOutcome.BEGINNER_COMPLETE -> "Beginner day complete"
+        outcome == DayOutcome.REST -> "Rest day — the streak held"
         outcome == DayOutcome.MISSED -> "Missed"
-        isToday -> "⏳ In progress"
+        isToday -> "In progress"
         else -> "No ratings"
     }
 
@@ -597,7 +619,13 @@ private fun DayStatsDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(outcomeLine, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    outcomeSym?.let {
+                        BeeIcon(it, size = 16.dp, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(outcomeLine, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                }
                 if (entries.isEmpty()) {
                     Text(
                         "Nothing was rated this day.",
@@ -612,13 +640,13 @@ private fun DayStatsDialog(
                             .get(Calendar.HOUR_OF_DAY)
                         StatRow("Best hour", "${formatHour(h)} - ${formatHour((h + 1) % 24)} · ${it.score}")
                     }
-                    if (reclaimed > 0) StatRow("Rated from memory", "$reclaimed 🕐")
+                    if (reclaimed > 0) StatRow("Rated from memory", "$reclaimed")
                     val topTags = entries.flatMap { it.visibleTags() }
                         .groupingBy { it }.eachCount()
                         .entries.sortedByDescending { it.value }
                         .take(3)
                     if (topTags.isNotEmpty()) {
-                        StatRow("Top tags", topTags.joinToString(", ") { it.key })
+                        StatRow("Top tags", topTags.joinToString(", ") { tagDisplayText(it.key) })
                     }
                 }
             }
@@ -643,9 +671,10 @@ private fun StatRow(label: String, value: String, valueColor: Color = Color.Unsp
 }
 
 @Composable
-private fun LegendItem(emoji: String, label: String) {
+private fun LegendItem(sym: Sym, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(emoji, fontSize = 13.sp)
+        // the label right beside it already says what this is
+        BeeIcon(sym, size = 13.dp, contentDescription = null)
         Spacer(Modifier.width(4.dp))
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -682,7 +711,7 @@ fun ReclaimHourDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🐝 ${reclaimHourLabel(startMillis)}") },
+        title = { SymTitle(Sym.Reclaim, reclaimHourLabel(startMillis)) },
         text = {
             Column {
                 Text("What were you doing?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)

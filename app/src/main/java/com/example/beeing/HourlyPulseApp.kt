@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +41,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.SymTitle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -241,6 +245,14 @@ fun HourlyPulseApp(
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(
+        // The app background and the rating card swapped fills: the screen now
+        // carries the tinted surfaceVariant-over-background blend the cards used
+        // to have, and the rating card is the plain `background` (see NowTab).
+        // Cards elsewhere still fill with surfaceVariant at 0.4 alpha, so they
+        // composite one step further off this tint and keep their edge.
+        containerColor = MaterialTheme.colorScheme.surfaceVariant
+            .copy(alpha = 0.4f)
+            .compositeOver(MaterialTheme.colorScheme.background),
         topBar = {
             // A constant status-bar inset for every tab — no per-tab header in
             // the Scaffold, so nothing pops in or out when a page settles. Each
@@ -248,6 +260,15 @@ fun HourlyPulseApp(
             // the status card + ⋮ menu; Hive and Past show none), so the header
             // slides away with the page instead of jumping.
             Spacer(Modifier.fillMaxWidth().statusBarsPadding())
+        },
+        // A real bottom fixture, not an overlay: as the Scaffold's bottomBar it
+        // insets the pager, so content ends above it instead of scrolling under
+        // it and every tab's trailing spacer shrinks to ordinary breathing room.
+        bottomBar = {
+            BottomNavBar(
+                pagerState = pagerState,
+                onTabSelected = { selectedTab = it }
+            )
         },
     ) { paddingValues ->
         Box(
@@ -290,13 +311,6 @@ fun HourlyPulseApp(
                 )
             }
             }
-
-            // Floating translucent nav pill — content scrolls beneath it
-            FloatingPillNavBar(
-                pagerState = pagerState,
-                onTabSelected = { selectedTab = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
 
         // ORIGINAL SETTINGS MENU
@@ -448,7 +462,7 @@ fun HourlyPulseApp(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                "🐝 Beeing",
+                                "Beeing",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -478,12 +492,7 @@ fun HourlyPulseApp(
         if (showInfoDialog) {
             AlertDialog(
                 onDismissRequest = { showInfoDialog = false },
-                title = {
-                    Text(
-                        "🐝 How Beeing Works",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
+                title = { SymTitle(Sym.Hive, "How Beeing Works") },
                 text = {
                     Column(
                         Modifier.verticalScroll(rememberScrollState())
@@ -495,11 +504,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "⏰ The Rating System",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Alarm, "The Rating System")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Every hour, Beeing asks you to rate how well you spent your time on a scale of 1-10. This simple practice brings awareness to each hour of your day.",
@@ -508,24 +513,16 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "⬢ Build Your Streak",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Fire, "Build Your Streak")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a 🌙 rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last $RECLAIM_WINDOW_HOURS — free, twice a day.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last $RECLAIM_WINDOW_HOURS — free, twice a day.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "🌱 Beginner Mode",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Beginner, "Beginner Mode")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "New here? Beginner mode asks for $BEGINNER_HOURS_REQUIRED hours a day instead of $STREAK_HOURS_REQUIRED, and those days sit outside the streak entirely — nothing to break, nothing to lose. Any streak you already have is paused and waiting when you switch back. Send a bee back still works. Turn it on or off any time in the menu." +
@@ -535,11 +532,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "🏷️ Tag Your Activities",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Tag, "Tag Your Activities")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Add tags to track what you're doing—work, exercise, reading, family time.",
@@ -548,11 +541,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "📊 Discover Patterns",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Chart, "Discover Patterns")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Your charts reveal trends. Soul Fuel Tags show what boosts your score, while Vibe Killer Tags highlight what brings you down. Use these insights to design better days.",
@@ -561,11 +550,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "✨ The Impact",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Sparkle, "The Impact")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "By tracking each hour, you're not just logging time—you're taking ownership of how you live. Small adjustments compound into a more intentional, fulfilling life.",
@@ -580,7 +565,7 @@ fun HourlyPulseApp(
                                 withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
                                     append("Bee")
                                 }
-                                append(" is to stretch your being into them. 🌟")
+                                append(" is to stretch your being into them.")
                             },
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
@@ -601,12 +586,12 @@ fun HourlyPulseApp(
         if (showBeginnerConfirm) {
             AlertDialog(
                 onDismissRequest = { showBeginnerConfirm = false },
-                title = { Text("🌱 Turn on beginner mode?") },
+                title = { SymTitle(Sym.Beginner, "Turn on beginner mode?") },
                 text = {
                     Text(
                         "Your ${streakState.currentStreak}-day streak pauses — it won't grow and it " +
                                 "can't break while beginner mode is on. Days need only " +
-                                "$BEGINNER_HOURS_REQUIRED rated hours and are marked 🌱 on the " +
+                                "$BEGINNER_HOURS_REQUIRED rated hours and are marked as beginner days on the " +
                                 "calendar. Switch back any time and the streak picks up at " +
                                 "${streakState.currentStreak} again.",
                         fontSize = 14.sp,
@@ -629,7 +614,7 @@ fun HourlyPulseApp(
         if (showGraduation) {
             AlertDialog(
                 onDismissRequest = { showGraduation = false },
-                title = { Text("🌱 → ⬢ Ready for more?") },
+                title = { SymTitle(Sym.Beginner, "Ready for more?") },
                 text = {
                     Text(
                         "You've completed $BEGINNER_GRADUATION_DAYS beginner days. " +
@@ -697,32 +682,40 @@ private val bottomNavItems = listOf(
     NavItem("Past", Icons.Default.DateRange)
 )
 
+/** One section heading in "How Beeing works" — its icon, then its title. */
+@Composable
+private fun InfoSection(sym: Sym, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BeeIcon(sym, size = 16.dp, contentDescription = null)
+        Spacer(Modifier.width(6.dp))
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    }
+}
+
 /**
- * Slim floating bottom navigation bar spanning the screen width, matching the
- * 20dp card radius used across the app. Each tab is icon + label side by side.
- * The filled highlight pill is driven directly by the pager's continuous
- * scroll position, so it tracks finger swipes in real time instead of
- * snapping after the swipe settles.
- * Translucent — it floats over the content, which scrolls beneath it.
+ * The app's bottom navigation — a permanent, opaque, edge-to-edge fixture
+ * mounted as the Scaffold's bottomBar, so content is laid out above it rather
+ * than sliding underneath. Each tab is icon + label side by side; the filled
+ * highlight pill is driven directly by the pager's continuous scroll position,
+ * so it tracks finger swipes in real time instead of snapping after the swipe
+ * settles.
  */
 @Composable
-private fun FloatingPillNavBar(
+private fun BottomNavBar(
     pagerState: PagerState,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 0.dp,
+        shadowElevation = 6.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
-            tonalElevation = 0.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
         ) {
             BoxWithConstraints(
                 Modifier

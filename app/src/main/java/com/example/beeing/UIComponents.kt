@@ -17,6 +17,11 @@ import androidx.compose.ui.draw.clip
 import com.example.beeing.ui.theme.AccentOrange
 import com.example.beeing.ui.theme.ChipNeutralFill
 import com.example.beeing.ui.theme.ChipNeutralText
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.tagDisplayText
+import com.example.beeing.ui.icons.tagLabelOf
+import com.example.beeing.ui.icons.tagSym
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -81,14 +86,22 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                             )
                             val shownTags = item.visibleTags()
                             if (shownTags.isNotEmpty() || item.isReclaimed) {
-                                Text(
-                                    // 🕐 = rated from memory via a bee
-                                    (if (item.isReclaimed) "🕐 " else "") +
-                                            shownTags.joinToString(", "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // clock icon = rated from memory via a bee
+                                    if (item.isReclaimed) {
+                                        BeeIcon(
+                                            Sym.FromMemory, size = 12.dp,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 4.dp)
+                                        )
+                                    }
+                                    Text(
+                                        shownTags.joinToString(", ") { tagDisplayText(it) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                         Box(
@@ -320,7 +333,8 @@ fun EditEntrySheet(
                         onClick = {
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
-                        label = { Text(tag) },
+                        label = { TagChipContent(tag) },
+                        shape = TagChipShape,
                         colors = tagChipColors(),
                         border = null
                     )
@@ -410,6 +424,33 @@ fun EditEntrySheet(
 // section, EditEntrySheet) so the fixed-palette look can't drift out of
 // sync across call sites. Fixed orange/tan, matching the reference
 // screenshot's tag chips, in place of Material You's dynamic primary.
+/**
+ * Fully-rounded tag chips: 50% of the chip's own height, so the sides are
+ * semicircular caps at any text length. Shared for the same reason the colors
+ * are — four call sites, one look.
+ */
+internal val TagChipShape = RoundedCornerShape(50)
+
+/**
+ * A chip's contents: a built-in tag shows its Material Symbol and its name with
+ * the stored emoji stripped; a tag the user wrote is left exactly as typed,
+ * because their emoji is their choice, not app chrome. Lives in the `label`
+ * slot rather than `leadingIcon` so all four chip call sites stay one-liners.
+ */
+@Composable
+internal fun TagChipContent(tag: String) {
+    val sym = tagSym(tag)
+    if (sym == null) {
+        Text(tag)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BeeIcon(sym, size = 15.dp, contentDescription = null)
+            Spacer(Modifier.width(5.dp))
+            Text(tagLabelOf(tag))
+        }
+    }
+}
+
 @Composable
 internal fun tagChipColors() = InputChipDefaults.inputChipColors(
     containerColor = ChipNeutralFill,
@@ -443,8 +484,9 @@ fun SoulFuelTagsSection(
                     onClick = {
                         if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                     },
-                    label = { Text(tag) },
+                    label = { TagChipContent(tag) },
                     enabled = isEnabled,
+                    shape = TagChipShape,
                     colors = tagChipColors(),
                     border = null
                 )

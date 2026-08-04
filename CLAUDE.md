@@ -126,10 +126,10 @@ case verify by static review and say so explicitly — the user compiles locally
 | File | What lives there |
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling, `ensureModeInitialized` (fresh install ⇒ beginner mode, before `setContent`) |
-| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `FloatingPillNavBar` (slim full-width bar, 20dp card radius, icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
+| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`** — permanent, opaque, edge-to-edge; icon+label per tab; highlight pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
 | `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ streak · ring x/goal — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to the Streak tab; merged semantics announce "N-day streak · H of G hours rated today" with the click label "Open Streak tab". In **beginner mode** the ⬢ becomes 🌱, the ring/ratio read x/4 via `state.hoursRequired`, and the description leads with "Beginner mode · streak paused at N") to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
-| `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten hexagonal cells docked on its edges, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
+| `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten **round** cells docked one per edge, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
 | `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (shown when reachable hours exist; disabled once the day's 2 bees are spent), calendar with score-tinted dots (🌱 = completed beginner day, 🌙 = rest day, hollow red ring = missed — 🌱 is a glyph, not a hollow tinted dot, which would collide with the missed ring at 9dp), a `FlowRow` legend (four keys + the info button no longer fit one line), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight; the cap is re-checked in `onReclaim` because the dialog can outlive the tap), and the rules explainer, which swaps to a "🌱 How beginner mode works" body in beginner mode. No currency card |
 | `StreakEngine.kt` | Pure streak logic. **`replayDays` is the single walk over history** — private, returns one `ReplayDay` per calendar day (outcome, streak after, `brokeStreak`, `beginner`, that day's hour timestamps + reclaim spends); `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` are thin readers over it and all three take the same `modeEvents` list, so they *cannot* disagree. Also `DayOutcome` (QUALIFIED/REST/MISSED/**BEGINNER_COMPLETE**), the **mode-event layer** (`ModeEvent`, `loadModeEvents`/`recordModeEvent`, `isBeginnerMode`, `hoursRequiredFor`, private `beginnerAt(timeMs, events)` = the mode at an instant, `ensureModeInitialized`, `beginnerGraduationShown`/`markBeginnerGraduationShown`), `reclaimsUsedToday`, the `isReclaimed`/`visibleTags()` entry extensions, `StreakMeter`/`StreakRing` composables (`StreakRing` takes `hoursRequired`, so the ring is 4 segments in beginner mode; `StreakMeter` reads `state.hoursRequired` and shows "Beginner day complete ✓" / "Streak paused at N" + "Resumes in Master mode"), constants |
@@ -138,6 +138,8 @@ case verify by static review and say so explicitly — the user compiles locally
 | `StatsComponents.kt` | Just the weekly report notification now (`buildWeeklySummaryText` — third line is mode-aware: "streak ⬢N", or "🌱 N beginner days · streak paused at M" — `showWeeklyReportNotification`, `schedule`/`cancelWeeklyReport`) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers, plus `modeEvents` / `beginnerMode` / `setBeginnerMode` — the mode lives here (not per-tab like `spendsVersion`) because it is replay input: one toggle has to re-derive the meter, calendar and log in the same composition |
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
+| `res/drawable/ic_sym_*.xml` | The vendored Material Symbols. Each is a converted SVG: Material Symbols ship `viewBox="0 -960 960 960"`, which a `<vector>` cannot express (there is no viewport origin), so every file wraps its path in `<group android:translateY="960">`. `fillColor` is opaque black and the tint comes from `BeeIcon` |
+| `ui/icons/BeeIcons.kt` | **The icon vocabulary.** `Sym` enum (one entry per meaning: Streak/Beginner/Rest/Reclaim/FromMemory/Lock/Hourglass/Reset/Star/Sparkle/Alarm/Chart/Tag/Note/Hive/CaughtUp) → a vector drawable in `res/drawable/ic_sym_*.xml`, plus `BeeIcon(sym, size, tint, contentDescription)` and `SymTitle(sym, text)` for dialog titles. Drawables are **Material Symbols Rounded**, converted from the official SVGs (see below) |
 | `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete! 🌱" |
 
 ## Data model & persistence gotchas
@@ -178,7 +180,8 @@ case verify by static review and say so explicitly — the user compiles locally
 - **Lock phone exists ONLY in the caught-up state** (no pending hours).
   Rating pending hours always outranks leaving.
 - Cards: 20dp radius, `surfaceVariant.copy(alpha = 0.4f)` fill, 16dp padding.
-  Every scrollable tab ends with a 112dp spacer (floating nav clearance).
+  Every scrollable tab ends with a 24dp spacer — the nav is a `bottomBar` and
+  insets the pager itself, so nothing has to clear a floating pill any more.
 - **Active window** (`computeActiveWindow`): stable hour range covering ~90%
   of ratings in the trailing 30 days, min 8h span. The Now today-strip, Past
   pattern grid and day sheet all use it; out-of-window ratings collapse into
@@ -420,6 +423,164 @@ case verify by static review and say so explicitly — the user compiles locally
   which is now just the weekly report; and the orphaned `ChartView` enum from
   `Utils.kt`. `isSameDay` was kept (StreaksTab uses it). ~430 lines gone.
   `HeaderSection`/`HistoryPanel` were left alone — still unmounted, not charts.
+- 2026-08-05 (dial cells go round): the ten ring cells are **circles**, not
+  hexagons. Ring geometry moved into three shared constants + `cellRadius`/
+  `cellDistance` (`DecagonDial.kt`) so the tap hit-test and the draw pass can no
+  longer drift apart — they used to duplicate the same five-term expression.
+  `CELL_R_FRAC` is 0.0902 (not the old 0.0966 circumradius): a hexagon docked on
+  its flat side reached `dn + rr` = `apo + gap + 1.866*rr`, so 0.0902 puts the
+  ring's outer extent within a pixel of where it was, leaving the dial's
+  footprint and `NowTab`'s 5% rim trim untouched. Digits and the blur annulus
+  were re-expressed against the circle radius at their old absolute sizes; the
+  hit-test slop went `rr * 1.1` → `rc * 1.18` (a circle has no corners to lean
+  on). The decagon core is unchanged — the crisp-vs-round contrast is now the
+  point. `roundedPoly` survives for the core only.
+- 2026-08-05 (dial color + card inversion), four changes:
+  (1) **Smaller core**: `CORE_R_FRAC` 0.2557 → 0.2100. The ring had to stay put,
+  so `cellDistance` is now the independent `RING_D_FRAC` (0.3533 = the old
+  derived apothem+gap+radius) instead of being computed off the core — a derived
+  distance would have dragged the cells inward and shrunk the whole dial. Text
+  inside the core is now sized off `rd`, not `s`, so it scales with the shape.
+  (2) **The ring is gray, the digits carry the band**: every unselected cell
+  fills with one flat `cellGrayColor` (surfaceVariant→onSurfaceVariant 18%) and
+  its digit is `scoreBandColor` — so the only *colored fill* on the dial is the
+  selection. `mutedCellColor` (per-score wash) is gone. Digits use
+  `cellDigitColor`, which lifts the band 38% toward white on dark cells / 18%
+  toward black on light ones: the 1–4 red is 0xFFB71C1C and vanished on a dark
+  gray otherwise.
+  (3) **`dialScoreColor` = `scoreBandColor` again** — it had been flattened to a
+  constant `AccentOrange`, so the core said nothing about the rating it showed.
+  `dialDigitColor` now flips on the band's own luminance (>0.35 ⇒ near-black),
+  because white-on-amber was the reason the flat fill existed.
+  (4) **Background/card inversion**: the `Scaffold` `containerColor` in
+  `HourlyPulseApp` takes the tinted `surfaceVariant@0.4 over background` blend
+  the rating card used to have, and `NowTab`'s rating card takes the plain
+  `background` — the hero now reads as a cut-out, not a raised panel. Every
+  other card still fills with `surfaceVariant@0.4`, so they composite one step
+  off the new tint and keep their edge on all three tabs.
+- 2026-08-05 (dial tightened + pill chips):
+  (1) **The ring is derived from the core again** — `RING_D_FRAC` is gone;
+  `cellDistance` is back to `apothem + CELL_GAP_FRAC + CELL_R_FRAC`, so
+  shrinking the core pulls the cells in with it. (The previous round decoupled
+  them to hold the ring still, which is exactly what made the cells look no
+  closer.) Numbers: core 0.2351, cell radius 0.1011, gap 0.0176 — bigger
+  circles, snug against the core and each other (adjacent-cell gap fell from
+  0.038*s to 0.009*s). Two constraints pin them: cells must clear their
+  neighbours (`CELL_R_FRAC` <= `0.309 * dn`, the 36°-chord half-length; ceiling
+  here is 0.1058) and the outer extent stays 0.4435*s so the notch clearance
+  and the rim trim still line up.
+  (2) **Rim trim now cuts both ends**: the art's real vertical span is 1.3%
+  below the box top (notch tip) to 5.6% above its bottom, so `NowTab`'s `layout`
+  modifier trims both, placing at `-top`. The spacer above the dial went
+  20dp → 4dp. ~39dp of dead space reclaimed inside the rating card.
+  (3) **Tag chips are pills**: shared `TagChipShape = RoundedCornerShape(50)` in
+  `UIComponents.kt`, applied at all four chip sites (NowTab's picker InputChip +
+  its "+N more"/"edit tags" AssistChip, `SoulFuelTagsSection`, `EditEntrySheet`)
+  — same reason `tagChipColors()` is shared: four call sites, one look.
+- 2026-08-05 (tighten, fix the nav, free the save button):
+  (1) **Cell size reverted, ring kept tight.** The previous entry grew the cells
+  to 0.1011 to hold the old 0.4435*s footprint — the wrong trade. Cells are back
+  to `CELL_R_FRAC` 0.0902 with the core at 0.2100 and the gap at 0.0140, so the
+  ring's outer extent is **0.394*s**: the art itself is ~11% smaller and the
+  space comes back as layout. The rim trim grew to match (top 6.3% / bottom
+  10.6% — the notch and the lowest cell), ~50dp reclaimed inside the card.
+  (2) **Nav is a fixture, not an overlay.** `FloatingPillNavBar` →
+  `BottomNavBar`, mounted as the Scaffold's `bottomBar`: opaque
+  `surfaceContainer`, edge-to-edge, no side inset or 20dp radius,
+  `navigationBarsPadding` inside the Surface. Because the Scaffold now insets
+  the pager, content stops above the bar instead of scrolling under it, and the
+  112dp clearance spacer in all three tabs dropped to 24dp.
+  (3) **The save button moved out of the rating card**, into the Now column
+  right below it (12dp gap). The card is inputs; committing is its own object,
+  so on a short screen the button clears the fold instead of riding at the
+  bottom of a tall card. Its state-machine label ("Pick a rating" / "Tag it to
+  save" / "Save Nth") is unchanged.
+- 2026-08-05 (Manage tags redesign, from an owner mockup): the popup is now a
+  panel — grabber pill, 28dp corners, full-width (`DialogProperties(
+  usePlatformDefaultWidth = false)`, the platform cap was too narrow for the new
+  row), 26sp Baloo title over "Hold and drag to reorder", circular ✕. **Each tag
+  is its own card** (60dp, 16dp radius, `surfaceVariant@0.45`, 8dp gap):
+  drawn 6-dot `DragDots` · `TagGlyphTile` · name · circular `RowActionButton`
+  pencil · circular red trash. Footer is a **dashed** "Add new tag" slot
+  (`drawBehind` + `PathEffect.dashPathEffect`) with a filled primary ⊕, so the
+  one row that isn't a tag reads as a slot to fill.
+  Two things worth knowing: (1) **the emoji is not a new field** — a tag is
+  still one string like `"💼 Work"`, and `tagGlyphOf`/`tagLabelOf` split it for
+  display only (leading space-delimited token with no letters/digits ⇒ glyph);
+  rename still edits the whole raw string, and tags with no emoji get a monogram
+  tile so every row keeps its shape. Nothing about storage changed. (2) the drag
+  index math now steps by **row height + gap** (`rowStepPx`) — stepping by the
+  row height alone would drift by one gap per position moved.
+- 2026-08-05 (emoji → Material Symbols): **UI emoji are gone; meaning is
+  carried by icons.** 16 Material Symbols Rounded SVGs were fetched from
+  `google/material-design-icons` and converted to `res/drawable/ic_sym_*.xml`
+  (the `viewBox="0 -960 960 960"` → `<group android:translateY="960">` trick
+  noted in the file map), reached through the `Sym` enum in
+  `ui/icons/BeeIcons.kt`. Every glyph that used to stand for something —
+  ⬢ 🌱 🌙 🐝 🕐 🔒 ⏳ 💔 ⭐ ✨ ⏰ 📊 🏷️ 📝 🌟 — is now a tinted, sized,
+  described icon. Where the emoji sat **inside a sentence** the copy simply lost
+  it ("it becomes a rest day"), since an inline icon in prose costs
+  `InlineTextContent` plumbing for no gain; where it **led a label** it became a
+  `Row` of icon + text, or `SymTitle` for the eight dialog titles.
+  Deliberately NOT converted: **`RECLAIM_TAG`** ("💧reclaimed") is a persisted
+  sentinel; and **notification
+  text** (the weekly report) simply dropped its emoji, because a Notification's
+  body cannot render a vector drawable inline. The typographic marks ‹ › ⋮ ▲ ▼ ✓
+  are not emoji and stayed.
+  Two ripples: `StreakEventType.emoji()` became `.sym()` (log rows draw an icon
+  and the titles no longer repeat it — "Rest day", not "Rest day 🌙"), and the
+  weekly report's streak line reads "N-day streak" instead of "streak ⬢N".
+- 2026-08-05 (built-in tag emoji too — **display-only**): the 10 `DEFAULT_TAGS`
+  now show Material Symbols, but **their stored strings are untouched**, and
+  that constraint is the whole design. A tag's full string *is* its identity:
+  it sits in every `RatingEntry.tags`, tag-score aggregation groups by it, and
+  CSV export writes it. Editing `DEFAULT_TAGS` to "Work" would orphan every
+  historical entry tagged "💼 Work" — the picker and the history would stop
+  matching and Trends would split one tag in two — and `loadTags` returns
+  `DEFAULT_TAGS` for anyone who never edited their list, so it would hit
+  existing users, not just fresh installs.
+  So `ui/icons/BeeIcons.kt` gained a display layer: `tagGlyphOf`/`tagLabelOf`
+  (moved out of `NowTab.kt`, where `ManageTagsDialog` had them privately),
+  `tagSym(tag)` — matched on the **label**, so it survives the emoji being
+  stripped — and `tagDisplayText(tag)`. Nine new `ic_sym_tag_*.xml` drawables
+  (Rest reuses `bedtime`).
+  **User-created tags are left exactly as typed**: no `tagSym` match means the
+  chip shows their raw string, emoji and all. Guessing an icon for "Guitar
+  practice" would be worse than showing none, and the emoji there is the user's
+  choice, not app chrome.
+  Applied at: the three chip sites via the shared `TagChipContent` (in the
+  `label` slot, not `leadingIcon` — one composable, four one-line call sites),
+  `TagGlyphTile` in the manage dialog (icon → user emoji → monogram), Trends'
+  `TagStatRow`, and every plain-text tag list (`HistoryPanel`, `HourEntryRow`,
+  `BestHourCard`, the day-stats "Top tags", `buildInsight`'s lowest-tag clause,
+  and the weekly notification's "most logged").
+- 2026-08-05 (fixed rating frame · fire · Fredoka):
+  (1) **The Now tab's rating state is a fixed frame, not a scrolling page.**
+  `verticalScroll(scrollState)` is now applied only in the caught-up branch; in
+  the rating branch the Column is `fillMaxSize` with the header at the top, the
+  card in a `Box(Modifier.weight(1f))`, and the save button **pinned** under it,
+  directly above the `bottomBar`. The card's own `Column` carries
+  `verticalScroll(cardScroll)` with `FadingScrollbar` (made `internal` in
+  `PastTab.kt`; the Trends tag list is the other caller) overlaid at its
+  `CenterEnd` — the frame stays put, only its contents move. Because the card is
+  measured against the weight slot, it wraps its content when short and fills +
+  scrolls when tall. `BestHourCard` had to move **inside both branches** (it
+  used to sit after the if/else): below the card but above the button in the
+  rating state, since anything after the button would push it off the frame.
+  (2) **The streak counter is a flame.** New `Sym.Fire`
+  (`local_fire_department`). The split is deliberate and worth keeping:
+  **`Sym.Fire` = the streak** (Now's `StatusStrip`, "Build Your Streak", "How
+  streaks work", the ring-closed celebration) and **`Sym.Streak` (hexagon) = one
+  complete day** (log rows, the day-stats popup) — the same distinction the
+  Lexicon draws between a complete day and the run of them.
+  (3) **Fredoka** for the two big headers ("Beeing", "How was your hour?") and
+  the save button; `FredokaFontFamily` in `Type.kt`, three static cuts in
+  `res/font/fredoka_{500,600,700}.ttf` (fetched from Google Fonts). Baloo 2
+  stays for the rest of the hero text. The reason for the swap is mechanical,
+  not taste: `BalooFontFamily` is a single variable file pinned to weight 800,
+  so every size renders at the same heavy density — Fredoka ships real static
+  weights, so `FontWeight` actually selects one (Medium for the big header,
+  SemiBold for the title, Bold for the CTA).
 - 2026-08-04 (Beginner mode): **day one is a 4-hour day, not an 8-hour cliff.**
   (1) **Mode is replayed, never a live flag.** A boolean would make history lie
   — yesterday's outcome would change the instant the toggle moved. So the

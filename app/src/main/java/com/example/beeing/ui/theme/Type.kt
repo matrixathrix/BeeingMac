@@ -24,6 +24,24 @@ val BalooFontFamily = FontFamily(
     )
 )
 
+/**
+ * **Fredoka** — the display face for the app's two big headers ("Beeing" and
+ * "How was your hour?") and the save CTA.
+ *
+ * Chosen over Baloo 2 for those three because Baloo's only instance here is a
+ * single 800-weight variable pin: every size renders at the same heavy weight,
+ * so a 26sp question and a 15sp button label carry identical visual density.
+ * Fredoka ships **real static cuts**, so this family holds three of them and
+ * `FontWeight` actually selects one — Medium for the big quiet header, SemiBold
+ * and Bold where the type needs to push. Its rounder terminals and wider
+ * counters also stay legible at button size, where Baloo starts to close up.
+ */
+val FredokaFontFamily = FontFamily(
+    Font(R.font.fredoka_500, FontWeight.Medium),
+    Font(R.font.fredoka_600, FontWeight.SemiBold),
+    Font(R.font.fredoka_700, FontWeight.Bold)
+)
+
 // Set of Material typography styles to start with
 val Typography = Typography(
     bodyLarge = TextStyle(

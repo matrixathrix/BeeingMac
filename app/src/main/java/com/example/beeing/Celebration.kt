@@ -15,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -34,6 +36,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -201,12 +205,8 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
 
         // Caption slides up beneath the ring once everything has landed
         val captionIn = ((progress - 0.35f) / 0.2f).coerceIn(0f, 1f)
-        Text(
-            if (celebration.beginner) "Ring closed — beginner day complete! 🌱"
-            else "Ring closed — day secured! 🐝",
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = 170.dp)
@@ -214,6 +214,19 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
                     translationY = (1f - captionIn) * 40f
                     alpha = captionIn * fadeOut
                 }
-        )
+        ) {
+            Text(
+                if (celebration.beginner) "Ring closed — beginner day complete!"
+                else "Ring closed — day secured!",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Spacer(Modifier.width(8.dp))
+            BeeIcon(
+                if (celebration.beginner) Sym.Beginner else Sym.Fire,
+                size = 20.dp, tint = Color(0xFFFFD54F), contentDescription = null
+            )
+        }
     }
 }

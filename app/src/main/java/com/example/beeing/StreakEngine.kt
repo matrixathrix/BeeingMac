@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -52,14 +54,15 @@ const val BEGINNER_GRADUATION_DAYS = 3 // completed beginner days before the one
 const val FORGIVE_WINDOW_DAYS = 7     // a rest day needs the previous 6 days clear of another
 const val RECLAIM_WINDOW_HOURS = 10   // how far back a bee can reach (clock hours, may cross midnight)
 const val RECLAIM_PER_DAY = 2         // free bees a calendar day may send back
-// Stored sentinel inside persisted entries — the UI shows 🕐/🐝, but the stored
-// string must never change or old reclaims stop being recognized.
+// Stored sentinel inside persisted entries — the UI shows Sym.FromMemory /
+// Sym.Reclaim instead, but the stored string must never change or old reclaims
+// stop being recognized. (This is why it keeps its emoji: it is data, not copy.)
 const val RECLAIM_TAG = "💧reclaimed"
 
 /** True when this entry was rated from memory via "send a bee back". */
 val RatingEntry.isReclaimed: Boolean get() = RECLAIM_TAG in tags
 
-/** Tags fit to show: the reclaim sentinel is carried by the 🕐 badge instead. */
+/** Tags fit to show: the reclaim sentinel is carried by the icon badge instead. */
 fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
 
 // ============================================================
@@ -329,7 +332,7 @@ fun computeStreakState(
 }
 
 // ============================================================
-// DAY OUTCOMES  (calendar: tinted dot built / 🌙 rest / hollow ring missed)
+// DAY OUTCOMES  (calendar: tinted dot built / rest icon / hollow ring missed)
 // ============================================================
 
 /**
@@ -405,7 +408,7 @@ fun StreakMeter(
     // (one cell built per qualifying day) lives outside the ring.
     val streakTitle = when {
         state.streakPaused -> "Streak paused at ${state.currentStreak}"
-        state.beginnerMode -> "Beginner mode 🌱"
+        state.beginnerMode -> "Beginner mode"
         state.currentStreak > 0 -> "${state.currentStreak}-day streak"
         else -> "No streak yet"
     }
@@ -662,12 +665,13 @@ data class StreakEvent(
     val detail: String
 )
 
-private fun StreakEventType.emoji(): String = when (this) {
-    StreakEventType.COMPLETED -> "⬢"
-    StreakEventType.BEGINNER -> "🌱"
-    StreakEventType.REST -> "🌙"
-    StreakEventType.RESET -> "💔"
-    StreakEventType.RECLAIMED -> "🐝"
+/** The log row's leading icon. Titles no longer repeat it as an emoji. */
+private fun StreakEventType.sym(): Sym = when (this) {
+    StreakEventType.COMPLETED -> Sym.Streak
+    StreakEventType.BEGINNER -> Sym.Beginner
+    StreakEventType.REST -> Sym.Rest
+    StreakEventType.RESET -> Sym.Reset
+    StreakEventType.RECLAIMED -> Sym.Reclaim
 }
 
 /**
@@ -701,21 +705,21 @@ fun computeStreakLog(
                 StreakEvent(
                     day.hourTimestamps[BEGINNER_HOURS_REQUIRED - 1],
                     StreakEventType.BEGINNER,
-                    "Beginner day complete 🌱",
+                    "Beginner day complete",
                     "$BEGINNER_HOURS_REQUIRED hours on $dayLabel" +
                             if (day.streakAfter > 0) " — streak paused at ${day.streakAfter}" else ""
                 )
             )
             DayOutcome.REST -> events.add(
                 StreakEvent(
-                    endOfDay, StreakEventType.REST, "Rest day 🌙",
+                    endOfDay, StreakEventType.REST, "Rest day",
                     "$dayLabel came up short — the streak held anyway"
                 )
             )
             // a miss with no streak running is not an event, only a reset is
             DayOutcome.MISSED -> if (day.brokeStreak) events.add(
                 StreakEvent(
-                    endOfDay, StreakEventType.RESET, "Streak reset 💔",
+                    endOfDay, StreakEventType.RESET, "Streak reset",
                     "$dayLabel came up short, and a rest day was already used this week"
                 )
             )
@@ -725,7 +729,7 @@ fun computeStreakLog(
         day.spends.forEach { ts ->
             events.add(
                 StreakEvent(
-                    ts, StreakEventType.RECLAIMED, "Bee sent back 🐝",
+                    ts, StreakEventType.RECLAIMED, "Bee sent back",
                     "Revisited an hour from memory"
                 )
             )
@@ -757,7 +761,10 @@ fun StreakLogContent(
         Column {
             events.take(60).forEach { ev ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text(ev.type.emoji(), fontSize = 18.sp, modifier = Modifier.padding(end = 12.dp))
+                    BeeIcon(
+                        ev.type.sym(), size = 20.dp,
+                        modifier = Modifier.padding(end = 12.dp, top = 2.dp)
+                    )
                     Column(Modifier.weight(1f)) {
                         Text(ev.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(ev.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import com.example.beeing.ui.icons.tagDisplayText
 import java.util.*
 
 // ============================================================
@@ -21,7 +22,7 @@ fun buildWeeklySummaryText(context: Context): String {
     val ratings = loadRatings(context)
     val weekAgo = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -7) }.timeInMillis
     val week = ratings.filter { it.timestamp >= weekAgo }
-    if (week.isEmpty()) return "No ratings logged this week. A fresh start awaits! 🐝"
+    if (week.isEmpty()) return "No ratings logged this week. A fresh start awaits!"
 
     val avg = week.map { it.score }.average()
     val topTag = week.flatMap { it.tags }
@@ -31,13 +32,13 @@ fun buildWeeklySummaryText(context: Context): String {
 
     val parts = mutableListOf<String>()
     parts.add("Avg score ${String.format("%.1f", avg)} over ${week.size} hours")
-    if (topTag != null) parts.add("most logged: $topTag")
+    if (topTag != null) parts.add("most logged: ${tagDisplayText(topTag)}")
     // Beginner weeks have no streak to report — say what actually happened
     parts.add(
         when {
-            streak.streakPaused -> "🌱 ${streak.beginnerDaysCompleted} beginner days · streak paused at ${streak.currentStreak}"
-            streak.beginnerMode -> "🌱 ${streak.beginnerDaysCompleted} beginner days"
-            else -> "streak ⬢${streak.currentStreak}"
+            streak.streakPaused -> "${streak.beginnerDaysCompleted} beginner days · streak paused at ${streak.currentStreak}"
+            streak.beginnerMode -> "${streak.beginnerDaysCompleted} beginner days"
+            else -> "${streak.currentStreak}-day streak"
         }
     )
     return parts.joinToString(" · ")
@@ -54,7 +55,7 @@ fun showWeeklyReportNotification(context: Context) {
     )
     val notification = NotificationCompat.Builder(context, "weekly_report")
         .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setContentTitle("🐝 Your week in review")
+        .setContentTitle("Your week in review")
         .setContentText(buildWeeklySummaryText(context))
         .setStyle(NotificationCompat.BigTextStyle().bigText(buildWeeklySummaryText(context)))
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)

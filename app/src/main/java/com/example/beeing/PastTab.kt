@@ -48,6 +48,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.tagDisplayText
+import com.example.beeing.ui.icons.tagSym
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -347,7 +351,7 @@ private fun buildInsight(entries: List<RatingEntry>, ratedHours: Int): String? {
         .mapValues { (_, scores) -> scores.average() }
     if (tagAvgs.size >= 2) {
         val low = tagAvgs.minByOrNull { it.value }!!
-        parts += "lowest tag: ${low.key} (${oneDecimal(low.value)})"
+        parts += "lowest tag: ${tagDisplayText(low.key)} (${oneDecimal(low.value)})"
     }
 
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
@@ -547,7 +551,7 @@ private fun JournalView(
             contentAlignment = Alignment.TopCenter
         ) {
             Text(
-                "Rate a few hours and your days will appear here 🐝",
+                "Rate a few hours and your days will appear here",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
@@ -783,7 +787,7 @@ private fun JournalDayCard(
                 val ratedInWindow = day.byHour.keys.count { it in window }
                 val unrated = (elapsedWindowHours - ratedInWindow).coerceAtLeast(0)
                 Text(
-                    if (unrated == 0) "Every hour rated 🐝"
+                    if (unrated == 0) "Every hour rated"
                     else "$unrated hour${if (unrated == 1) "" else "s"} unrated",
                     fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -815,7 +819,7 @@ private fun TickCapPill(text: String) {
 
 /**
  * One rated hour inside an expanded journal day: time range, score chip, tags
- * (🕐 when it was rated from memory), note preview.
+ * (clock icon when it was rated from memory), note preview.
  */
 @Composable
 private fun HourEntryRow(
@@ -855,24 +859,31 @@ private fun HourEntryRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 🕐 = rated from memory via a bee, not in the moment
+                // clock icon = rated from memory via a bee, not in the moment
                 if (entry.isReclaimed) {
-                    Text("🕐", fontSize = 11.sp, modifier = Modifier.padding(end = 4.dp))
+                    BeeIcon(Sym.FromMemory, size = 11.dp, modifier = Modifier.padding(end = 4.dp))
                 }
                 val shown = entry.visibleTags()
                 Text(
-                    if (shown.isEmpty()) "—" else shown.joinToString(" · "),
+                    if (shown.isEmpty()) "—" else shown.joinToString(" · ") { tagDisplayText(it) },
                     fontSize = 12.5.sp,
                     maxLines = 1
                 )
             }
             if (entry.note.isNotBlank()) {
-                Text(
-                    "📝 ${entry.note}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BeeIcon(
+                        Sym.Note, size = 11.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                    Text(
+                        entry.note,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
         }
         Icon(
@@ -1240,7 +1251,7 @@ private fun TrendsView(
                                 )
                                 StatDivider()
                                 StatCell(
-                                    value = "🌙 $kRestDays",
+                                    value = "$kRestDays",
                                     label = "rest days",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1347,7 +1358,7 @@ private fun TrendsView(
                 }
             }
 
-            Spacer(Modifier.height(112.dp)) // clearance for the floating nav pill
+            Spacer(Modifier.height(24.dp)) // trailing breathing room (nav is a bottomBar)
         }
     }
 }
@@ -1793,9 +1804,10 @@ private fun TagScoresSection(
 }
 
 /** A slim scrollbar that appears while [scrollState] is moving and fades out
- *  shortly after it settles. Hidden entirely when there's nothing to scroll. */
+ *  shortly after it settles. Hidden entirely when there is nothing to scroll.
+ *  Shared: the Trends tag list and the Now rating card both use it. */
 @Composable
-private fun FadingScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
+internal fun FadingScrollbar(scrollState: ScrollState, modifier: Modifier = Modifier) {
     if (scrollState.maxValue <= 0) return
     val active = scrollState.isScrollInProgress
     val alpha by animateFloatAsState(
@@ -1826,8 +1838,14 @@ private fun FadingScrollbar(scrollState: ScrollState, modifier: Modifier = Modif
 private fun TagStatRow(stat: TagStat) {
     Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            tagSym(stat.tag)?.let {
+                BeeIcon(
+                    it, size = 14.dp, contentDescription = null,
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+            }
             Text(
-                stat.tag,
+                tagDisplayText(stat.tag),
                 modifier = Modifier.weight(1f),
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.5.sp,
