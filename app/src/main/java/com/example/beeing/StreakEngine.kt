@@ -401,7 +401,7 @@ fun StreakMeter(
     }
     val accent = Color(0xFFFFE082) // pastel honey yellow
     val done = Color(0xFF66BB6A)
-    val track = MaterialTheme.colorScheme.surfaceVariant
+    val track = Color.White.copy(alpha = 0.18f)   // drawn on the brand band
     val ringColor = if (state.todayQualified) done else accent
 
     // The ring shows TODAY's hours, so the count inside is hours; the hive
@@ -427,7 +427,8 @@ fun StreakMeter(
         .clip(RoundedCornerShape(20.dp))
         .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
 
-    Card(modifier = modifier.then(card), shape = RoundedCornerShape(20.dp)) {
+    // No card: the meter sits directly on the Streak tab's brand band.
+    Box(modifier = modifier.then(card)) {
         // Two fixed layouts with an animated size change between them: nothing
         // is re-measured per frame, so the grow/shrink stays smooth to the end
         // (the old per-frame size/font lerp dropped frames as it settled).
@@ -442,7 +443,7 @@ fun StreakMeter(
             label = "meterLayout",
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(vertical = 4.dp)
         ) { isExpanded ->
             if (isExpanded) {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -461,12 +462,12 @@ fun StreakMeter(
                                 "${state.todayHours}/$goal",
                                 fontSize = 44.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
                             Text(
                                 "hours today",
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color.White.copy(alpha = 0.75f)
                             )
                         }
                     }
@@ -476,10 +477,10 @@ fun StreakMeter(
                         statusText,
                         fontSize = 13.sp,
                         color = if (state.todayQualified) done
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        else Color.White.copy(alpha = 0.75f)
                     )
                     pausedNote?.let {
-                        Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(it, fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f))
                     }
                 }
             } else {
@@ -503,12 +504,12 @@ fun StreakMeter(
                                 "${state.todayHours}/$goal",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
                             Text(
                                 "hours",
                                 fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color.White.copy(alpha = 0.75f)
                             )
                         }
                     }
@@ -518,10 +519,10 @@ fun StreakMeter(
                             statusText,
                             fontSize = 12.sp,
                             color = if (state.todayQualified) done
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            else Color.White.copy(alpha = 0.75f)
                         )
                         pausedNote?.let {
-                            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(it, fontSize = 11.sp, color = Color.White.copy(alpha = 0.75f))
                         }
                     }
                 }

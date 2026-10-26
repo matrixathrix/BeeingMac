@@ -1,6 +1,8 @@
 package com.example.beeing
 
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.theme.LocalBeeExtras
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -114,15 +116,21 @@ fun StreaksTab(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp)
-            .padding(top = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // ---- Hero: streak + today ring — the Now tab's status strip, expanded ----
-        StreakMeter(
-            state = streakState,
-            expanded = false
-        )
+        // ---- Hero on the brand band: streak + today ring ----
+        BrandBand {
+            Text("Streak", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+            StreakMeter(
+                state = streakState,
+                expanded = false
+            )
+        }
+
+        Column(
+            Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
 
         // ---- ACTION: send a bee back — the one action on this tab,
         // right under the goal it protects; hidden when nothing to recover ----
@@ -130,13 +138,12 @@ fun StreaksTab(
             val reclaimEnabled = beesLeftToday > 0
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (reclaimEnabled)
-                        MaterialTheme.colorScheme.primaryContainer
-                    else Color.Transparent
-                ),
-                border = if (reclaimEnabled)
-                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                // Enabled: an ordinary card whose honey icon marks the action.
+                // Spent: a dashed-feel outline only, so it reads as unavailable.
+                colors = if (reclaimEnabled) BeeCardDefaults.colors()
+                else CardDefaults.cardColors(containerColor = Color.Transparent),
+                elevation = if (reclaimEnabled) BeeCardDefaults.elevation() else CardDefaults.cardElevation(),
+                border = if (reclaimEnabled) null
                 else BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)),
                 modifier = Modifier.clickable(enabled = reclaimEnabled) { showPickHour = true }
             ) {
@@ -149,7 +156,7 @@ fun StreaksTab(
                 ) {
                     BeeIcon(
                         Sym.Reclaim, size = 26.dp, contentDescription = null,
-                        tint = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = if (reclaimEnabled) LocalBeeExtras.current.accentText
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(12.dp))
@@ -158,7 +165,7 @@ fun StreaksTab(
                             "Missed rating a special hour?",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
-                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer
+                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(2.dp))
@@ -167,7 +174,7 @@ fun StreaksTab(
                                 "Send a bee back to revisit it · ${reclaimableHours.size} in reach"
                             else "Today's bees are all out — $RECLAIM_PER_DAY more tomorrow",
                             fontSize = 13.sp,
-                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -175,7 +182,7 @@ fun StreaksTab(
                         Icon(
                             Icons.Default.KeyboardArrowRight,
                             contentDescription = "Pick an hour",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Icon(
@@ -289,6 +296,7 @@ fun StreaksTab(
         }
 
         Spacer(Modifier.height(24.dp)) // trailing breathing room (nav is a bottomBar)
+        } // page column
     }
 
     // ---- Pick which missed hour the bee flies back to ----
