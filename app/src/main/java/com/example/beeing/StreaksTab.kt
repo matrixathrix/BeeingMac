@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.theme.LocalBeeExtras
@@ -112,12 +113,10 @@ fun StreaksTab(
         (RECLAIM_PER_DAY - reclaimsUsedToday(reclaimSpends)).coerceAtLeast(0)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-    ) {
-        // ---- Hero on the brand band: streak + today ring ----
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ---- Hero on the brand band: streak + today ring. Pinned above the
+        // scroller: the band owns the status-bar area (light icons), so it
+        // must never scroll away and leave them over the light page. ----
         BrandBand {
             Text("Streak", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
@@ -128,7 +127,11 @@ fun StreaksTab(
         }
 
         Column(
-            Modifier.padding(horizontal = 16.dp).padding(top = 16.dp),
+            Modifier
+                .weight(1f)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp)
+                .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
@@ -763,6 +766,7 @@ fun ReclaimHourDialog(
         },
         confirmButton = {
             Button(
+                colors = BeeButtonDefaults.colors(),
                 onClick = { score?.let { onReclaim(it, note.trim()) } },
                 enabled = score != null && note.isNotBlank()
             ) { Text("Revisit") }

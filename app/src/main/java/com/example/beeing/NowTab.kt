@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.BrandBand
@@ -727,6 +728,7 @@ fun NowTab(
                 },
                 confirmButton = {
                     Button(
+                        colors = BeeButtonDefaults.colors(),
                         onClick = {
                             if (newTag.isNotBlank() && availableTags.size < 30) {
                                 availableTags = (availableTags + newTag.trim()).distinct()

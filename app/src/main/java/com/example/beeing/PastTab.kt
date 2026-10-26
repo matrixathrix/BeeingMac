@@ -550,14 +550,14 @@ private fun JournalView(
     var showJump by remember { mutableStateOf(false) }
 
     if (days.isEmpty()) {
-        Box(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(top = 48.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
+        // Still a banded tab: the band owns the status-bar area on every tab.
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            BrandBand { Text("Past", style = MaterialTheme.typography.headlineSmall) }
             Text(
                 "Rate a few hours and your days will appear here",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 48.dp)
             )
         }
         return

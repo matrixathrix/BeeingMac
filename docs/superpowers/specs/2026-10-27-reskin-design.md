@@ -67,7 +67,8 @@ dialog.**
 | Primary text (`onSurface`/`onBackground`) | `#1B1A1C` | `#ECE7EA` |
 | Secondary text (`onSurfaceVariant`) | `#76717A` | `#9C969B` |
 | Hairlines (`outlineVariant`) | `#EEE9E4` | `#2A2630` |
-| Accent (`primary`) | `#F5A623` | `#F5A623` |
+| Accent: big fills (`BeeExtras.accentFill`) | `#F5A623` | `#F5A623` |
+| `primary` (text buttons, switches, cursors) | `#9A6000` deep honey (honey text on white measured 2.0:1, changed during build) | `#F5A623` |
 | On accent (`onPrimary`) | `#2E0F33` (aubergine ink, not white: white on honey fails contrast) | same |
 | Accent as text/icon on page (active nav label etc.) | `#BB7A09` (darker, readable on white; `#C7820A` measured 2.9:1, nudged during build) | `#F7B733` |
 | Band | gradient above | gradient above |

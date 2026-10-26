@@ -56,6 +56,15 @@ class PaletteContrastTest {
         assertContrast(4.5, s.primary, s.surface, "$n primary/surface")
     }
 
+    // Roles M3 components read implicitly (FilledTonalButton → secondaryContainer,
+    // snackbar action → inversePrimary) must not fall back to baseline purple.
+    @Test
+    fun implicit_roles_stay_on_palette() = eachScheme { n, s ->
+        assertEquals("$n secondaryContainer", s.surfaceVariant, s.secondaryContainer)
+        assertEquals("$n onSecondaryContainer", s.onSurface, s.onSecondaryContainer)
+        assertEquals("$n inversePrimary", Color(0xFFF5A623), s.inversePrimary)
+    }
+
     @Test
     fun accent_fill_is_fixed_honey_not_dynamic() = extras.forEach { (n, x) ->
         assertEquals("$n accentFill", Color(0xFFF5A623), x.accentFill)

@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.beeChipColors
 import android.content.Context
 import android.os.Build
@@ -374,6 +375,7 @@ fun EditEntrySheet(
                 }
                 if (editable) {
                     Button(
+                        colors = BeeButtonDefaults.colors(),
                         onClick = {
                             onPersist(editedEntry.copy(tags = selectedTags.toList()))
                             onClose()

@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.theme.LocalBeeExtras
 import android.app.Activity
 import android.content.Intent
@@ -314,6 +315,7 @@ fun HourlyPulseApp(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
+                                colors = BeeButtonDefaults.colors(),
                                 onClick = {
                                     importLauncher.launch("text/*")
                                     showMenu = false
@@ -324,6 +326,7 @@ fun HourlyPulseApp(
                             }
 
                             Button(
+                                colors = BeeButtonDefaults.colors(),
                                 onClick = {
                                     exportLauncher.launch("bee_data.csv")
                                     showMenu = false
@@ -588,7 +591,7 @@ fun HourlyPulseApp(
                     )
                 },
                 confirmButton = {
-                    Button(onClick = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
                         viewModel.setBeginnerMode(context, true)
                         showBeginnerConfirm = false
                     }) { Text("Pause and switch") }
@@ -615,7 +618,7 @@ fun HourlyPulseApp(
                     )
                 },
                 confirmButton = {
-                    Button(onClick = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
                         viewModel.setBeginnerMode(context, false)
                         showGraduation = false
                     }) { Text("Level up") }
@@ -633,7 +636,7 @@ fun HourlyPulseApp(
                 title = { Text("Confirm Import") },
                 text = { Text("This will replace all current data. Continue?") },
                 confirmButton = {
-                    Button(onClick = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
                         val imported = loadFromCsv(context, pendingImportUri!!)
                         if (imported.isNotEmpty()) {
                             imported.forEach { viewModel.saveRating(context, it) }

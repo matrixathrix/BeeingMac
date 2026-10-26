@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonColors
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CardElevation
@@ -79,3 +81,12 @@ fun beeChipColors(): SelectableChipColors = FilterChipDefaults.filterChipColors(
     selectedLeadingIconColor = LocalBeeExtras.current.onAccentFill,
     selectedTrailingIconColor = LocalBeeExtras.current.onAccentFill
 )
+
+/** Every filled button: the honey fill with aubergine ink, in both modes. */
+object BeeButtonDefaults {
+    @Composable
+    fun colors(): ButtonColors = ButtonDefaults.buttonColors(
+        containerColor = LocalBeeExtras.current.accentFill,
+        contentColor = LocalBeeExtras.current.onAccentFill
+    )
+}
