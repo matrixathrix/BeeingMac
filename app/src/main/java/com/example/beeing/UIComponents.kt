@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.beeChipColors
 import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
@@ -14,9 +15,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
-import com.example.beeing.ui.theme.AccentOrange
-import com.example.beeing.ui.theme.ChipNeutralFill
-import com.example.beeing.ui.theme.ChipNeutralText
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
@@ -497,12 +495,7 @@ internal fun TagChipContent(tag: String) {
 }
 
 @Composable
-internal fun tagChipColors() = InputChipDefaults.inputChipColors(
-    containerColor = ChipNeutralFill,
-    labelColor = ChipNeutralText,
-    selectedContainerColor = AccentOrange,
-    selectedLabelColor = Color.White
-)
+internal fun tagChipColors() = beeChipColors()
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)

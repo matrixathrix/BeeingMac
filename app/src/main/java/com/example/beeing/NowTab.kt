@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeCardDefaults
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -50,10 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
-import com.example.beeing.ui.theme.AccentOrange
 import com.example.beeing.ui.theme.JakartaFontFamily
-import com.example.beeing.ui.theme.ChipNeutralFill
-import com.example.beeing.ui.theme.ChipNeutralText
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
@@ -351,7 +349,7 @@ fun NowTab(
                             .graphicsLayer(scaleX = 1.35f, scaleY = 1.6f)
                             .background(
                                 Brush.radialGradient(
-                                    colors = listOf(AccentOrange.copy(alpha = 0.35f), Color.Transparent)
+                                    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), Color.Transparent)
                                 ),
                                 RoundedCornerShape(50)
                             )
@@ -384,9 +382,8 @@ fun NowTab(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
+                    colors = BeeCardDefaults.colors(),
+                        elevation = BeeCardDefaults.elevation()
                 ) {
                     Column(
                         Modifier.fillMaxWidth().padding(20.dp),
@@ -501,7 +498,7 @@ fun NowTab(
                             .graphicsLayer(scaleX = 1.12f, scaleY = 1.12f)
                             .background(
                                 Brush.radialGradient(
-                                    colors = listOf(AccentOrange.copy(alpha = 0.28f), Color.Transparent)
+                                    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f), Color.Transparent)
                                 ),
                                 RoundedCornerShape(36.dp)
                             )
@@ -715,8 +712,8 @@ fun NowTab(
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = AccentOrange,
-                                contentColor = Color.White
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Text(
@@ -1006,9 +1003,8 @@ private fun TodayStripCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        colors = BeeCardDefaults.colors(),
+            elevation = BeeCardDefaults.elevation()
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
@@ -1140,9 +1136,9 @@ private fun TagPickerSection(
                 shape = TagChipShape,
                 border = null,
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = ChipNeutralFill,
-                    labelColor = ChipNeutralText
-                )
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
             )
         }
     }
@@ -1576,9 +1572,8 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        colors = BeeCardDefaults.colors(),
+            elevation = BeeCardDefaults.elevation()
     ) {
         val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
         val startH = cal.get(Calendar.HOUR_OF_DAY)

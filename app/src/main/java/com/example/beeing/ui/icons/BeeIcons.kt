@@ -58,6 +58,12 @@ enum class Sym(@DrawableRes val res: Int, val label: String) {
     /** 🕐 — this hour was rated from memory, not in the moment. */
     FromMemory(R.drawable.ic_sym_from_memory, "rated from memory"),
 
+    // Outline (FILL 0) twins of Fire/Hourglass/Chart — the nav bar's inactive
+    // tabs; the filled originals mark the active one.
+    FireOutline(R.drawable.ic_sym_fire_outline, "streak"),
+    HourglassOutline(R.drawable.ic_sym_hourglass_outline, "time left"),
+    ChartOutline(R.drawable.ic_sym_chart_outline, "patterns"),
+
     Lock(R.drawable.ic_sym_lock, "lock"),
     Hourglass(R.drawable.ic_sym_hourglass, "time left"),
     Reset(R.drawable.ic_sym_reset, "streak reset"),

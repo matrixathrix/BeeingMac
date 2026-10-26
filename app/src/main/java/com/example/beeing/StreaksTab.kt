@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeCardDefaults
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -191,9 +192,8 @@ fun StreaksTab(
         // ---- Monthly calendar (info) ----
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            )
+            colors = BeeCardDefaults.colors(),
+                elevation = BeeCardDefaults.elevation()
         ) {
             Column(Modifier.padding(16.dp)) {
                 MonthHeader(
@@ -255,9 +255,8 @@ fun StreaksTab(
         val logChevron by animateFloatAsState(if (logExpanded) 180f else 0f, label = "logChevron")
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            )
+            colors = BeeCardDefaults.colors(),
+                elevation = BeeCardDefaults.elevation()
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(

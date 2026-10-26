@@ -41,8 +41,3 @@ val HairlineDark = Color(0xFF2A2630)
 val HoneyGold = Color(0xFFFFB300)
 val RingQualifiedGreen = Color(0xFF66BB6A)
 
-// Legacy fixed accents, folded into the scheme by the reskin's shared-shell
-// task (AccentOrange → primary, ChipNeutral* → surfaceVariant roles).
-val AccentOrange = Color(0xFFF2994A)
-val ChipNeutralFill = Color(0xFFEDE3D5)
-val ChipNeutralText = Color(0xFF8A7F72)

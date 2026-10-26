@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.theme.LocalBeeExtras
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -244,22 +245,11 @@ fun HourlyPulseApp(
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(
-        // The app background and the rating card swapped fills: the screen now
-        // carries the tinted surfaceVariant-over-background blend the cards used
-        // to have, and the rating card is the plain `background` (see NowTab).
-        // Cards elsewhere still fill with surfaceVariant at 0.4 alpha, so they
-        // composite one step further off this tint and keep their edge.
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
-            .copy(alpha = 0.4f)
-            .compositeOver(MaterialTheme.colorScheme.background),
-        topBar = {
-            // A constant status-bar inset for every tab — no per-tab header in
-            // the Scaffold, so nothing pops in or out when a page settles. Each
-            // tab now owns its own header inside its scroll content (Now shows
-            // the status card + ⋮ menu; Hive and Past show none), so the header
-            // slides away with the page instead of jumping.
-            Spacer(Modifier.fillMaxWidth().statusBarsPadding())
-        },
+        // The calm page every tab's cards sit on. No topBar: each tab opens
+        // with its own BrandBand, which draws under the status bar and owns
+        // that inset itself (see BeeSurfaces.kt).
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0.dp),
         // A real bottom fixture, not an overlay: as the Scaffold's bottomBar it
         // insets the pager, so content ends above it instead of scrolling under
         // it and every tab's trailing spacer shrinks to ordinary breathing room.
@@ -673,12 +663,12 @@ fun HourlyPulseApp(
     }
 }
 
-private data class NavItem(val label: String, val sym: Sym)
+private data class NavItem(val label: String, val sym: Sym, val activeSym: Sym)
 
 private val bottomNavItems = listOf(
-    NavItem("Streak", Sym.Fire),
-    NavItem("Now", Sym.Hourglass),
-    NavItem("Past", Sym.Chart)
+    NavItem("Streak", Sym.FireOutline, Sym.Fire),
+    NavItem("Now", Sym.HourglassOutline, Sym.Hourglass),
+    NavItem("Past", Sym.ChartOutline, Sym.Chart)
 )
 
 /** One section heading in "How Beeing works" — its icon, then its title. */
@@ -692,15 +682,11 @@ private fun InfoSection(sym: Sym, title: String) {
 }
 
 /**
- * The app's bottom navigation — a quiet, in-theme band mounted as the
- * Scaffold's bottomBar, so content is laid out above it rather than sliding
- * underneath. The band is the same tinted card fill the rest of the app
- * paints with (no solid block, no shadow — just a hairline top edge), each
- * tab is a Material Symbol + label, and a soft primary-tinted pill marks the
- * active tab. The pill is driven directly by the pager's continuous scroll
- * position, so it tracks finger swipes in real time instead of snapping
- * after the swipe settles. Primary is the app's interactive-only accent, so
- * only the tab you're on wears it.
+ * The app's bottom navigation, Swiggy-style: a plain card-coloured bar with a
+ * hairline top edge, each tab an icon over its label. Inactive tabs wear the
+ * outline icon in `onSurfaceVariant`; the active one switches to the filled
+ * icon and a bold label in the accent-as-text colour. No pill. Colour is
+ * driven by the pager's continuous position, so it crossfades with the swipe.
  */
 @Composable
 private fun BottomNavBar(
@@ -708,86 +694,46 @@ private fun BottomNavBar(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pillShape = RoundedCornerShape(17.dp)
+    val accent = LocalBeeExtras.current.accentText
+    val idle = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
-        // Blends with the scaffold instead of sitting on it: the card fill
-        // every surface in the app uses, so the bar reads as a thin band
-        // rather than a chrome fixture.
-        color = MaterialTheme.colorScheme.surfaceVariant
-            .copy(alpha = 0.4f)
-            .compositeOver(MaterialTheme.colorScheme.background),
+        color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = modifier.fillMaxWidth()
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-        ) {
-            // Hairline top edge — the StatusStrip's 0.5dp outline is the
-            // app's divider language; a shadow would be a foreign one.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f))
-            )
-            BoxWithConstraints(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-            ) {
-                val slotWidth = maxWidth / bottomNavItems.size
-                val highlightInset = 12.dp
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
                 // Continuous pager position: whole part = page, fraction = swipe progress
                 val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
-
-                Box(
-                    Modifier
-                        .offset(x = slotWidth * progress + highlightInset)
-                        .size(slotWidth - highlightInset * 2, 34.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                            pillShape
+                bottomNavItems.forEachIndexed { index, item ->
+                    val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
+                    val active = focus > 0.5f
+                    val contentColor = lerp(idle, accent, focus)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClickLabel = "Open ${item.label}"
+                            ) { onTabSelected(index) },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        BeeIcon(
+                            if (active) item.activeSym else item.sym,
+                            size = 24.dp,
+                            tint = contentColor,
+                            contentDescription = item.label
                         )
-                        .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f), pillShape)
-                )
-
-                Row {
-                    bottomNavItems.forEachIndexed { index, item ->
-                        val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
-                        val contentColor = lerp(
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                            MaterialTheme.colorScheme.primary,
-                            focus
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            item.label,
+                            color = contentColor,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 12.sp
                         )
-
-                        Row(
-                            modifier = Modifier
-                                .size(slotWidth, 34.dp)
-                                .clip(pillShape)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) { onTabSelected(index) },
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            BeeIcon(
-                                item.sym,
-                                size = 16.dp,
-                                tint = contentColor,
-                                contentDescription = item.label
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                item.label,
-                                color = contentColor,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp
-                            )
-                        }
                     }
                 }
             }

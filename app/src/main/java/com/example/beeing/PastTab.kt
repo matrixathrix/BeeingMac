@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import com.example.beeing.ui.BeeCardDefaults
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -694,9 +695,8 @@ private fun JournalDayCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+        colors = BeeCardDefaults.colors(),
+            elevation = BeeCardDefaults.elevation()
     ) {
         Column(
             Modifier
@@ -1112,9 +1112,8 @@ private fun TrendsView(
                     .fillMaxWidth()
                     .onGloballyPositioned { onChartYPosition(it.positionInParent().y) },
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                )
+                colors = BeeCardDefaults.colors(),
+                    elevation = BeeCardDefaults.elevation()
             ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     // Control bar (never animates): arrows + range label + D/W/M
