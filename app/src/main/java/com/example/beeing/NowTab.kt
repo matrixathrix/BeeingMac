@@ -492,7 +492,9 @@ fun NowTab(
                 // weight(1f) hands the card every pixel between the header and
                 // the pinned button; its own content scrolls within that.
                 Spacer(Modifier.height(12.dp))
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f)) {
+                // Top-aligned: the card sits right under the band; spare height
+                // falls below it, above the pinned Save button.
+                Box(contentAlignment = Alignment.TopCenter, modifier = Modifier.weight(1f)) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
