@@ -32,7 +32,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
@@ -674,12 +673,12 @@ fun HourlyPulseApp(
     }
 }
 
-private data class NavItem(val label: String, val icon: ImageVector)
+private data class NavItem(val label: String, val sym: Sym)
 
 private val bottomNavItems = listOf(
-    NavItem("Streak", Icons.Default.Star),
-    NavItem("Now", Icons.Default.Home),
-    NavItem("Past", Icons.Default.DateRange)
+    NavItem("Streak", Sym.Fire),
+    NavItem("Now", Sym.Hourglass),
+    NavItem("Past", Sym.Chart)
 )
 
 /** One section heading in "How Beeing works" — its icon, then its title. */
@@ -693,12 +692,15 @@ private fun InfoSection(sym: Sym, title: String) {
 }
 
 /**
- * The app's bottom navigation — a permanent, opaque, edge-to-edge fixture
- * mounted as the Scaffold's bottomBar, so content is laid out above it rather
- * than sliding underneath. Each tab is icon + label side by side; the filled
- * highlight pill is driven directly by the pager's continuous scroll position,
- * so it tracks finger swipes in real time instead of snapping after the swipe
- * settles.
+ * The app's bottom navigation — a quiet, in-theme band mounted as the
+ * Scaffold's bottomBar, so content is laid out above it rather than sliding
+ * underneath. The band is the same tinted card fill the rest of the app
+ * paints with (no solid block, no shadow — just a hairline top edge), each
+ * tab is a Material Symbol + label, and a soft primary-tinted pill marks the
+ * active tab. The pill is driven directly by the pager's continuous scroll
+ * position, so it tracks finger swipes in real time instead of snapping
+ * after the swipe settles. Primary is the app's interactive-only accent, so
+ * only the tab you're on wears it.
  */
 @Composable
 private fun BottomNavBar(
@@ -706,10 +708,16 @@ private fun BottomNavBar(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val pillShape = RoundedCornerShape(17.dp)
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        // Blends with the scaffold instead of sitting on it: the card fill
+        // every surface in the app uses, so the bar reads as a thin band
+        // rather than a chrome fixture.
+        color = MaterialTheme.colorScheme.surfaceVariant
+            .copy(alpha = 0.4f)
+            .compositeOver(MaterialTheme.colorScheme.background),
         tonalElevation = 0.dp,
-        shadowElevation = 6.dp,
+        shadowElevation = 0.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Box(
@@ -717,10 +725,18 @@ private fun BottomNavBar(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
+            // Hairline top edge — the StatusStrip's 0.5dp outline is the
+            // app's divider language; a shadow would be a foreign one.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f))
+            )
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 val slotWidth = maxWidth / bottomNavItems.size
                 val highlightInset = 12.dp
@@ -730,9 +746,12 @@ private fun BottomNavBar(
                 Box(
                     Modifier
                         .offset(x = slotWidth * progress + highlightInset)
-                        .size(slotWidth - highlightInset * 2, 36.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.primary)
+                        .size(slotWidth - highlightInset * 2, 34.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                            pillShape
+                        )
+                        .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f), pillShape)
                 )
 
                 Row {
@@ -740,14 +759,14 @@ private fun BottomNavBar(
                         val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
                         val contentColor = lerp(
                             MaterialTheme.colorScheme.onSurfaceVariant,
-                            MaterialTheme.colorScheme.onPrimary,
+                            MaterialTheme.colorScheme.primary,
                             focus
                         )
 
                         Row(
                             modifier = Modifier
-                                .size(slotWidth, 36.dp)
-                                .clip(RoundedCornerShape(18.dp))
+                                .size(slotWidth, 34.dp)
+                                .clip(pillShape)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
@@ -755,11 +774,11 @@ private fun BottomNavBar(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                item.icon,
-                                contentDescription = item.label,
+                            BeeIcon(
+                                item.sym,
+                                size = 16.dp,
                                 tint = contentColor,
-                                modifier = Modifier.size(16.dp)
+                                contentDescription = item.label
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(

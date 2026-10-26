@@ -442,6 +442,23 @@ fun DecagonCombDial(
         }
     }
 
+    // A rating set from outside (the notification's pre-selected score) turns
+    // the wheel too — otherwise the core reads 3 while the notch sits on 5.
+    // Snapped, not animated: no ticks/haptics for a value the user didn't
+    // dial. Ratings the dial published itself already match and are skipped,
+    // and a running settle/fling is left alone (it publishes when it lands).
+    LaunchedEffect(rating) {
+        if (rating != null && settleJob?.isActive != true &&
+            topScore(nearestDetent(theta)) != rating
+        ) {
+            var diff = (rating - topScore(nearestDetent(theta))).mod(10)
+            if (diff > 5) diff -= 10
+            theta = nearestDetent(theta) + diff * DETENT
+            lastDetent = (theta / DETENT).roundToInt()
+            awake = true
+        }
+    }
+
     // "This spins" hint on first appearance: two decaying swings of ±14° over
     // ~2 s, no haptics. Stays inside the 18° half-detent so the value never
     // flips and the top cell never changes.
@@ -449,6 +466,7 @@ fun DecagonCombDial(
         val t0 = withFrameNanos { it }
         while (!awake) {
             val now = withFrameNanos { it }
+            if (awake) break   // an external rating snapped the wheel this frame
             val t = (now - t0) / 2_000_000_000f
             if (t >= 1f) { theta = 0f; break }
             theta = 14f * sin(t * 4f * PI.toFloat()) * (1f - t)

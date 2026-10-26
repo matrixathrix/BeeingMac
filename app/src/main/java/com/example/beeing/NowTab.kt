@@ -36,6 +36,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -139,8 +140,29 @@ fun NowTab(
         }
     }
 
+    // Ticking clock for chip expiry + the caught-up countdown (twice a minute)
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    // Start of the current clock hour. Everything hour-derived below keys on it,
+    // so the screen moves on when the hour turns — including while the app sat
+    // in the background (refreshTrigger bumps on ON_RESUME, before the 30s tick
+    // catches up). Without it, a notification tapped after the hour turned
+    // reopened a frame still describing the previous, already-rated hour.
+    val hourStart = remember(nowMillis, viewModel.refreshTrigger) {
+        Calendar.getInstance().apply {
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
     // Calculate hour info based on targetedHourOffset
-    val displayHourInfo = remember(targetedHourOffset) {
+    val displayHourInfo = remember(targetedHourOffset, hourStart) {
         val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -targetedHourOffset) }
         val endH = cal.get(Calendar.HOUR_OF_DAY)
         val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
@@ -149,7 +171,7 @@ fun NowTab(
     }
 
     // Check if current targeted hour is logged
-    val isLoggedCurrent by remember(allRatings, displayHourInfo, targetedHourOffset, viewModel.refreshTrigger) {
+    val isLoggedCurrent by remember(allRatings, displayHourInfo, targetedHourOffset, viewModel.refreshTrigger, hourStart) {
         derivedStateOf {
             // dayKey is based on the START of the rated hour (offset+1 hours back)
             val targetDayKey = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(
@@ -179,8 +201,8 @@ fun NowTab(
         }
     }
 
-    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(0) }
-    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger) { isHourLogged(1) }
+    val isLatestHourLogged = remember(allRatings, viewModel.refreshTrigger, hourStart) { isHourLogged(0) }
+    val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger, hourStart) { isHourLogged(1) }
 
     val allCaughtUp = isLatestHourLogged && isPreviousHourLogged
 
@@ -220,7 +242,7 @@ fun NowTab(
     }
 
     // Today's ratings (for the best hour and the today strip)
-    val todayRatings = remember(allRatings, viewModel.refreshTrigger) {
+    val todayRatings = remember(allRatings, viewModel.refreshTrigger, hourStart) {
         val today = Calendar.getInstance()
         allRatings.filter { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
@@ -239,7 +261,7 @@ fun NowTab(
     val activeWindow = remember(allRatings, viewModel.refreshTrigger) { computeActiveWindow(allRatings) }
 
     // Today's expired unrated hours (start hours 0..H-3) — recoverable in the Hive
-    val missedHoursToday = remember(allRatings, viewModel.refreshTrigger) {
+    val missedHoursToday = remember(allRatings, viewModel.refreshTrigger, hourStart) {
         val today = Calendar.getInstance()
         val currentHour = today.get(Calendar.HOUR_OF_DAY)
         val ratedStarts = todayRatings.map {
@@ -248,14 +270,6 @@ fun NowTab(
         ((currentHour - 3) downTo 0).filter { it !in ratedStarts }
     }
 
-    // Ticking clock for chip expiry + the caught-up countdown (twice a minute)
-    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000)
-            nowMillis = System.currentTimeMillis()
-        }
-    }
     val minutesToNextHour = remember(nowMillis) {
         60 - Calendar.getInstance().apply { timeInMillis = nowMillis }.get(Calendar.MINUTE)
     }
@@ -282,16 +296,18 @@ fun NowTab(
 
     // The rating state is a FIXED frame, not a scrolling page: header on top,
     // save button pinned at the bottom (directly above the nav bar), and the
-    // rating card taking whatever is left and scrolling inside itself. On a
-    // short screen the commit action is therefore always on screen — which is
-    // the whole point — and the card is the only thing that moves.
-    val cardScroll = rememberScrollState()
+    // rating card taking whatever is left. Only the activity tags scroll
+    // inside the card — everything else stays put — and even they wrap
+    // whenever they fit, becoming a viewport only when they don't (expanded,
+    // or a screen too short for the collapsed picker). On a short screen the
+    // commit action is therefore always on screen — which is the whole point.
+    val tagsScroll = rememberScrollState()
+    var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (allCaughtUp) Modifier.verticalScroll(scrollState) else Modifier)
                 .padding(horizontal = 16.dp)
                 .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -349,7 +365,23 @@ fun NowTab(
             }
 
             if (allCaughtUp) {
-                // ---- CAUGHT UP: countdown hero + the only Lock button ----
+                // ---- CAUGHT UP: a fixed frame, like the rating state ----
+                // Top: the day's summary (scrolls on its own if it runs long).
+                // Bottom: the bee field and the Lock button, pinned so the
+                // button sits in the same thumb spot every time.
+                val lockPhone = {
+                    if (isLockAccessibilityServiceEnabled(context)) {
+                        context.sendBroadcast(
+                            Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
+                        )
+                    } else {
+                        showEnableAccessibility = true
+                    }
+                }
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -380,37 +412,6 @@ fun NowTab(
                             fontSize = NowBodySize,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                if (isLockAccessibilityServiceEnabled(context)) {
-                                    context.sendBroadcast(
-                                        Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
-                                    )
-                                } else {
-                                    showEnableAccessibility = true
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.inverseSurface,
-                                contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                            )
-                        ) {
-                            // Both glyphs of "🔒 … 🐝" become icons; the phrase
-                            // itself is owner-chosen and stays word for word.
-                            BeeIcon(Sym.Lock, size = 18.dp, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Lock phone and bee mindful",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = BalooFontFamily
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
-                        }
                     }
                 }
 
@@ -435,15 +436,53 @@ fun NowTab(
                     onCellClick = { entry -> editingEntry = entry }
                 )
 
-                // Today's single best hour, highlighted. It rides with each
-                // branch rather than sitting after them, because in the rating
-                // state everything below the card would push the pinned save
-                // button off the bottom of the frame.
+                // Today's single best hour, highlighted — shown only when the
+                // queue is empty: in the rating state the card must stay
+                // entirely focused on the pending hour and the pinned save
+                // button, and anything below the card would push it off the
+                // bottom of the fixed frame anyway.
                 if (todayBest != null) {
                     Spacer(Modifier.height(16.dp))
                     BestHourCard(bestHour = todayBest)
                 }
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(12.dp))
+                }
+
+                // The earned way out: catch the bee. Its field is the lower
+                // part of the screen — reachable one-handed — with the prompt
+                // riding just above where the bee flies.
+                CatchTheBee(
+                    onCatch = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        lockPhone()
+                    },
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.38f)
+                )
+
+                // The muscle-memory way out: always in the same spot.
+                Button(
+                    onClick = lockPhone,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.inverseSurface,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    )
+                ) {
+                    // Both glyphs of "🔒 … 🐝" become icons; the phrase
+                    // itself is owner-chosen and stays word for word.
+                    BeeIcon(Sym.Lock, size = 18.dp, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Lock phone and bee mindful",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = BalooFontFamily
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
+                }
+                Spacer(Modifier.height(8.dp)) // clear of the nav bar
             } else {
                 // ---- RATING: one card, ordered the way you act ----
                 // weight(1f) hands the card every pixel between the header and
@@ -482,14 +521,12 @@ fun NowTab(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 ) {
-                    // The card's own scroller. The frame stays put; only what's
-                    // in it moves, with a hairline thumb that fades in while
-                    // scrolling and back out ~0.7s after it settles.
+                    // The card is a fixed frame now — only the activity tags
+                    // scroll (see the TagPickerSection wrapper below).
                     Box(Modifier.fillMaxWidth()) {
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .verticalScroll(cardScroll)
                             .padding(16.dp)
                     ) {
                         // Compact hour range: collapse the shared meridiem
@@ -577,18 +614,48 @@ fun NowTab(
                             }
                         )
 
-                        TagPickerSection(
-                            allRatings = allRatings,
-                            availableTags = availableTags,
-                            selectedTags = selectedTags,
-                            expanded = tagsExpanded,
-                            onExpandedChange = { tagsExpanded = it },
-                            onTagsUpdate = {
-                                availableTags = it
-                                viewModel.triggerRefresh()
-                            },
-                            onManageTags = { showManageTags = true }
-                        )
+                        // The tags are the ONLY scrollable content in the card.
+                        // weight(1f, fill = false) caps them at the space the
+                        // fixed sections above and below leave over but lets
+                        // them wrap when they fit — so a collapsed picker on a
+                        // roomy screen never scrolls, and an expanded editor
+                        // (or a screen too short for even the collapsed chips)
+                        // gets a viewport with the hairline fading thumb.
+                        val tagsViewportDp =
+                            with(LocalDensity.current) { tagsViewportHeightPx.toDp() }
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                                .onSizeChanged { tagsViewportHeightPx = it.height }
+                        ) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(tagsScroll),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                TagPickerSection(
+                                    allRatings = allRatings,
+                                    availableTags = availableTags,
+                                    selectedTags = selectedTags,
+                                    expanded = tagsExpanded,
+                                    onExpandedChange = { tagsExpanded = it },
+                                    onTagsUpdate = {
+                                        availableTags = it
+                                        viewModel.triggerRefresh()
+                                    },
+                                    onManageTags = { showManageTags = true }
+                                )
+                            }
+                            FadingScrollbar(
+                                scrollState = tagsScroll,
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .height(tagsViewportDp)
+                                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                            )
+                        }
 
                         Spacer(Modifier.height(10.dp))
                         NotesSection(
@@ -598,25 +665,14 @@ fun NowTab(
                         )
 
                     }
-                    FadingScrollbar(
-                        scrollState = cardScroll,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .padding(vertical = 10.dp, horizontal = 4.dp)
-                    )
                     }
                 }
                 }
 
-                if (todayBest != null) {
-                    Spacer(Modifier.height(10.dp))
-                    BestHourCard(bestHour = todayBest)
-                }
-
                 // The save button lives OUTSIDE the rating card and outside its
-                // scroller — it is pinned to the bottom of the frame, right
-                // above the nav bar, so it is reachable at any screen height.
+                // (tags-only) scroller — it is pinned to the bottom of the
+                // frame, right above the nav bar, so it is reachable at any
+                // screen height.
                 Spacer(Modifier.height(12.dp))
                 run {
                     // The save button IS the state machine — its label

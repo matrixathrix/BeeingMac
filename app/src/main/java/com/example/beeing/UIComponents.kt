@@ -204,6 +204,14 @@ fun EditEntrySheet(
     val hasPrev = index > 0
     val hasNext = index in 0 until sorted.size - 1
 
+    // Editable only inside the 10h window (EDIT_WINDOW_MS, same rule as the
+    // Now tab's today strip). Older entries open as a read-only record —
+    // score/tags/note locked, delete still available. Re-evaluated per hour
+    // so the ‹ › carets can't sneak an old entry past the gate.
+    val editable = remember(currentEntry.timestamp) {
+        System.currentTimeMillis() - currentEntry.timestamp <= EDIT_WINDOW_MS
+    }
+
     // Edited buffer + tag selection reset whenever we land on a new hour.
     var editedEntry by remember(currentEntry.id) { mutableStateOf(currentEntry) }
     val selectedTags = remember(currentEntry.id) { currentEntry.tags.toMutableStateList() }
@@ -214,6 +222,7 @@ fun EditEntrySheet(
 
     // A caret tapped mid-edit stashes the destination and asks save-or-discard.
     var pendingTarget by remember { mutableStateOf<RatingEntry?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
     fun seekTo(target: RatingEntry) {
         if (hasUnsavedEdits) pendingTarget = target else currentEntry = target
     }
@@ -234,7 +243,7 @@ fun EditEntrySheet(
                 verticalAlignment = Alignment.Top
             ) {
                 Text(
-                    text = "Edit entry",
+                    text = if (editable) "Edit entry" else "Entry details",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).padding(top = 6.dp)
@@ -300,7 +309,7 @@ fun EditEntrySheet(
                                 },
                                 shape = CircleShape
                             )
-                            .clickable {
+                            .clickable(enabled = editable) {
                                 editedEntry = editedEntry.copy(score = score)
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
@@ -333,6 +342,7 @@ fun EditEntrySheet(
                         onClick = {
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
+                        enabled = editable,
                         label = { TagChipContent(tag) },
                         shape = TagChipShape,
                         colors = tagChipColors(),
@@ -345,6 +355,7 @@ fun EditEntrySheet(
             OutlinedTextField(
                 value = editedEntry.note,
                 onValueChange = { editedEntry = editedEntry.copy(note = it) },
+                enabled = editable,
                 placeholder = { Text("Add a note") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -358,32 +369,37 @@ fun EditEntrySheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 IconButton(
-                    onClick = {
-                        val deletedEntry = currentEntry
-                        onDelete(currentEntry.id)
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Entry deleted",
-                                actionLabel = "Undo",
-                                duration = SnackbarDuration.Short
-                            )
-                            if (result == SnackbarResult.ActionPerformed) {
-                                saveRating(context, deletedEntry)
-                            }
-                        }
-                    },
+                    onClick = { confirmDelete = true },
                     modifier = Modifier.weight(0.2f)
                 ) {
                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                 }
-                Button(
-                    onClick = {
-                        onPersist(editedEntry.copy(tags = selectedTags.toList()))
-                        onClose()
-                    },
-                    modifier = Modifier.weight(0.8f)
-                ) {
-                    Text("Save Changes")
+                if (editable) {
+                    Button(
+                        onClick = {
+                            onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                            onClose()
+                        },
+                        modifier = Modifier.weight(0.8f)
+                    ) {
+                        Text("Save Changes")
+                    }
+                } else {
+                    // Past the 10h edit window: a read-only record. Deletion
+                    // stays available; there is nothing to save.
+                    Box(
+                        Modifier
+                            .weight(0.8f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Editable for 10 hours after the hour ends",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(32.dp))
@@ -394,6 +410,35 @@ fun EditEntrySheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
+        )
+    }
+
+    // Deleting is one confirm away, never a single tap.
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete this hour?") },
+            text = { Text("The rating for ${formatHour(startH)} – ${formatHour(endH)}, $dateLabel will be removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    val deletedEntry = currentEntry
+                    onDelete(currentEntry.id)
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Entry deleted",
+                            actionLabel = "Undo",
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            saveRating(context, deletedEntry)
+                        }
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
         )
     }
 

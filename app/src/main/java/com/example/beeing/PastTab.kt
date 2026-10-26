@@ -273,7 +273,7 @@ private fun computeTagStats(
     fun aggregate(a: Long, b: Long): Map<String, Pair<Double, Int>> =
         ratings.asSequence()
             .filter { it.timestamp in a until b }
-            .flatMap { e -> e.tags.asSequence().map { it to e.score } }
+            .flatMap { e -> e.visibleTags().asSequence().map { it to e.score } }
             .groupBy({ it.first }, { it.second })
             .mapValues { (_, scores) -> scores.average() to scores.size }
 
@@ -433,7 +433,7 @@ fun PastTab(
     BackHandler(enabled = showTrends) { showTrends = false }
 
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
-    val editSheetState = rememberModalBottomSheetState()
+    val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Journal state lives here so a round-trip through Trends comes back to the
     // same scroll position and the same open day.
@@ -775,17 +775,22 @@ private fun JournalDayCard(
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
                     )
-                    HourEntryRow(entry = entry, onClick = { onEditEntry(entry) })
+                    HourEntryRow(
+                        entry = entry,
+                        editable = now - entry.timestamp <= EDIT_WINDOW_MS,
+                        onClick = { onEditEntry(entry) }
+                    )
                 }
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
                 )
                 Spacer(Modifier.height(8.dp))
-                val elapsedWindowHours = window.count { h ->
+                // Day-level, so it adds up against the entry list above (which
+                // includes out-of-window hours); only hours that have passed count.
+                val elapsedHours = (0 until 24).count { h ->
                     day.dayStartMs + (h + 1) * 3600_000L <= now
                 }
-                val ratedInWindow = day.byHour.keys.count { it in window }
-                val unrated = (elapsedWindowHours - ratedInWindow).coerceAtLeast(0)
+                val unrated = (elapsedHours - day.byHour.size).coerceAtLeast(0)
                 Text(
                     if (unrated == 0) "Every hour rated"
                     else "$unrated hour${if (unrated == 1) "" else "s"} unrated",
@@ -819,11 +824,14 @@ private fun TickCapPill(text: String) {
 
 /**
  * One rated hour inside an expanded journal day: time range, score chip, tags
- * (clock icon when it was rated from memory), note preview.
+ * (clock icon when it was rated from memory), note preview. A tap always opens
+ * the sheet; the trailing icon says whether it opens for editing (≤10h) or as
+ * read-only details.
  */
 @Composable
 private fun HourEntryRow(
     entry: RatingEntry,
+    editable: Boolean,
     onClick: () -> Unit
 ) {
     val startH = remember(entry.timestamp) {
@@ -887,10 +895,10 @@ private fun HourEntryRow(
             }
         }
         Icon(
-            Icons.Default.Edit,
-            contentDescription = "Edit this hour",
+            if (editable) Icons.Default.Edit else Icons.Default.KeyboardArrowRight,
+            contentDescription = if (editable) "Edit this hour" else "View this hour",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(15.dp)
+            modifier = Modifier.size(if (editable) 15.dp else 18.dp)
         )
     }
 }
@@ -1748,6 +1756,53 @@ private fun PatternGrid(
 }
 
 /**
+ * by score / by count as ONE segmented control, styled like [ZoomPicker]: a
+ * single track, only the active segment filled, no outlines. Two separate
+ * FilterChips gave the unselected one an outline, which read as selected too.
+ */
+@Composable
+private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        listOf(true to "by score", false to "by count").forEach { (byScore, label) ->
+            val selected = byScore == sortByScore
+            val bg by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                animationSpec = tween(220),
+                label = "sortBg"
+            )
+            Box(
+                Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(bg)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onSortChange(byScore) }
+                    .padding(horizontal = 11.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
  * "How tags score" folded into the big card. The rows live in a short inner
  * scroll (~5 rows tall) so the section can't push the grid off-screen; a thin
  * scrollbar fades in while scrolling and disappears when it stops.
@@ -1761,17 +1816,7 @@ private fun TagScoresSection(
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionLabel("HOW TAGS SCORE", modifier = Modifier.weight(1f))
-            FilterChip(
-                selected = sortByScore,
-                onClick = { onSortChange(true) },
-                label = { Text("by score", fontSize = 11.sp) }
-            )
-            Spacer(Modifier.width(6.dp))
-            FilterChip(
-                selected = !sortByScore,
-                onClick = { onSortChange(false) },
-                label = { Text("by count", fontSize = 11.sp) }
-            )
+            SortToggle(sortByScore = sortByScore, onSortChange = onSortChange)
         }
         Spacer(Modifier.height(6.dp))
         if (tagStats.isEmpty()) {
