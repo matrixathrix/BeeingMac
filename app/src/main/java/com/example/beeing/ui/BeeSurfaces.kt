@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.example.beeing.ui.theme.LocalBeeExtras
 
@@ -99,3 +102,59 @@ object BeeButtonDefaults {
 @Composable
 fun emptyCellColor(future: Boolean): Color =
     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (future) 0.07f else 0.16f)
+
+/**
+ * A tab frame of three slots: [band] on top, [middle] content, [footer] pinned
+ * to the bottom, for screens whose content can be shorter than the screen.
+ *
+ * Spare height becomes **band growth**, capped at [maxBandGrow]: the band is
+ * told how much via `grow` (0f…1f) and spends it on bigger type and spacing,
+ * so a taller band reads as a bigger heading, never as an empty patch. The
+ * band should animate toward `grow` (e.g. `animateFloatAsState`); the middle
+ * is always measured against the band's *current* height, so while the band
+ * animates down (say the tags expand) the middle grows into exactly the room
+ * it frees — no overlap with the footer. [middle] sits right under the band;
+ * anything still left falls between it and the pinned footer.
+ */
+@Composable
+fun BandFillLayout(
+    band: @Composable (grow: Float) -> Unit,
+    middle: @Composable () -> Unit,
+    footer: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    maxBandGrow: Dp = 160.dp
+) {
+    SubcomposeLayout(modifier) { c ->
+        val width = c.maxWidth
+        val total = c.maxHeight
+        val loose = Constraints(maxWidth = width, maxHeight = total)
+
+        val foot = subcompose("footer", footer).map { it.measure(loose) }
+        val footH = foot.maxOfOrNull { it.height } ?: 0
+
+        // The band at rest, and how tall the middle would like to be.
+        val bandMin = subcompose("bandMin") { band(0f) }.maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0
+        val midMeasurables = subcompose("middle", middle)
+        val midWants = midMeasurables.maxOfOrNull { it.maxIntrinsicHeight(width) } ?: 0
+
+        val growCap = maxBandGrow.roundToPx()
+        val spare = (total - footH - midWants - bandMin).coerceAtLeast(0)
+        val target = if (growCap == 0) 0f else minOf(spare, growCap).toFloat() / growCap
+
+        // The band at its current (possibly animating) size…
+        val bandMeasurables = subcompose("band") { band(target) }
+        val bandH = (bandMeasurables.maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0)
+            .coerceIn(bandMin, (total - footH).coerceAtLeast(bandMin))
+        val bandP = bandMeasurables.map { it.measure(Constraints.fixed(width, bandH)) }
+
+        // …and the middle gets exactly what it leaves.
+        val midMax = (total - footH - bandH).coerceAtLeast(0)
+        val mid = midMeasurables.map { it.measure(Constraints(maxWidth = width, maxHeight = midMax)) }
+
+        layout(width, total) {
+            bandP.forEach { it.place(0, 0) }
+            mid.forEach { it.place(0, bandH) }
+            foot.forEach { it.place(0, total - footH) }
+        }
+    }
+}

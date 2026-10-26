@@ -3,6 +3,9 @@ package com.example.beeing
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
@@ -48,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import com.example.beeing.ui.BandFillLayout
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
@@ -320,30 +324,64 @@ fun NowTab(
     fun minutesFor(offset: Int) =
         if (offset == 1) minutesToNextHour else minutesToNextHour + 60
 
+    // Shared by the bee and the Lock button in the caught-up footer.
+    val lockPhone = {
+        if (isLockAccessibilityServiceEnabled(context)) {
+            context.sendBroadcast(
+                Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
+            )
+        } else {
+            showEnableAccessibility = true
+        }
+    }
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(
+        // Three slots: the band, the screen's content, and the pinned bottom
+        // (Save, or the bee + Lock). Spare height goes to the BAND, never to an
+        // empty gap — see BandFillLayout.
+        BandFillLayout(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+            band = { target ->
+                // Animated, so expanding or collapsing the tags slides the band
+                // up/down (and the tags into the freed room) instead of snapping.
+                val grow by animateFloatAsState(
+                    targetValue = target,
+                    animationSpec = tween(380, easing = FastOutSlowInEasing),
+                    label = "bandGrow"
+                )
+                // Hero type for the band: 22sp at rest, up to 32sp when there is
+                // room, so a taller band reads as bigger, not emptier.
+                val heroStyle = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = (22f + 10f * grow).sp,
+                    lineHeight = (28f + 10f * grow).sp
+                )
             // ---- The brand band: who you are (title, streak) and what this
             // screen is asking — the question + hour picker while an hour is
             // pending, "All caught up" + the countdown once none is.
             BrandBand {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     // Hamburger — carries all data options and "How it works".
-                    IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
+                    // Title and menu scale with the band, in step with the question.
+                    IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp + 4.dp * grow)) {
                         Icon(
                             Icons.Default.Menu,
                             contentDescription = "Menu",
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(26.dp + 4.dp * grow)
                         )
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text("Beeing", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "Beeing",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = (24f + 6f * grow).sp,
+                            lineHeight = (32f + 6f * grow).sp
+                        )
+                    )
                     Spacer(Modifier.weight(1f))
                     StatusStrip(state = streakState, onClick = onOpenStreaks)
                 }
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(18.dp + 56.dp * grow))
+                // Rounding slack only: keeps the question on the band's bottom edge.
+                Spacer(Modifier.weight(1f))
                 if (allCaughtUp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BeeIcon(
@@ -351,7 +389,7 @@ fun NowTab(
                             tint = RingQualifiedGreen
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("All caught up", style = MaterialTheme.typography.titleLarge)
+                        Text("All caught up", style = heroStyle)
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -361,7 +399,7 @@ fun NowTab(
                     )
                 } else {
                     val mins = minutesFor(targetedHourOffset)
-                    Text("How was your hour?", style = MaterialTheme.typography.titleLarge)
+                    Text("How was your hour?", style = heroStyle)
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         HourWindowPicker(
@@ -395,28 +433,15 @@ fun NowTab(
                     }
                 }
             }
-
-            // ---- Everything below the band: the calm page ----
+            },
+            middle = {
             Column(
-                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
             if (allCaughtUp) {
-                // ---- CAUGHT UP: a fixed frame, like the rating state ----
-                // Top: the day's summary (scrolls on its own if it runs long).
-                // Bottom: the bee field and the Lock button, pinned so the
-                // button sits in the same thumb spot every time.
-                val lockPhone = {
-                    if (isLockAccessibilityServiceEnabled(context)) {
-                        context.sendBroadcast(
-                            Intent(ACTION_LOCK_PHONE).setPackage(context.packageName)
-                        )
-                    } else {
-                        showEnableAccessibility = true
-                    }
-                }
                 Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
+                    Modifier.fillMaxWidth().verticalScroll(scrollState),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                 if (missedHoursToday.isNotEmpty()) {
@@ -451,50 +476,12 @@ fun NowTab(
                 }
                 Spacer(Modifier.height(12.dp))
                 }
-
-                // The earned way out: catch the bee. Its field is the lower
-                // part of the screen — reachable one-handed — with the prompt
-                // riding just above where the bee flies.
-                CatchTheBee(
-                    onCatch = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        lockPhone()
-                    },
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.38f)
-                )
-
-                // The muscle-memory way out: always in the same spot.
-                Button(
-                    onClick = lockPhone,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.inverseSurface,
-                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                    )
-                ) {
-                    // Both glyphs of "🔒 … 🐝" become icons; the phrase
-                    // itself is owner-chosen and stays word for word.
-                    BeeIcon(Sym.Lock, size = 18.dp, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Lock phone and bee mindful",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = JakartaFontFamily
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
-                }
-                Spacer(Modifier.height(8.dp)) // clear of the nav bar
             } else {
                 // ---- RATING: one card, ordered the way you act ----
-                // weight(1f) hands the card every pixel between the header and
-                // the pinned button; its own content scrolls within that.
                 Spacer(Modifier.height(12.dp))
-                // Top-aligned: the card sits right under the band; spare height
-                // falls below it, above the pinned Save button.
-                Box(contentAlignment = Alignment.TopCenter, modifier = Modifier.weight(1f)) {
+                // BandFillLayout caps this slot at the height left over, so on a short
+                // screen the card shrinks and only its tags scroll.
+                Box(contentAlignment = Alignment.TopCenter) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -584,6 +571,51 @@ fun NowTab(
                 }
                 }
 
+            }
+            }
+            },
+            footer = {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+            if (allCaughtUp) {
+                // The earned way out: catch the bee. Its field is the lower
+                // part of the screen — reachable one-handed — with the prompt
+                // riding just above where the bee flies.
+                CatchTheBee(
+                    onCatch = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        lockPhone()
+                    },
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.38f)
+                )
+
+                // The muscle-memory way out: always in the same spot.
+                Button(
+                    onClick = lockPhone,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.inverseSurface,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
+                    )
+                ) {
+                    // Both glyphs of "🔒 … 🐝" become icons; the phrase
+                    // itself is owner-chosen and stays word for word.
+                    BeeIcon(Sym.Lock, size = 18.dp, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Lock phone and bee mindful",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = JakartaFontFamily
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
+                }
+                Spacer(Modifier.height(8.dp)) // clear of the nav bar
+            } else {
                 // The save button lives OUTSIDE the rating card and outside its
                 // (tags-only) scroller — it is pinned to the bottom of the
                 // frame, right above the nav bar, so it is reachable at any
@@ -645,8 +677,9 @@ fun NowTab(
                     }
                 Spacer(Modifier.height(8.dp)) // clear of the nav bar
             }
-            } // page column
-        }
+            }
+            }
+        )
 
         // First-run: locking needs the accessibility service turned on once
         if (showEnableAccessibility) {
