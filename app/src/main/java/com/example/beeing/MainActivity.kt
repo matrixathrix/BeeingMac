@@ -7,11 +7,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.platform.LocalContext
+import com.example.beeing.ui.theme.BeeingTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 
@@ -61,25 +59,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val colorScheme = when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                    val context = LocalContext.current
-                    if (isSystemInDarkTheme()) {
-                        dynamicDarkColorScheme(context)
-                    } else {
-                        dynamicLightColorScheme(context)
-                    }
-                }
-                else -> {
-                    if (isSystemInDarkTheme()) {
-                        darkColorScheme()
-                    } else {
-                        lightColorScheme()
-                    }
-                }
-            }
-            MaterialTheme(colorScheme = colorScheme) {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            // Beeing's own palette, light/dark by the system setting — never
+            // the wallpaper-derived dynamic scheme.
+            BeeingTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     HourlyPulseApp(
                         pendingRating = pendingRating.value,
                         onPendingRatingConsumed = { pendingRating.value = null }

@@ -69,7 +69,7 @@ dialog.**
 | Hairlines (`outlineVariant`) | `#EEE9E4` | `#2A2630` |
 | Accent (`primary`) | `#F5A623` | `#F5A623` |
 | On accent (`onPrimary`) | `#2E0F33` (aubergine ink, not white: white on honey fails contrast) | same |
-| Accent as text/icon on page (active nav label etc.) | `#C7820A` (darker, readable on white) | `#F7B733` |
+| Accent as text/icon on page (active nav label etc.) | `#BB7A09` (darker, readable on white; `#C7820A` measured 2.9:1, nudged during build) | `#F7B733` |
 | Band | gradient above | gradient above |
 | Error | M3 default red, tuned to sit with the palette | same |
 
