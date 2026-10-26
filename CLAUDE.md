@@ -126,8 +126,10 @@ case verify by static review and say so explicitly — the user compiles locally
 | File | What lives there |
 |---|---|
 | `MainActivity.kt` | Theme (dynamic M3), notification-tap intent → `PendingRating`, alarm scheduling, `ensureModeInitialized` (fresh install ⇒ beginner mode, before `setContent`) |
-| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`** — a quiet in-theme band: the same tinted card fill as the rest of the app, hairline top edge, no shadow; icon+label per tab via the `Sym` vocabulary — Streak=Fire, Now=Hourglass, Past=Chart; soft primary-tinted pill driven by `currentPage + currentPageOffsetFraction` so it tracks swipes live). **No shared header** — the Scaffold topBar is just a constant status-bar inset for every tab, so nothing pops in/out on a page settle. Each tab owns its own header inside its scroll content. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
+| `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`**, Swiggy-style: `surface` bar, hairline top edge, icon over label; inactive = outline `Sym.*Outline` in `onSurfaceVariant`, active = filled `Sym.Fire`/`Hourglass`/`Chart` + bold label in `accentText`, crossfaded by `currentPage + currentPageOffsetFraction`; no pill). **No Scaffold topBar** — each tab opens with its own `BrandBand`, which owns the status-bar inset. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
 | `NowTab.kt` | The rating flow. Header row = a **hamburger** `Icons.Default.Menu` button on the far left (opens the data-options menu — `onMenuClick`; the old ⋮/`MoreVert` is gone), then the large neutral "Beeing" title (`headlineLarge`, `onSurface`), then a weight spacer pushes the **slim** right-aligned `StatusStrip` pill (⬢ streak · ring x/goal — no currency segment — 16sp emojis, 14sp numbers, 18dp ring; **hairline** 0.5dp white-0.22α outline, sized to sit level with the title; taps to the Streak tab; merged semantics announce "N-day streak · H of G hours rated today" with the click label "Open Streak tab". In **beginner mode** the ⬢ becomes 🌱, the ring/ratio read x/4 via `state.hoursRequired`, and the description leads with "Beginner mode · streak paused at N") to the right edge. Rating card header is one line: **"How was your"** + a compact `HourWindowPicker` chip (‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + the countdown to its right + the "why these hours" info icon at the far edge; then dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
+| `ui/BeeSurfaces.kt` | The reskin's shared shell: `BrandBand` (the per-tab aubergine header), `BandShape`, `OnBandFill`, `BeeCardDefaults` (card colours/elevation/shape) and `beeChipColors()` (muted unselected, `accentFill` selected; `tagChipColors()` delegates to it) |
+| `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `JakartaFontFamily` + `Typography`, `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
 | `CatchTheBee.kt` | The caught-up screen's **earned way out**: `CatchTheBee(onCatch)` — a **🐝 emoji** bee (38dp, sized in dp→sp so font scale can't grow it, in a 64dp circular tap target; the one deliberate exception to "UI emoji → Material Symbols", by owner call: the `Sym.Reclaim` icon didn't read as a bee in flight; it's mirrored when heading right since the emoji faces left) drifting slowly (`BEE_SPEED_PER_S` 70dp/s, eased legs to random points, wing wobble + bob, flips to face its heading) inside its field, under a "Catch the bee to lock the phone" prompt that drops in once then pulses. Every moving value is read in `offset {}`/`graphicsLayer {}` lambdas, so flight never recomposes; it runs on the frame clock, so it stops on its own when the tab pages away, the app is backgrounded or the screen is off. With system animations off (`ANIMATOR_DURATION_SCALE == 0`) the bee sits still and the prompt doesn't pulse |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten **round** cells docked one per edge, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
@@ -170,7 +172,24 @@ case verify by static review and say so explicitly — the user compiles locally
   (streak, calendar, repair), Past = the record — the journal of days is the
   screen, and insight (summary → magnitude → pattern → drivers) lives one tap
   away in Trends.
-- **Color roles:** blue/primary = interactive only. Score bands = data only:
+- **The look: "Night bloom"** (spec `docs/superpowers/specs/2026-10-27-reskin-design.md`).
+  Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
+  `BeeingTheme`) following the system dark-mode setting — **never** Material
+  You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
+  all 15 M3 type roles), so plain `Text()` inherits it. Every tab opens with a
+  **`BrandBand`** (aubergine gradient, 26dp bottom corners, white content,
+  owns the status-bar inset — there is no Scaffold topBar) over a calm page
+  (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
+  20dp, shadow in light mode only). Swiggy-style nav bar: outline icons, the
+  active tab filled + bold in `accentText`, no pill. `PaletteContrastTest`
+  pins every text-on-colour pairing; run it after any palette change.
+- **Color roles:** honey = "act here", used sparingly. Two forms: the big
+  fill (Save, selected chips/segments) is `LocalBeeExtras.current.accentFill`
+  (always `#F5A623`, aubergine ink `onAccentFill`); text/controls use
+  `primary`, which is **deepened to `#9A6000` in light mode** because M3 draws
+  TextButtons/switches/checkboxes in `primary` and plain honey on white is
+  2:1. `accentText` is honey-as-label on the page (nav, bee prompt). On the
+  band, chips/pills are `OnBandFill` (white 14%). Score bands = data only:
   1–4 red, 5–7 amber, 8–10 green (`scoreBandColor` for ints,
   `getScoreColor` for averages). Honey gold = streak identity. Progress rings
   are never red.
@@ -180,7 +199,8 @@ case verify by static review and say so explicitly — the user compiles locally
   single daily full-screen celebration, waggle = rare milestones only.
 - **Lock phone exists ONLY in the caught-up state** (no pending hours).
   Rating pending hours always outranks leaving.
-- Cards: 20dp radius, `surfaceVariant.copy(alpha = 0.4f)` fill, 16dp padding.
+- Cards: `BeeCardDefaults` (20dp radius, `surface` fill, light-mode shadow), 16dp padding.
+  Cards inside a dialog use `surfaceVariant` instead (a card on a card-coloured dialog vanishes).
   Every scrollable tab ends with a 24dp spacer — the nav is a `bottomBar` and
   insets the pager itself, so nothing has to clear a floating pill any more.
 - **Active window** (`computeActiveWindow`): stable hour range covering ~90%
@@ -739,3 +759,26 @@ case verify by static review and say so explicitly — the user compiles locally
   "B" chosen from a mockup: prompt sits just above the bee's field rather than
   under the header. The bee shows whenever the Now tab is caught up and flies
   for as long as it's on screen.
+- 2026-10-27 (**reskin: "Night bloom" + Plus Jakarta Sans**): owner wanted
+  "clean, modern, tastefully designed, not native-Android boring", with
+  Swiggy's home screen as the reference (bold colour band on top, calm page,
+  soft white cards, one accent, a real typeface, Swiggy's nav bar; no
+  illustrations). Direction B was picked from mockups, with Jakarta instead of
+  Outfit. Spec `docs/superpowers/specs/2026-10-27-reskin-design.md`, plan
+  `docs/superpowers/plans/2026-10-27-reskin.md`. What changed:
+  (1) dynamic colour is gone; `BeeingTheme` in `MainActivity` supplies fixed
+  light/dark schemes; (2) Baloo 2 + Fredoka deleted, Jakarta everywhere;
+  (3) `BrandBand` on every tab — Now (title, `StatusStrip` as a translucent
+  pill, then the question + hour picker + countdown, or "All caught up" +
+  countdown; the rating card lost its title/meta rows and its orange glow),
+  Streak (title + `StreakMeter`, which now draws on the band: no card, white
+  text, white-18% ring track), Past (title, month/date-jump pill, "Trends ›"
+  pill; the band stays fixed over the journal's `LazyColumn`) and Trends
+  (back + title; the period/zoom control bar stays at the top of the chart
+  card because it heads the animated region); (4) all cards on
+  `BeeCardDefaults`; (5) the nav bar rewritten (outline/filled
+  `Sym` twins added); (6) `AccentOrange`/`ChipNeutral*` deleted.
+  Two contrast catches from `PaletteContrastTest`: `accentText` light went
+  `#C7820A` → `#BB7A09` (2.9:1 → 3.2:1 on the page), and light `primary` became
+  deep honey `#9A6000` (plain honey text on white was 2.0:1 — every dialog's
+  TextButtons), with the honey fill moved to `BeeExtras.accentFill`.

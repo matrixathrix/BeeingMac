@@ -1,6 +1,7 @@
 package com.example.beeing
 
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.OnBandFill
 import android.app.NotificationManager
@@ -628,8 +629,8 @@ fun NowTab(
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                containerColor = LocalBeeExtras.current.accentFill,
+                                contentColor = LocalBeeExtras.current.onAccentFill
                             )
                         ) {
                             Text(
@@ -920,7 +921,7 @@ private fun TodayStripCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = BeeCardDefaults.colors(),
-            elevation = BeeCardDefaults.elevation()
+        elevation = BeeCardDefaults.elevation()
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
@@ -1491,7 +1492,7 @@ fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = BeeCardDefaults.colors(),
-            elevation = BeeCardDefaults.elevation()
+        elevation = BeeCardDefaults.elevation()
     ) {
         val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
         val startH = cal.get(Calendar.HOUR_OF_DAY)

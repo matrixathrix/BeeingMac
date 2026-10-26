@@ -74,8 +74,8 @@ fun beeChipColors(): SelectableChipColors = FilterChipDefaults.filterChipColors(
     containerColor = MaterialTheme.colorScheme.surfaceVariant,
     labelColor = MaterialTheme.colorScheme.onSurface,
     iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    selectedContainerColor = MaterialTheme.colorScheme.primary,
-    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
-    selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimary
+    selectedContainerColor = LocalBeeExtras.current.accentFill,
+    selectedLabelColor = LocalBeeExtras.current.onAccentFill,
+    selectedLeadingIconColor = LocalBeeExtras.current.onAccentFill,
+    selectedTrailingIconColor = LocalBeeExtras.current.onAccentFill
 )

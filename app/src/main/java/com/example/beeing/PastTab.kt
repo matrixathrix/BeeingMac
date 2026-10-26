@@ -1,6 +1,7 @@
 package com.example.beeing
 
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.OnBandFill
 import androidx.activity.compose.BackHandler
@@ -684,7 +685,7 @@ private fun JournalDayCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = BeeCardDefaults.colors(),
-            elevation = BeeCardDefaults.elevation()
+        elevation = BeeCardDefaults.elevation()
     ) {
         Column(
             Modifier
@@ -1100,7 +1101,7 @@ private fun TrendsView(
                     .onGloballyPositioned { onChartYPosition(it.positionInParent().y) },
                 shape = RoundedCornerShape(20.dp),
                 colors = BeeCardDefaults.colors(),
-                    elevation = BeeCardDefaults.elevation()
+                elevation = BeeCardDefaults.elevation()
             ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     // Control bar (never animates): arrows + range label + D/W/M
@@ -1432,7 +1433,7 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
         Zoom.entries.forEach { z ->
             val selected = z == zoom
             val bg by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                if (selected) LocalBeeExtras.current.accentFill else Color.Transparent,
                 animationSpec = tween(220),
                 label = "zoomBg"
             )
@@ -1454,7 +1455,7 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    color = if (selected) LocalBeeExtras.current.onAccentFill
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1759,7 +1760,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
         listOf(true to "by score", false to "by count").forEach { (byScore, label) ->
             val selected = byScore == sortByScore
             val bg by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                if (selected) LocalBeeExtras.current.accentFill else Color.Transparent,
                 animationSpec = tween(220),
                 label = "sortBg"
             )
@@ -1780,7 +1781,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    color = if (selected) LocalBeeExtras.current.onAccentFill
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

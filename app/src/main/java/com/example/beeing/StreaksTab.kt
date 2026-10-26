@@ -200,7 +200,7 @@ fun StreaksTab(
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = BeeCardDefaults.colors(),
-                elevation = BeeCardDefaults.elevation()
+            elevation = BeeCardDefaults.elevation()
         ) {
             Column(Modifier.padding(16.dp)) {
                 MonthHeader(
@@ -263,7 +263,7 @@ fun StreaksTab(
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = BeeCardDefaults.colors(),
-                elevation = BeeCardDefaults.elevation()
+            elevation = BeeCardDefaults.elevation()
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(
@@ -322,7 +322,9 @@ fun StreaksTab(
                                     reclaimStartMillis = startMs
                                     showPickHour = false
                                 },
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            // Muted fill: a plain card would vanish on the dialog surface.
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                         ) {
                             Text(
                                 reclaimHourLabel(startMs),
@@ -444,7 +446,7 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
         IconButton(onClick = onNext, enabled = monthOffset > 0) {
             Icon(
                 Icons.Default.KeyboardArrowRight, "Later month",
-                tint = if (monthOffset > 0) LocalContentColor.current else Color.Gray
+                tint = if (monthOffset > 0) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             )
         }
     }

@@ -155,10 +155,10 @@ fun HeaderSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onInfoClick) {
-                Icon(Icons.Default.Info, "How it works", tint = Color.Gray)
+                Icon(Icons.Default.Info, "How it works", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onMenuClick) {
-                Icon(Icons.Default.MoreVert, "Menu", tint = Color.Gray)
+                Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

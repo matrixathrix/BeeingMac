@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 // The one accent: "do this" — Save, selected chips, the active nav tab.
 val Honey = Color(0xFFF5A623)
 val OnHoney = Color(0xFF2E0F33)          // aubergine ink: white on honey fails contrast
+val HoneyDeep = Color(0xFF9A6000)        // light-mode `primary`: honey that reads as text on white
 
 // Brand band gradient (top → bottom), per mode.
 val BandTopLight = Color(0xFF4A1D4F)

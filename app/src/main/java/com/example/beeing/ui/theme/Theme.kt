@@ -24,8 +24,10 @@ import androidx.core.view.WindowCompat
  * `primary` = the honey accent.
  */
 val BeeingLightColors: ColorScheme = lightColorScheme(
-    primary = Honey,
-    onPrimary = OnHoney,
+    // Deep honey: M3 draws TextButtons, switches and checkboxes in `primary`,
+    // and plain honey on white is ~2:1. Big fills use BeeExtras.accentFill.
+    primary = HoneyDeep,
+    onPrimary = Color.White,
     primaryContainer = Honey.copy(alpha = 0.16f).compositeOn(CardLight),
     onPrimaryContainer = OnHoney,
     secondary = BandTopLight,
@@ -81,6 +83,10 @@ data class BeeExtras(
     val bandTop: Color,
     val bandBottom: Color,
     val accentText: Color,
+    // The big "commit" fill (Save, selected chips, active segments) — always
+    // honey, even where `primary` is deepened for text legibility.
+    val accentFill: Color,
+    val onAccentFill: Color,
     val cardShadow: Boolean
 )
 
@@ -93,6 +99,8 @@ val BeeLightExtras = BeeExtras(
     bandTop = BandTopLight,
     bandBottom = BandBottomLight,
     accentText = AccentTextLight,
+    accentFill = Honey,
+    onAccentFill = OnHoney,
     cardShadow = true
 )
 
@@ -101,6 +109,8 @@ val BeeDarkExtras = BeeExtras(
     bandTop = BandTopDark,
     bandBottom = BandBottomDark,
     accentText = AccentTextDark,
+    accentFill = Honey,
+    onAccentFill = OnHoney,
     cardShadow = false
 )
 

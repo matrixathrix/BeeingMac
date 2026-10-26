@@ -49,8 +49,16 @@ class PaletteContrastTest {
         assertContrast(7.0, Color.White, x.bandBottom, "$n white/bandBottom")
     }
 
+    // M3 draws TextButtons (every dialog's Cancel/OK), switches and checkboxes
+    // in `primary`, so primary must read as text on a card.
     @Test
-    fun accent_is_fixed_honey_not_dynamic() = eachScheme { _, s ->
-        assertEquals(Color(0xFFF5A623), s.primary)
+    fun primary_as_text_on_card_is_readable() = eachScheme { n, s ->
+        assertContrast(4.5, s.primary, s.surface, "$n primary/surface")
+    }
+
+    @Test
+    fun accent_fill_is_fixed_honey_not_dynamic() = extras.forEach { (n, x) ->
+        assertEquals("$n accentFill", Color(0xFFF5A623), x.accentFill)
+        assertContrast(4.5, x.onAccentFill, x.accentFill, "$n onAccentFill/accentFill")
     }
 }
