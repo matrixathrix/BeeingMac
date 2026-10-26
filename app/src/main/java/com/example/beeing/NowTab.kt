@@ -51,8 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import com.example.beeing.ui.theme.AccentOrange
-import com.example.beeing.ui.theme.BalooFontFamily
-import com.example.beeing.ui.theme.FredokaFontFamily
+import com.example.beeing.ui.theme.JakartaFontFamily
 import com.example.beeing.ui.theme.ChipNeutralFill
 import com.example.beeing.ui.theme.ChipNeutralText
 import com.example.beeing.ui.icons.BeeIcon
@@ -337,7 +336,7 @@ fun NowTab(
                     "Beeing",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.SemiBold,
-                    fontFamily = FredokaFontFamily,
+                    fontFamily = JakartaFontFamily,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
@@ -403,7 +402,7 @@ fun NowTab(
                                 "All caught up",
                                 fontSize = NowHeroSize,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontFamily = BalooFontFamily
+                                fontFamily = JakartaFontFamily
                             )
                         }
                         Spacer(Modifier.height(4.dp))
@@ -477,7 +476,7 @@ fun NowTab(
                         "Lock phone and bee mindful",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        fontFamily = BalooFontFamily
+                        fontFamily = JakartaFontFamily
                     )
                     Spacer(Modifier.width(6.dp))
                     BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
@@ -557,7 +556,7 @@ fun NowTab(
                             fontSize = 26.sp,
                             lineHeight = 32.sp,
                             fontWeight = FontWeight.Medium,
-                            fontFamily = FredokaFontFamily,
+                            fontFamily = JakartaFontFamily,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.height(10.dp))
@@ -724,7 +723,7 @@ fun NowTab(
                                 saveLabel,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FredokaFontFamily
+                                fontFamily = JakartaFontFamily
                             )
                         }
                     }
@@ -1211,7 +1210,7 @@ private fun ManageTagsDialog(
                             "Manage tags",
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = BalooFontFamily,
+                            fontFamily = JakartaFontFamily,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text("Hold and drag to reorder", fontSize = 13.sp, color = hint)

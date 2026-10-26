@@ -38,7 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.beeing.ui.theme.FredokaFontFamily
+import com.example.beeing.ui.theme.JakartaFontFamily
 import com.example.beeing.ui.theme.HoneyGold
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -126,7 +126,7 @@ fun CatchTheBee(onCatch: () -> Unit, modifier: Modifier = Modifier) {
             "Catch the bee to lock the phone",
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
-            fontFamily = FredokaFontFamily,
+            fontFamily = JakartaFontFamily,
             color = HoneyGold,
             textAlign = TextAlign.Center,
             modifier = Modifier
