@@ -533,21 +533,24 @@ fun SoulFuelTagsSection(
             // "Show less" rides in the same flow line as the chips so the
             // expanded editor spends no extra vertical space on it.
             if (onCollapse != null) {
-                FilledTonalButton(
+                // Same chip type and metrics as the tags (and as "+N more"): a
+                // 32dp pill inside the 48dp touch row the FlowRow's -8dp line
+                // spacing is tuned for. A 30dp button here got pulled up into the
+                // row above by that same -8dp.
+                AssistChip(
                     onClick = onCollapse,
-                    shape = RoundedCornerShape(50),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    modifier = Modifier.height(30.dp).align(Alignment.CenterVertically)
-                ) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(15.dp)
+                    label = { Text("Show less") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    shape = TagChipShape,
+                    border = null,
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.width(5.dp))
-                    Text("Show less", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+                )
             }
         }
     }
