@@ -782,3 +782,11 @@ case verify by static review and say so explicitly — the user compiles locally
   `#C7820A` → `#BB7A09` (2.9:1 → 3.2:1 on the page), and light `primary` became
   deep honey `#9A6000` (plain honey text on white was 2.0:1 — every dialog's
   TextButtons), with the honey fill moved to `BeeExtras.accentFill`.
+  Follow-ups the same day (the review's deferred minors, owner asked to do
+  them): `accentText` light → `#9A6000` (= `HoneyDeep`; the test now holds it
+  to 4.5:1, since it labels 12–15sp text); unrated hour cells in the Now
+  today-strip, the journal tick strips and the Trends pattern grid use the
+  shared `emptyCellColor(future)` (ink at 16% / 7%) instead of `surfaceVariant`,
+  which vanished on white cards; the Scaffold keeps horizontal system-bar and
+  cutout insets (`systemBars ∪ displayCutout`, horizontal only) for
+  landscape; unused imports removed and import blocks sorted.

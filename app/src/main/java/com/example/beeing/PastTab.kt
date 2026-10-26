@@ -1,9 +1,5 @@
 package com.example.beeing
 
-import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.theme.LocalBeeExtras
-import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.OnBandFill
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -52,13 +48,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.OnBandFill
+import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
 import com.example.beeing.ui.icons.tagSym
-import kotlinx.coroutines.launch
+import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.launch
 
 /**
  * PAST TAB — a journal first, analytics second.
@@ -745,8 +746,8 @@ private fun JournalDayCard(
                                 .background(
                                     when {
                                         entry != null -> scoreBandColor(entry.score)
-                                        future -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                        future -> emptyCellColor(future = true)
+                                        else -> emptyCellColor(future = false)
                                     }
                                 )
                         )
@@ -1723,8 +1724,8 @@ private fun PatternGrid(
                         val cellColor by animateColorAsState(
                             targetValue = when {
                                 avg != null -> getScoreColor(avg)
-                                cellFuture -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                cellFuture -> emptyCellColor(future = true)
+                                else -> emptyCellColor(future = false)
                             },
                             animationSpec = tween(450),
                             label = "cell"

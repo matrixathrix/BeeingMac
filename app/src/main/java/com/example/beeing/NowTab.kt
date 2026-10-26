@@ -1,10 +1,5 @@
 package com.example.beeing
 
-import com.example.beeing.ui.BeeButtonDefaults
-import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.theme.LocalBeeExtras
-import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.OnBandFill
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -23,20 +18,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -44,10 +37,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -55,7 +48,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
-import com.example.beeing.ui.theme.JakartaFontFamily
+import com.example.beeing.ui.BeeButtonDefaults
+import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.OnBandFill
+import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
@@ -63,6 +60,8 @@ import com.example.beeing.ui.icons.tagGlyphOf
 import com.example.beeing.ui.icons.tagLabelOf
 import com.example.beeing.ui.icons.tagSym
 import com.example.beeing.ui.theme.HoneyGold
+import com.example.beeing.ui.theme.JakartaFontFamily
+import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
 import java.text.SimpleDateFormat
 import java.util.*
@@ -951,8 +950,8 @@ private fun TodayStripCard(
                             .background(
                                 when {
                                     entry != null -> scoreBandColor(entry.score)
-                                    isFuture -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                    isFuture -> emptyCellColor(future = true)
+                                    else -> emptyCellColor(future = false)
                                 }
                             )
                             .then(
@@ -1057,7 +1056,7 @@ private fun TagPickerSection(
                 colors = AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+                )
             )
         }
     }

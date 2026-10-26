@@ -19,7 +19,7 @@ val BandTopDark = Color(0xFF2C1030)
 val BandBottomDark = Color(0xFF1C0920)
 
 // Accent used as text/icon on the page (darker in light mode to read on white).
-val AccentTextLight = Color(0xFFBB7A09)   // spec's #C7820A was 2.9:1 on the page; nudged to clear 3:1
+val AccentTextLight = Color(0xFF9A6000)   // = HoneyDeep: 4.5:1+ on the page for 12–15sp labels
 val AccentTextDark = Color(0xFFF7B733)
 
 // Light mode

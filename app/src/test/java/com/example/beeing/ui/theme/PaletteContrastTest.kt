@@ -40,7 +40,8 @@ class PaletteContrastTest {
 
     @Test
     fun accent_text_on_page_meets_ui_contrast() = extras.forEach { (n, x) ->
-        assertContrast(3.0, x.accentText, schemes.getValue(n).background, "$n accentText/background")
+        // Used for 12–15sp labels (nav, bee prompt): normal-size text, so 4.5.
+        assertContrast(4.5, x.accentText, schemes.getValue(n).background, "$n accentText/background")
     }
 
     @Test

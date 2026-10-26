@@ -1,9 +1,5 @@
 package com.example.beeing
 
-import com.example.beeing.ui.BeeButtonDefaults
-import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.theme.LocalBeeExtras
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -42,12 +38,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.BeeButtonDefaults
+import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
-import com.example.beeing.ui.icons.tagDisplayText
-import com.example.beeing.ui.icons.tagLabelOf
-import com.example.beeing.ui.icons.tagSym
 import com.example.beeing.ui.icons.SymTitle
+import com.example.beeing.ui.icons.tagDisplayText
+import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale

@@ -90,3 +90,12 @@ object BeeButtonDefaults {
         contentColor = LocalBeeExtras.current.onAccentFill
     )
 }
+
+/**
+ * An hour cell with no rating, in the day strips and the pattern grid. Ink at
+ * low alpha rather than `surfaceVariant`, which nearly vanishes on a white
+ * card; a still-to-come hour is fainter than a passed, unrated one.
+ */
+@Composable
+fun emptyCellColor(future: Boolean): Color =
+    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (future) 0.07f else 0.16f)
