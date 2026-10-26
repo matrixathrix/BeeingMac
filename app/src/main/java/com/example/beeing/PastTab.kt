@@ -1,6 +1,8 @@
 package com.example.beeing
 
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.OnBandFill
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -579,7 +581,7 @@ private fun JournalView(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(days, key = { it.dayStartMs }) { day ->
@@ -595,7 +597,7 @@ private fun JournalView(
                     onEditEntry = onEdit
                 )
             }
-            item { Spacer(Modifier.height(112.dp)) } // clearance for the floating nav pill
+            item { Spacer(Modifier.height(24.dp)) } // trailing breathing room (nav is a bottomBar)
         }
     }
 
@@ -624,55 +626,41 @@ private fun JournalHeader(
     onJumpClick: () -> Unit,
     onOpenTrends: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(50))
-                .clickable(onClick = onJumpClick, onClickLabel = "Jump to a date")
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.DateRange,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(monthLabel, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Icon(
-                Icons.Default.ArrowDropDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-                .clickable(onClick = onOpenTrends)
-                .padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Trends",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Icon(
-                Icons.Default.KeyboardArrowRight,
-                contentDescription = "Open Trends",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
+    // The Past tab's brand band: its title, then the month label (tap → date
+    // jump) and the "Trends ›" pill, all white on the band.
+    BrandBand {
+        Text("Past", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(OnBandFill)
+                    .clickable(onClick = onJumpClick, onClickLabel = "Jump to a date")
+                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(monthLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(OnBandFill)
+                    .clickable(onClick = onOpenTrends)
+                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Trends", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Icon(
+                    Icons.Default.KeyboardArrowRight,
+                    contentDescription = "Open Trends",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -810,7 +798,7 @@ private fun TickCapPill(text: String) {
     Box(
         Modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
         Text(
@@ -1080,17 +1068,16 @@ private fun TrendsView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.Default.KeyboardArrowLeft,
-                    contentDescription = "Back to the journal"
-                )
+        BrandBand {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) {
+                    Icon(
+                        Icons.Default.KeyboardArrowLeft,
+                        contentDescription = "Back to the journal"
+                    )
+                }
+                Text("Trends", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.offset(x = (-12).dp))
             }
-            Text("Trends", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
         }
 
         Column(
@@ -1098,7 +1085,7 @@ private fun TrendsView(
                 .fillMaxSize()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 4.dp)
+                .padding(top = 14.dp)
         ) {
             // ---- One card: control bar (static) + an animated region that
             // slides on period steps and flies into the tapped bar on drill ----
@@ -1437,7 +1424,7 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -1482,7 +1469,7 @@ private fun CapPill(text: String, onClick: () -> Unit) {
             .fillMaxWidth()
             .padding(bottom = 6.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center
@@ -1764,7 +1751,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)
