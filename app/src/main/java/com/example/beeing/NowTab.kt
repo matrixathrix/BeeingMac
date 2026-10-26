@@ -1,6 +1,8 @@
 package com.example.beeing
 
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.OnBandFill
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -301,66 +303,103 @@ fun NowTab(
     val tagsScroll = rememberScrollState()
     var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
+    // Compact hour range: collapse the shared meridiem ("3–4pm") so it fits
+    // the picker chip; spell both out only across the noon boundary ("11am–12pm").
+    fun hourRange(offset: Int): String {
+        val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
+        val endH = cal.get(Calendar.HOUR_OF_DAY)
+        val startH = if (endH == 0) 23 else endH - 1
+        val startNum = if (startH % 12 == 0) 12 else startH % 12
+        return if ((startH < 12) == (endH < 12)) {
+            "$startNum–${formatHour(endH)}"
+        } else {
+            "${formatHour(startH)}–${formatHour(endH)}"
+        }
+    }
+    fun minutesFor(offset: Int) =
+        if (offset == 1) minutesToNextHour else minutesToNextHour + 60
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header: the app title, plus the status card (cell-hive · ring)
-            // where taps open the Hive. The ⋮ menu carries data options
-            // and "How it works".
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Hamburger — carries all data options; sized to sit level
-                // with the "Beeing" title beside it.
-                IconButton(
-                    onClick = onMenuClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Menu,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(28.dp)
-                    )
+            // ---- The brand band: who you are (title, streak) and what this
+            // screen is asking — the question + hour picker while an hour is
+            // pending, "All caught up" + the countdown once none is.
+            BrandBand {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // Hamburger — carries all data options and "How it works".
+                    IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = "Menu",
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("Beeing", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.weight(1f))
+                    StatusStrip(state = streakState, onClick = onOpenStreaks)
                 }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "Beeing",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = JakartaFontFamily,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.weight(1f))
-                Box(contentAlignment = Alignment.Center) {
-                    // Soft halo via a radial gradient scaled past the pill's
-                    // own bounds — no blur/RenderEffect, so it's cheap enough
-                    // to sit still behind an unrelated animation elsewhere
-                    // on screen (e.g. the rating dial) without costing frames.
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .graphicsLayer(scaleX = 1.35f, scaleY = 1.6f)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), Color.Transparent)
-                                ),
-                                RoundedCornerShape(50)
+                Spacer(Modifier.height(18.dp))
+                if (allCaughtUp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BeeIcon(
+                            Sym.CaughtUp, size = 22.dp, contentDescription = null,
+                            tint = RingQualifiedGreen
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("All caught up", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Next hour opens in $minutesToNextHour m",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                } else {
+                    val mins = minutesFor(targetedHourOffset)
+                    Text("How was your hour?", style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        HourWindowPicker(
+                            rangeLabel = hourRange(targetedHourOffset),
+                            canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
+                            canGoLater = targetedHourOffset == 1 && !isLatestHourLogged,
+                            onEarlier = { onTargetedHourOffsetChange(1) },
+                            onLater = { onTargetedHourOffsetChange(0) }
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        // Countdown turns honey in its last 15 minutes.
+                        val countdownColor = if (mins <= 15) HoneyGold else Color.White.copy(alpha = 0.75f)
+                        BeeIcon(Sym.Hourglass, size = 13.dp, tint = countdownColor, contentDescription = null)
+                        Text(
+                            "${mins}m left",
+                            fontSize = NowCaptionSize,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            color = countdownColor,
+                            modifier = Modifier.padding(start = 3.dp)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "Why only these hours?",
+                                tint = Color.White.copy(alpha = 0.75f),
+                                modifier = Modifier.size(17.dp)
                             )
-                    )
-                    StatusStrip(
-                        state = streakState,
-                        onClick = onOpenStreaks
-                    )
+                        }
+                    }
                 }
             }
 
+            // ---- Everything below the band: the calm page ----
+            Column(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             if (allCaughtUp) {
                 // ---- CAUGHT UP: a fixed frame, like the rating state ----
                 // Top: the day's summary (scrolls on its own if it runs long).
@@ -379,38 +418,6 @@ fun NowTab(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = BeeCardDefaults.colors(),
-                        elevation = BeeCardDefaults.elevation()
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            BeeIcon(
-                                Sym.CaughtUp, size = 20.dp, contentDescription = null,
-                                tint = RingQualifiedGreen
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "All caught up",
-                                fontSize = NowHeroSize,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = JakartaFontFamily
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Next hour opens in $minutesToNextHour m",
-                            fontSize = NowBodySize,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
                 if (missedHoursToday.isNotEmpty()) {
                     TextButton(onClick = onOpenStreaks) {
                         Text(
@@ -483,39 +490,15 @@ fun NowTab(
                 // ---- RATING: one card, ordered the way you act ----
                 // weight(1f) hands the card every pixel between the header and
                 // the pinned button; its own content scrolls within that.
+                Spacer(Modifier.height(12.dp))
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f)) {
-                    // Background glow behind the whole card — a radial
-                    // gradient scaled past the card's own bounds, not a blur.
-                    // A live RenderEffect/blur layer sitting behind an
-                    // actively-animating sibling (the dial) forced a redraw
-                    // of that layer on every frame the dial moved, at any
-                    // spin speed — that's what was making the spin stutter.
-                    // A gradient is just a shader fill: no extra compositing
-                    // pass, so it's free regardless of what's animating.
-                    Box(
-                        Modifier
-                            .matchParentSize()
-                            .graphicsLayer(scaleX = 1.12f, scaleY = 1.12f)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f), Color.Transparent)
-                                ),
-                                RoundedCornerShape(36.dp)
-                            )
-                    )
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) },
-                    shape = RoundedCornerShape(20.dp),
-                    // Inverted against the screen: the Scaffold now carries the
-                    // tinted surfaceVariant-over-background blend this card used
-                    // to have, and the card is the plain `background` — so the
-                    // hero reads as a cut-out rather than a raised panel. Still
-                    // fully opaque, so the glow can't show through the fill.
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.background
-                    )
+                    shape = BeeCardDefaults.Shape,
+                    colors = BeeCardDefaults.colors(),
+                    elevation = BeeCardDefaults.elevation()
                 ) {
                     // The card is a fixed frame now — only the activity tags
                     // scroll (see the TagPickerSection wrapper below).
@@ -525,73 +508,6 @@ fun NowTab(
                             .fillMaxWidth()
                             .padding(16.dp)
                     ) {
-                        // Compact hour range: collapse the shared meridiem
-                        // ("3–4pm") so the whole thing fits the title line;
-                        // spell both out only across the noon boundary ("11am–12pm").
-                        fun hourRange(offset: Int): String {
-                            val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
-                            val endH = cal.get(Calendar.HOUR_OF_DAY)
-                            val startH = if (endH == 0) 23 else endH - 1
-                            val startNum = if (startH % 12 == 0) 12 else startH % 12
-                            return if ((startH < 12) == (endH < 12)) {
-                                "$startNum–${formatHour(endH)}"
-                            } else {
-                                "${formatHour(startH)}–${formatHour(endH)}"
-                            }
-                        }
-                        fun minutesFor(offset: Int) =
-                            if (offset == 1) minutesToNextHour else minutesToNextHour + 60
-
-                        // The question IS the hero now — a big standalone
-                        // headline, generic (not hour-specific) so it never
-                        // wraps oddly. Which hour, the countdown, and "why
-                        // these hours" all recede into one small meta row
-                        // beneath it — still fully functional, just quieter.
-                        val mins = minutesFor(targetedHourOffset)
-                        Text(
-                            "How was your hour?",
-                            fontSize = 26.sp,
-                            lineHeight = 32.sp,
-                            fontWeight = FontWeight.Medium,
-                            fontFamily = JakartaFontFamily,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            HourWindowPicker(
-                                rangeLabel = hourRange(targetedHourOffset),
-                                canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
-                                canGoLater = targetedHourOffset == 1 && !isLatestHourLogged,
-                                onEarlier = { onTargetedHourOffsetChange(1) },
-                                onLater = { onTargetedHourOffsetChange(0) }
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            val countdownColor = if (mins <= 15) HoneyGold
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                            BeeIcon(
-                                Sym.Hourglass, size = 13.dp, tint = countdownColor,
-                                contentDescription = null
-                            )
-                            Text(
-                                "${mins}m",
-                                fontSize = NowCaptionSize,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                color = countdownColor,
-                                modifier = Modifier.padding(start = 2.dp)
-                            )
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(22.dp)) {
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = "Why only these hours?",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(4.dp))
                         DecagonCombDial(
                             rating = selectedScore,
                             onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
@@ -726,6 +642,7 @@ fun NowTab(
                     }
                 Spacer(Modifier.height(8.dp)) // clear of the nav bar
             }
+            } // page column
         }
 
         // First-run: locking needs the accessibility service turned on once
@@ -887,9 +804,8 @@ private fun StatusStrip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // A tonal-elevation fill (not the tinted surfaceVariant) so the strip pops
-    // off the header while still tracking dynamic color on Android 12+.
-    val stripBg = MaterialTheme.colorScheme.surfaceContainerHighest
+    // Sits on the brand band: a translucent white pill, white content.
+    val stripBg = OnBandFill
     // Screen readers would otherwise announce only the bare numbers ("5", "3/8"),
     // so the strip speaks as one labelled target instead of its two children.
     val streakLabel = when {
@@ -907,7 +823,7 @@ private fun StatusStrip(
         shape = RoundedCornerShape(50),
         colors = CardDefaults.cardColors(
             containerColor = stripBg,
-            contentColor = MaterialTheme.colorScheme.onSurface
+            contentColor = Color.White
         )
     ) {
         Row(
@@ -955,13 +871,13 @@ private fun StripDivider() {
     Box(
         Modifier
             .size(width = 1.dp, height = 18.dp)
-            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+            .background(Color.White.copy(alpha = 0.3f))
     )
 }
 
 @Composable
 private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean) {
-    val track = MaterialTheme.colorScheme.surfaceVariant
+    val track = Color.White.copy(alpha = 0.22f)   // on the band
     val fill = if (qualified) RingQualifiedGreen else HoneyGold
     val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
     Canvas(Modifier.size(24.dp)) {
@@ -1520,12 +1436,14 @@ private fun HourWindowPicker(
     onLater: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val onContainer = MaterialTheme.colorScheme.onPrimaryContainer
+    // Lives on the brand band: translucent white pill, white text and carets.
+    val onContainer = Color.White
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(50),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = OnBandFill,
+            contentColor = Color.White
         )
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
