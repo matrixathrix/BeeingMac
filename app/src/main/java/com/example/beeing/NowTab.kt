@@ -56,6 +56,8 @@ import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.OnBandFill
+import com.example.beeing.ui.animatedHeight
+import com.example.beeing.ui.scaledLayout
 import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
@@ -340,52 +342,55 @@ fun NowTab(
         // empty gap — see BandFillLayout.
         BandFillLayout(
             modifier = Modifier.fillMaxSize(),
+            // Expanded tags want the room: the band slides to its compact size.
+            compact = !allCaughtUp && tagsExpanded,
             band = { target ->
                 // Animated, so expanding or collapsing the tags slides the band
                 // up/down (and the tags into the freed room) instead of snapping.
-                val grow by animateFloatAsState(
+                // Read only at layout time (lambdas below), so the animation never
+                // recomposes the band: each frame is a relayout of a few boxes.
+                val growState = animateFloatAsState(
                     targetValue = target,
                     animationSpec = tween(380, easing = FastOutSlowInEasing),
                     label = "bandGrow"
                 )
+                val grow = { growState.value }
                 // Hero type for the band: 22sp at rest, up to 32sp when there is
-                // room, so a taller band reads as bigger, not emptier.
-                val heroStyle = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = (22f + 10f * grow).sp,
-                    lineHeight = (28f + 10f * grow).sp
-                )
+                // room, so a taller band reads as bigger, not emptier. Laid out once
+                // at 32sp and scaled (scaledLayout), so the text is never reshaped.
+                val heroStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 32.sp, lineHeight = 38.sp)
+                val heroScale = { (22f + 10f * grow()) / 32f }
             // ---- The brand band: who you are (title, streak) and what this
             // screen is asking — the question + hour picker while an hour is
             // pending, "All caught up" + the countdown once none is.
             BrandBand {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     // Hamburger — carries all data options and "How it works".
-                    // Title and menu scale with the band, in step with the question.
-                    IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp + 4.dp * grow)) {
-                        Icon(
-                            Icons.Default.Menu,
-                            contentDescription = "Menu",
-                            modifier = Modifier.size(26.dp + 4.dp * grow)
+                    // Menu + title scale together with the band (24→30sp), drawn at
+                    // full size and scaled down at rest.
+                    Row(
+                        Modifier.scaledLayout { (24f + 6f * grow()) / 30f },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onMenuClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", modifier = Modifier.size(30.dp))
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Beeing",
+                            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 38.sp)
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Beeing",
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontSize = (24f + 6f * grow).sp,
-                            lineHeight = (32f + 6f * grow).sp
-                        )
-                    )
                     Spacer(Modifier.weight(1f))
                     StatusStrip(state = streakState, onClick = onOpenStreaks)
                 }
-                Spacer(Modifier.height(18.dp + 56.dp * grow))
+                Spacer(Modifier.animatedHeight { 18.dp + 56.dp * grow() })
                 // Rounding slack only: keeps the question on the band's bottom edge.
                 Spacer(Modifier.weight(1f))
                 if (allCaughtUp) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.scaledLayout(heroScale), verticalAlignment = Alignment.CenterVertically) {
                         BeeIcon(
-                            Sym.CaughtUp, size = 22.dp, contentDescription = null,
+                            Sym.CaughtUp, size = 30.dp, contentDescription = null,
                             tint = RingQualifiedGreen
                         )
                         Spacer(Modifier.width(8.dp))
@@ -399,7 +404,7 @@ fun NowTab(
                     )
                 } else {
                     val mins = minutesFor(targetedHourOffset)
-                    Text("How was your hour?", style = heroStyle)
+                    Text("How was your hour?", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         HourWindowPicker(
@@ -523,8 +528,6 @@ fun NowTab(
                         // roomy screen never scrolls, and an expanded editor
                         // (or a screen too short for even the collapsed chips)
                         // gets a viewport with the hairline fading thumb.
-                        val tagsViewportDp =
-                            with(LocalDensity.current) { tagsViewportHeightPx.toDp() }
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -554,7 +557,14 @@ fun NowTab(
                                 scrollState = tagsScroll,
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
-                                    .height(tagsViewportDp)
+                                    // Read in the layout phase, not composition: the viewport
+                                    // height changes every frame while the band animates, and a
+                                    // composition read would rebuild every tag chip per frame.
+                                    .layout { m, c ->
+                                        val h = tagsViewportHeightPx
+                                        val p = m.measure(c.copy(minHeight = h, maxHeight = h))
+                                        layout(p.width, h) { p.place(0, 0) }
+                                    }
                                     .padding(vertical = 10.dp, horizontal = 4.dp)
                             )
                         }

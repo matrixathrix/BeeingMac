@@ -806,3 +806,16 @@ case verify by static review and say so explicitly — the user compiles locally
   the band; any remainder falls above the footer. Two lessons from the
   iterations: an uncapped band that just stretched looked worse ("pushed to
   extreme"), and splitting leftover evenly around the card made it float.
+  **Performance (owner: "expanding the tags is slow and choppy")** — the first
+  version re-measured the whole card's intrinsic height (a FlowRow of ~30
+  chips + the dial) and re-laid-out resized text on every animation frame
+  (17% janky, p90 31ms in a debug build). Now: (1) no intrinsics of the middle
+  — `BandFillLayout(compact = tagsExpanded)` takes the "middle wants the room"
+  signal from state; (2) band type is laid out once at full size and scaled by
+  `Modifier.scaledLayout`, spacing by `Modifier.animatedHeight`, both reading
+  the animated value only in the layout phase; (3) slot contents are stable
+  lambdas (target travels through a `mutableFloatStateOf`), since a fresh
+  `{ band(x) }` per measure recomposed the band every frame; (4) the tags'
+  `FadingScrollbar` reads `tagsViewportHeightPx` in a `layout {}` block, not in
+  composition, which used to rebuild every chip per frame. Result: 3–5% janky,
+  p90 11–17ms (debug). Keep animated values out of composition here.

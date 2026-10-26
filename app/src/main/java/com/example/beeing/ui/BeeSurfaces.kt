@@ -18,11 +18,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SelectableChipColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.TransformOrigin
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -110,11 +115,17 @@ fun emptyCellColor(future: Boolean): Color =
  * Spare height becomes **band growth**, capped at [maxBandGrow]: the band is
  * told how much via `grow` (0f…1f) and spends it on bigger type and spacing,
  * so a taller band reads as a bigger heading, never as an empty patch. The
- * band should animate toward `grow` (e.g. `animateFloatAsState`); the middle
- * is always measured against the band's *current* height, so while the band
- * animates down (say the tags expand) the middle grows into exactly the room
- * it frees — no overlap with the footer. [middle] sits right under the band;
- * anything still left falls between it and the pinned footer.
+ * band should animate toward `grow` (e.g. `animateFloatAsState`).
+ *
+ * [compact] is the caller saying "the middle wants all the room" (the tags are
+ * expanded): the band's target drops to 0 and the middle is measured against
+ * the band's *current*, animating height, so it grows into exactly the room
+ * the band frees and never overlaps the footer. When not compact, the middle is
+ * measured once against the band at rest and the growth follows from that.
+ *
+ * Deliberately no intrinsic measurement of [middle]: asking a FlowRow of chips
+ * for its intrinsic height on every animation frame is what made the
+ * expand/collapse stutter.
  */
 @Composable
 fun BandFillLayout(
@@ -122,8 +133,16 @@ fun BandFillLayout(
     middle: @Composable () -> Unit,
     footer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     maxBandGrow: Dp = 160.dp
 ) {
+    // Stable slot contents: a fresh `{ band(x) }` lambda per measure pass would
+    // force the band to recompose on every animation frame. The target travels
+    // through state instead, written only when it actually changes.
+    val targetState = remember { mutableFloatStateOf(0f) }
+    val bandAtRest = remember(band) { @Composable { band(0f) } }
+    val bandLive = remember(band) { @Composable { band(targetState.floatValue) } }
+
     SubcomposeLayout(modifier) { c ->
         val width = c.maxWidth
         val total = c.maxHeight
@@ -131,25 +150,40 @@ fun BandFillLayout(
 
         val foot = subcompose("footer", footer).map { it.measure(loose) }
         val footH = foot.maxOfOrNull { it.height } ?: 0
-
-        // The band at rest, and how tall the middle would like to be.
-        val bandMin = subcompose("bandMin") { band(0f) }.maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0
+        val bandMin = subcompose("bandMin", bandAtRest).maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0
         val midMeasurables = subcompose("middle", middle)
-        val midWants = midMeasurables.maxOfOrNull { it.maxIntrinsicHeight(width) } ?: 0
-
         val growCap = maxBandGrow.roundToPx()
-        val spare = (total - footH - midWants - bandMin).coerceAtLeast(0)
-        val target = if (growCap == 0) 0f else minOf(spare, growCap).toFloat() / growCap
 
-        // The band at its current (possibly animating) size…
-        val bandMeasurables = subcompose("band") { band(target) }
-        val bandH = (bandMeasurables.maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0)
-            .coerceIn(bandMin, (total - footH).coerceAtLeast(bandMin))
-        val bandP = bandMeasurables.map { it.measure(Constraints.fixed(width, bandH)) }
+        fun measureBand(target: Float): Pair<List<androidx.compose.ui.layout.Placeable>, Int> {
+            if (targetState.floatValue != target) targetState.floatValue = target
+            val m = subcompose("band", bandLive)
+            val h = (m.maxOfOrNull { it.minIntrinsicHeight(width) } ?: 0)
+                .coerceIn(bandMin, (total - footH).coerceAtLeast(bandMin))
+            return m.map { it.measure(Constraints.fixed(width, h)) } to h
+        }
 
-        // …and the middle gets exactly what it leaves.
-        val midMax = (total - footH - bandH).coerceAtLeast(0)
-        val mid = midMeasurables.map { it.measure(Constraints(maxWidth = width, maxHeight = midMax)) }
+        val bandP: List<androidx.compose.ui.layout.Placeable>
+        val bandH: Int
+        val mid: List<androidx.compose.ui.layout.Placeable>
+        if (compact) {
+            // Band first (shrinking toward 0), middle takes whatever it leaves.
+            val (p, h) = measureBand(0f)
+            bandP = p; bandH = h
+            mid = midMeasurables.map {
+                it.measure(Constraints(maxWidth = width, maxHeight = (total - footH - bandH).coerceAtLeast(0)))
+            }
+        } else {
+            // Middle at its natural size (capped by the band at rest), then the
+            // band grows into what's left.
+            mid = midMeasurables.map {
+                it.measure(Constraints(maxWidth = width, maxHeight = (total - footH - bandMin).coerceAtLeast(0)))
+            }
+            val midH = mid.maxOfOrNull { it.height } ?: 0
+            val spare = (total - footH - midH - bandMin).coerceAtLeast(0)
+            val target = if (growCap == 0) 0f else minOf(spare, growCap).toFloat() / growCap
+            val (p, h) = measureBand(target)
+            bandP = p; bandH = h
+        }
 
         layout(width, total) {
             bandP.forEach { it.place(0, 0) }
@@ -157,4 +191,29 @@ fun BandFillLayout(
             foot.forEach { it.place(0, total - footH) }
         }
     }
+}
+
+/**
+ * Draws its content scaled by [scale] (read at layout time, so animating it
+ * never recomposes) and reports the scaled size to its parent. The content is
+ * always measured with the same constraints, so a Text keeps its cached layout:
+ * animating type size this way costs a relayout of one box, not a text reshape.
+ */
+fun Modifier.scaledLayout(scale: () -> Float): Modifier = this.layout { measurable, constraints ->
+    val p = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+    val s = scale()
+    layout((p.width * s).roundToInt(), (p.height * s).roundToInt()) {
+        p.placeWithLayer(0, 0) {
+            scaleX = s
+            scaleY = s
+            transformOrigin = TransformOrigin(0f, 0f)
+        }
+    }
+}
+
+/** A vertical gap whose height is read at layout time (animate without recomposing). */
+fun Modifier.animatedHeight(height: () -> Dp): Modifier = this.layout { measurable, constraints ->
+    val h = height().roundToPx()
+    val p = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
+    layout(p.width, h) { p.place(0, 0) }
 }
