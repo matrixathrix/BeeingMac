@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,7 +59,8 @@ class BandChrome(
     val unread: Int,
     val onStreakClick: () -> Unit,
     val onBellClick: () -> Unit,
-    val onMenuClick: () -> Unit
+    val onMenuClick: () -> Unit,
+    val onTopRowHidden: (Boolean) -> Unit = {}
 )
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
@@ -94,7 +96,7 @@ fun BandTopRow(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
-            modifier = titleModifier.weight(1f, fill = false)
+            modifier = titleModifier
         )
         Spacer(Modifier.weight(1f))
         StatusStrip(state = state, onClick = onStreakClick)
@@ -266,4 +268,13 @@ private fun BandTopRowPreview() {
         ),
         unread = 3, onStreakClick = {}, onBellClick = {}, onMenuClick = {}
     )
+}
+
+/** The row's height: the overlay draws it once; each tab reserves exactly this much under its band. */
+val BandTopRowHeight = 40.dp
+
+/** Placeholder under a tab's band where the (fixed) top row is drawn over it. */
+@Composable
+fun BandTopRowSpacer() {
+    Spacer(Modifier.height(BandTopRowHeight))
 }

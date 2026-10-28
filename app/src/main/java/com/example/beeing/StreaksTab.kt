@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.BandTopRow
+import com.example.beeing.ui.BandTopRowSpacer
 import com.example.beeing.ui.SaverExplainerDialog
 import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.icons.BeeIcon
@@ -120,7 +120,7 @@ fun StreaksTab(
         // scroller: the band owns the status-bar area (light icons), so it
         // must never scroll away and leave them over the light page. ----
         BrandBand {
-            BandTopRow()
+            BandTopRowSpacer()
             Spacer(Modifier.height(12.dp))
             StreakMeter(
                 state = streakState,

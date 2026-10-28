@@ -59,8 +59,6 @@ data class SettingsCallbacks(
     val beginnerMode: Boolean,
     val streakPaused: Boolean,
     val pausedAt: Int,
-    val savers: Int,
-    val warningsEnabled: Boolean,
     val streakState: StreakState,
     val notifPrefs: NotificationPrefs,
     val tagCount: Int,
@@ -68,8 +66,6 @@ data class SettingsCallbacks(
     val lastBackupMs: Long,
     val versionName: String,
     val onBeginnerChange: (Boolean) -> Unit,
-    val onShowSavers: () -> Unit,
-    val onWarningsChange: (Boolean) -> Unit,
     val onNotifPrefsChange: (NotificationPrefs) -> Unit,
     val onManageTags: () -> Unit,
     val onAutoBackupChange: (Boolean) -> Unit,
@@ -115,19 +111,6 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                     else "$BEGINNER_HOURS_REQUIRED-hour days · streaks pause while it's on",
                     onClick = { c.onBeginnerChange(!c.beginnerMode) }
                 ) { Switch(checked = c.beginnerMode, onCheckedChange = { c.onBeginnerChange(it) }) }
-            }
-            Section("STREAK") {
-                SettingsRow(
-                    sym = Sym.Saver, title = "Streak savers",
-                    subtitle = "Earn them, and they step in when you miss a day",
-                    onClick = c.onShowSavers
-                ) { ValueChevron("${c.savers} of $SAVER_CAP") }
-                Divider()
-                SettingsRow(
-                    icon = Icons.Default.Notifications, title = "Streak warnings",
-                    subtitle = "Show warnings in the bell",
-                    onClick = { c.onWarningsChange(!c.warningsEnabled) }
-                ) { Switch(checked = c.warningsEnabled, onCheckedChange = { c.onWarningsChange(it) }) }
             }
             Section("NOTIFICATIONS") {
                 SettingsRow(
@@ -209,6 +192,17 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+    if (showSilent) SilentHoursSheet(prefs, onChange = { c.onNotifPrefsChange(it) }, onDismiss = { showSilent = false })
+    if (showPause) {
+        PauseSheet(
+            streakState = c.streakState,
+            onConfirm = { untilMs, mode ->
+                c.onNotifPrefsChange(prefs.copy(pauseUntilMs = untilMs, pauseMode = mode))
+                showPause = false
+            },
+            onDismiss = { showPause = false }
+        )
     }
 }
 

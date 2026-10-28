@@ -60,7 +60,7 @@ import com.example.beeing.ui.BandFillLayout
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.BandTopRow
+import com.example.beeing.ui.BandTopRowSpacer
 import com.example.beeing.ui.OnBandFill
 import com.example.beeing.ui.animatedHeight
 import com.example.beeing.ui.scaledLayout
@@ -387,11 +387,7 @@ fun NowTab(
             // screen is asking — the question + hour picker while an hour is
             // pending, "All caught up" + the countdown once none is.
             BrandBand {
-                // Title scales with the band (24→30sp): drawn at full size, scaled down at rest.
-                BandTopRow(
-                    titleModifier = Modifier.scaledLayout { (24f + 6f * grow()) / 30f },
-                    titleStyle = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 38.sp)
-                )
+                BandTopRowSpacer() // the fixed top row is drawn over this, above the pager
                 Spacer(Modifier.animatedHeight { 18.dp + 56.dp * grow() })
                 // Rounding slack only: keeps the question on the band's bottom edge.
                 Spacer(Modifier.weight(1f))

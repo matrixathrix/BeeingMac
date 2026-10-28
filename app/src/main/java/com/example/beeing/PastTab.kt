@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.BandTopRow
+import com.example.beeing.ui.BandTopRowSpacer
 import com.example.beeing.ui.OnBandFill
 import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
@@ -554,7 +554,7 @@ private fun JournalView(
     if (days.isEmpty()) {
         // Still a banded tab: the band owns the status-bar area on every tab.
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            BrandBand { BandTopRow() }
+            BrandBand { BandTopRowSpacer() }
             Text(
                 "Rate a few hours and your days will appear here",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -632,7 +632,7 @@ private fun JournalHeader(
     // The Past tab's brand band: its title, then the month label (tap → date
     // jump) and the "Trends ›" pill, all white on the band.
     BrandBand {
-        BandTopRow()
+        BandTopRowSpacer()
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
@@ -1031,6 +1031,12 @@ private fun TrendsView(
     onChartYPosition: (Float) -> Unit
 ) {
     val context = LocalContext.current
+    // Trends has its own back row, so the fixed top row steps aside while it is open.
+    val chrome = com.example.beeing.ui.LocalBandChrome.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        chrome?.onTopRowHidden?.invoke(true)
+        onDispose { chrome?.onTopRowHidden?.invoke(false) }
+    }
 
     var zoom by remember { mutableStateOf(Zoom.W) }
     var monthOffset by remember { mutableIntStateOf(0) }

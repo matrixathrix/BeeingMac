@@ -34,6 +34,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BandChrome
+import com.example.beeing.ui.BandTopRow
+import com.example.beeing.ui.BandTopRowHeight
 import com.example.beeing.ui.LocalBandChrome
 import com.example.beeing.ui.SaverExplainerDialog
 import com.example.beeing.ui.icons.BeeIcon
@@ -150,6 +152,7 @@ fun HourlyPulseApp(
     var readWarningIds by remember { mutableStateOf(loadReadWarningIds(context)) }
     var warningsBaselineMs by remember { mutableLongStateOf(warningsBaseline(context)) }
     var showWarnings by remember { mutableStateOf(false) }
+    var topRowHidden by remember { mutableStateOf(false) }
     val warnings = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger, warningsBaselineMs) {
         val dayFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
         warningsFrom(
@@ -163,7 +166,8 @@ fun HourlyPulseApp(
         unread = unreadWarnings,
         onStreakClick = { selectedTab = 0 },
         onBellClick = { showWarnings = true },
-        onMenuClick = { showSettings = true }
+        onMenuClick = { showSettings = true },
+        onTopRowHidden = { topRowHidden = it }
     )
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
@@ -516,6 +520,21 @@ fun HourlyPulseApp(
         }
     }
 
+    // ---- The top row is drawn ONCE, above the pager, so it stays put while tabs
+    // slide underneath. Each tab's band reserves its height with BandTopRowSpacer.
+    // Hidden while Trends is open (it has its own back row). ----
+    if (!topRowHidden) {
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal))
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                .height(BandTopRowHeight)
+        ) { BandTopRow() }
+    }
+
     // ---- Settings: a full-screen page above the Scaffold (covers the nav bar).
     // Registered after the root BackHandler, so system back closes it first. ----
     if (showSettings) {
@@ -525,8 +544,6 @@ fun HourlyPulseApp(
                 beginnerMode = streakState.beginnerMode,
                 streakPaused = streakState.streakPaused,
                 pausedAt = streakState.currentStreak,
-                savers = streakState.savers,
-                warningsEnabled = warningsEnabled,
                 streakState = streakState,
                 notifPrefs = notifPrefs,
                 tagCount = remember(viewModel.refreshTrigger, showManageTags) { loadTags(context).size },
@@ -545,11 +562,6 @@ fun HourlyPulseApp(
                     } else {
                         viewModel.setBeginnerMode(context, wantBeginner)
                     }
-                },
-                onShowSavers = { showSaverInfo = true },
-                onWarningsChange = {
-                    warningsEnabled = it
-                    setStreakWarningsEnabled(context, it)
                 },
                 onNotifPrefsChange = {
                     notifPrefs = it
