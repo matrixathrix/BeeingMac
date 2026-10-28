@@ -19,21 +19,34 @@ notification → rate → tag → save → lock phone → back to life.
 - Only the **last completed hour and the one before it** are ratable
   (2-hour window). Existing ratings are editable up to **10 hours** back
   (`EDIT_WINDOW_MS`).
-- **There is no currency.** Flowers, honey pots and savers are all gone; extra
-  hours beyond the 8 earn nothing but the ring's overflow head.
-- **Forgiveness is automatic**: one fully-missed day becomes a 🌙 **rest day**
-  and the streak holds, provided no other rest day falls inside the previous
-  `FORGIVE_WINDOW_DAYS - 1` (6) days — so ~1/week, rolling. A second miss
-  inside that window resets the streak. A miss while the streak is already 0
-  is plain `MISSED`: nothing to forgive, and it does **not** burn the rest day.
-- **"Sends a bee back" is free**, capped at `RECLAIM_PER_DAY` (2) per calendar
-  day (`reclaimsUsedToday`): reclaim any unrated hour from the last
-  **10 clock hours** (`RECLAIM_WINDOW_HOURS`, rolling — may cross midnight
-  and retroactively qualify yesterday; the 2 normally-ratable hours are
-  excluded). Mandatory note, tagged `RECLAIM_TAG` (stored string is still
-  `"💧reclaimed"` — never change it; display is 🐝 in the Hive, 🕐 as the
-  badge in history lists). Reclaimed hours count toward the 8 (or the 4).
-- Constants live at the top of `StreakEngine.kt`.
+- **There is no currency** — the one reward is the **streak saver** (below).
+  Extra hours beyond the 8 earn nothing but the ring's overflow head, until 12.
+- **Only in-the-moment hours count.** An entry carrying `RECLAIM_TAG` (added
+  later via "Add a past hour") never counts toward the ring, the 8/4 goal,
+  saver earning or recovery; it still shows in every list and chart. An hour
+  counts once if any non-backdated entry covers it.
+- **Streak savers** (2026-10-28, replace rest days). Every history starts with
+  `SAVER_START` (2). A Master day with ≥ `SAVER_EARN_HOURS` (12) counted hours
+  earns +1 (cap `SAVER_CAP` 5). A finished Master day under 8 **spends one
+  automatically**: with a streak running it is `SAVED` (streak holds, doesn't
+  grow); with none it is `FADED` (saver burns for nothing — a rule, not a bug).
+  No savers + a running streak = `BROKEN`; no streak and no savers = `MISSED`.
+- **Comeback gift**: every `COMEBACK_IDLE_DAYS` (7) days in a row with no
+  complete day (Master 8+ or beginner 4+) gifts `COMEBACK_GIFT` (2) savers
+  (capped), credited at that day's end.
+- **Recovery**: a break opens a window of `RECOVERY_DAYS` (3) calendar days.
+  One day with ≥ `RECOVERY_HOURS` (10) counted hours restores the streak to the
+  old count + every qualifying (≥ 8) window day up to it. No saver burns inside
+  an open window. If it closes unrecovered, the new streak is the run of
+  qualifying days ending at the close. Beginner days use up window days and
+  can't recover. While open, the UI shows the old count in red with a "!".
+- **"Add a past hour"** (was "send a bee back"): free, `RECLAIM_PER_DAY` (2) a
+  calendar day, any unrated hour from the last `RECLAIM_WINDOW_HOURS` (12)
+  clock hours (may cross midnight; the 2 normally-ratable hours excluded).
+  Score + **≥1 tag** + optional note, tagged `RECLAIM_TAG` (stored string is
+  still `"💧reclaimed"` — never change it). Badge: 🕐 `Sym.FromMemory` +
+  "Added later".
+- Constants live at the top of `StreakRules.kt`.
 
 ### Beginner mode (2026-08-04 — softens the day-one cliff)
 
@@ -69,23 +82,27 @@ notification → rate → tag → save → lock phone → back to life.
 forced vocabulary (hive, cell, comb, forage, waggle) is gone from every
 user-visible string.
 
-Kept deliberately: the app name **Beeing** · the reclaim phrase "Missed rating
-a special hour? Send a bee back to revisit it" 🐝 ("revisit" is the
-owner-chosen verb) · the "🔒 Lock phone and bee mindful🐝" button · the ⬢
-hexagon as a pure visual motif (no "cell" wording attached to it).
+Kept deliberately: the app name **Beeing** · the "🔒 Lock phone and bee mindful🐝"
+button and the catch-the-bee screen · the ⬢ hexagon as a pure visual motif (no
+"cell" wording attached to it). **"Send a bee back" / "revisit" are gone**
+(2026-10-28): the action is **"Add a past hour"** ("Missed an hour?").
 
 Current vocabulary: **Streak** = the tab (nav label) and the long game;
 a qualifying day is a **complete day** ("Day complete", "⬢ Day complete",
 calendar legend "complete"), and the count reads "**N-day streak**" /
 "Day N of your streak", never a cell count · **History** = the event log on
-the Streak tab · 🌙 **Rest day** = the one free forgiven day per week
-("the streak held") · 🌱 **Beginner day** = a completed 4-hour day in
+the Streak tab · **Streak saver** (`Sym.Saver`, a shield with the flame) =
+earned at 12 hours, steps in on a missed day ("A streak saver kept your streak
+alive"), fades if no streak is running · **Streak at risk** = the red count with
+a "!" while the 3-day **recovery** window is open ("N days left to win it back")
+· **Heads up** = the warnings bell sheet · 🕐 **Added later** = an hour added via
+"Add a past hour" (rest days are gone) · 🌱 **Beginner day** = a completed 4-hour day in
 **beginner mode** ("Beginner day complete", calendar legend "beginner day");
 the opposite mode is **Master mode** (8 hours) and a streak inside beginner
 mode is **paused**, never lost ("Streak paused at N", "Resumes in Master
-mode") · 🕐 = an hour rated from memory (a reclaimed entry), so
-it reads apart from in-the-moment ratings · celebration is reserved for rare
-milestones — never per-save; the one daily celebration is the ring closing.
+mode") · celebration is reserved for rare milestones — never per-save; the
+daily celebration is the ring closing, plus the two full-screen "streak moments"
+(saver earned, streak recovered).
 Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics — honey gold
 survives only as an accent color.
 
@@ -144,6 +161,14 @@ case verify by static review and say so explicitly — the user compiles locally
 | `res/drawable/ic_sym_*.xml` | The vendored Material Symbols. Each is a converted SVG: Material Symbols ship `viewBox="0 -960 960 960"`, which a `<vector>` cannot express (there is no viewport origin), so every file wraps its path in `<group android:translateY="960">`. `fillColor` is opaque black and the tint comes from `BeeIcon` |
 | `ui/icons/BeeIcons.kt` | **The icon vocabulary.** `Sym` enum (one entry per meaning: Streak/Beginner/Rest/Reclaim/FromMemory/Lock/Hourglass/Reset/Star/Sparkle/Alarm/Chart/Tag/Note/Hive/CaughtUp) → a vector drawable in `res/drawable/ic_sym_*.xml`, plus `BeeIcon(sym, size, tint, contentDescription)` and `SymTitle(sym, text)` for dialog titles. Drawables are **Material Symbols Rounded**, converted from the official SVGs (see below) |
 | `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete! 🌱" |
+| `StreakRules.kt` | **The pure rules engine (2026-10-28), no Context/Compose.** Constants (`SAVER_*`, `COMEBACK_*`, `RECOVERY_*`, `RECLAIM_*`, `RECLAIM_TAG`), `ModeEvent` + `beginnerAt`, `DayOutcome` (QUALIFIED/SAVED/FADED/BROKEN/MISSED/RECOVERED/BEGINNER_COMPLETE), `StreakEventType`/`StreakEvent` (stable ids), `StreakState`, the one private-ish `replay` walk and its readers `computeStreakState`/`computeDayOutcomes`/`computeStreakEvents`, plus `streakMoment()` (the saver-earned / recovered trigger: fires only when exactly one new counted hour landed). Supersedes the `StreakEngine.kt` row's engine description — that file now holds only the composables (`StreakMeter`, `StreakRing`, `StreakLogContent`), persistence helpers and `visibleTags()` |
+| `Warnings.kt` / `WarningsBell.kt` | Bell items are a filtered view of the streak events: `warningsFrom`/`unreadCount` + the spec copy (pure, `Warnings.kt`); read ids / baseline / on-off in prefs and the "Heads up" `WarningsSheet` (`WarningsBell.kt`). Events before the baseline (first launch, last import) count as read |
+| `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
+| `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
+| `SaverCelebration.kt` | `StreakMomentCelebration` — full-screen saver-earned / streak-recovered |
+| `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone) + `SettingsManageTags` |
+| `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
+| `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
 
 ## Data model & persistence gotchas
 
@@ -221,6 +246,20 @@ case verify by static review and say so explicitly — the user compiles locally
   notification (10 score buttons). Tapping a score deep-links with
   `PENDING_SCORE`/`TARGET_TS` extras → `PendingRating` → pre-selects the comb.
   When both ratable hours are logged, notification ID 1 is cancelled.
+- **Notification channels** (all created in `createNotificationChannel`):
+  `hourly_bee` / `hourly_bee_silent`, `streak_alerts` / `streak_alerts_silent`,
+  `weekly_report` / `weekly_report_silent`. A channel's sound is fixed at
+  creation, so "silent" is a twin channel. **Silent hours, pause and the
+  reminders switch (`NotificationPrefs.kt`) govern hourly reminders only**
+  (`hourlyDelivery`: SOUND/SILENT/NONE; the alarm always reschedules). Streak
+  alerts and the weekly report use `otherDelivery` — never suppressed, silent
+  during silent hours.
+- **Streak alerts:** `StreakAlertReceiver` runs from a daily 00:01 exact alarm
+  (`scheduleStreakAlerts`, also on boot and app start), replays
+  `computeStreakEvents`, and posts each gift / saver-used / saver-faded event
+  once (`alertsToPost`; ids in `"alert_notified_ids"`, baseline
+  `"alert_baseline_ms"`, reset on import). Tap → `MainActivity` with extra
+  `OPEN_TAB = 0` → Streak tab.
 - **Hour targeting:** `targetedHourOffset` (0 = latest completed hour,
   1 = the expiring grace hour). With both pending, default is 1 (expiring
   first) unless a notification deep-link chose otherwise — logic split
@@ -819,3 +858,27 @@ case verify by static review and say so explicitly — the user compiles locally
   `FadingScrollbar` reads `tagsViewportHeightPx` in a `layout {}` block, not in
   composition, which used to rebuild every chip per frame. Result: 3–5% janky,
   p90 11–17ms (debug). Keep animated values out of composition here.
+- 2026-10-28 (**streak savers, recovery, bell, settings, quiet reminders**): spec
+  `docs/superpowers/specs/2026-10-28-savers-recovery-settings-design.md`, plan
+  `docs/superpowers/plans/2026-10-28-savers-recovery-settings.md`. (1) Rest days
+  are gone; the engine moved to `StreakRules.kt` and is replayed with **savers**
+  (start 2, earn at 12 counted hours, cap 5, auto-spend, fade at streak 0),
+  the **comeback gift** after 7 idle days, and a **3-day recovery window**
+  (10 hours wins the streak back). **Backdated hours no longer count toward
+  anything** (ring, goal, savers, recovery) — a deliberate behaviour change:
+  history replays under the new rules, so past rest days become saver spends or
+  breaks. (2) "Send a bee back" → **"Add a past hour"**: 12-hour reach, tags
+  required, note optional, "Added later" badge. (3) The shared band top row
+  (`BandTopRow`) with a **warnings bell** on all three tabs; ⋮ opens a
+  **full-screen settings page**. (4) Two full-screen moments: saver earned,
+  streak recovered. (5) **Silent hours and pause** for hourly reminders only;
+  streak alerts / weekly report always arrive (silently in silent hours).
+  (6) Daily 00:01 alarm posts streak phone alerts exactly once per event.
+  Judgement calls worth keeping: the saver/recovered trigger is "exactly one new
+  counted hour", which makes replay, import, backdated saves and mode toggles
+  incapable of celebrating; beginner days leave a recovery window's trailing run
+  untouched; a ≥12-hour day earns a saver even inside a window; the shared top
+  row travels via `LocalBandChrome` rather than through three tab signatures;
+  "Pick a time" in the pause sheet is a day-chip + hour list, not a drum wheel.
+  Not device-verified from this session: the 360dp top row with a 3-digit at-risk
+  streak, the celebration screens, silent-channel behaviour and the 00:01 alert.
