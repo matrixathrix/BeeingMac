@@ -186,6 +186,9 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
 
         val rangeText = "${formatH(startH)}-${formatH(endH)}"
         remoteViews.setTextViewText(R.id.notif_title, "How was your last hour? ($rangeText)")
+        // Collapsed (and heads-up) stays compact; the full picker is the expanded view.
+        val collapsed = RemoteViews(context.packageName, R.layout.notification_collapsed)
+        collapsed.setTextViewText(R.id.collapsed_title, "How was your last hour? ($rangeText)")
 
         // Detect system dark mode once — used for all button text colours
         val isDarkMode = (context.resources.configuration.uiMode and
@@ -285,7 +288,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         // 6. Build
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setCustomContentView(remoteViews)
+            .setCustomContentView(collapsed)
             .setCustomBigContentView(remoteViews)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
