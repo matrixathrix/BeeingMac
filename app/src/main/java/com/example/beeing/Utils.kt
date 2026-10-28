@@ -35,6 +35,9 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 }
 
 // --- NOTIFICATIONS ---
+const val CHANNEL_STREAK_ALERTS = "streak_alerts"
+const val CHANNEL_STREAK_ALERTS_SILENT = "streak_alerts_silent"
+
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
@@ -60,6 +63,22 @@ fun createNotificationChannel(context: Context) {
             setSound(soundUri, audioAttributes)
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(weeklyChannel)
+
+        // Silent twins: a channel's sound is fixed at creation, so "no sound" needs its own.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        fun silent(id: String, name: String, importance: Int) = NotificationChannel(id, name, importance).apply {
+            setSound(null, null)
+            enableVibration(false)
+        }
+        manager.createNotificationChannel(silent("hourly_bee_silent", "Hourly Reminders (silent)", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(silent("weekly_report_silent", "Weekly Report (silent)", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_STREAK_ALERTS, "Streak alerts", NotificationManager.IMPORTANCE_HIGH)
+                .apply { setSound(soundUri, audioAttributes) }
+        )
+        manager.createNotificationChannel(
+            silent(CHANNEL_STREAK_ALERTS_SILENT, "Streak alerts (silent)", NotificationManager.IMPORTANCE_DEFAULT)
+        )
     }
 }
 
@@ -125,7 +144,13 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                showCustomNotification(context, manager, targetTimestamp, ordinal)
+                // Hourly reminders obey silent hours, pause and the reminders switch;
+                // the alarm keeps rescheduling either way, so a pause ends on its own.
+                when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
+                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee")
+                    Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
+                    Delivery.NONE -> {}
+                }
                 scheduleExactHourlyAlarm(context)
             }
         }
@@ -135,7 +160,8 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         context: Context,
         manager: NotificationManager,
         targetTs: Long,
-        targetLabel: String
+        targetLabel: String,
+        channelId: String
     ) {
         val remoteViews = RemoteViews(context.packageName, R.layout.notification_rating)
 
@@ -203,7 +229,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.GONE)
 
         // 5. Build
-        val notification = NotificationCompat.Builder(context, "hourly_bee")
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setCustomContentView(remoteViews)
             .setCustomBigContentView(remoteViews)

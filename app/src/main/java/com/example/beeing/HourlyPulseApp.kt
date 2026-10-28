@@ -90,7 +90,7 @@ fun HourlyPulseApp(
     var showSettings by remember { mutableStateOf(false) }
     var showSaverInfo by remember { mutableStateOf(false) }
     var showManageTags by remember { mutableStateOf(false) }
-    var remindersOn by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("hourly_reminders", true)) }
+    var notifPrefs by remember { mutableStateOf(loadNotificationPrefs(context)) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var autoBackupEnabled by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) }
     var lastBackupTime by remember { mutableStateOf(context.getSharedPreferences("b", 0).getLong("last_backup", 0L)) }
@@ -517,7 +517,8 @@ fun HourlyPulseApp(
                 pausedAt = streakState.currentStreak,
                 savers = streakState.savers,
                 warningsEnabled = warningsEnabled,
-                remindersOn = remindersOn,
+                streakState = streakState,
+                notifPrefs = notifPrefs,
                 tagCount = remember(viewModel.refreshTrigger, showManageTags) { loadTags(context).size },
                 autoBackup = autoBackupEnabled,
                 lastBackupMs = lastBackupTime,
@@ -540,9 +541,9 @@ fun HourlyPulseApp(
                     warningsEnabled = it
                     setStreakWarningsEnabled(context, it)
                 },
-                onRemindersChange = {
-                    remindersOn = it
-                    context.getSharedPreferences("b", 0).edit().putBoolean("hourly_reminders", it).apply()
+                onNotifPrefsChange = {
+                    notifPrefs = it
+                    saveNotificationPrefs(context, it)
                 },
                 onManageTags = { showManageTags = true },
                 onAutoBackupChange = {

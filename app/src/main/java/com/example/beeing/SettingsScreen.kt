@@ -61,7 +61,8 @@ data class SettingsCallbacks(
     val pausedAt: Int,
     val savers: Int,
     val warningsEnabled: Boolean,
-    val remindersOn: Boolean,
+    val streakState: StreakState,
+    val notifPrefs: NotificationPrefs,
     val tagCount: Int,
     val autoBackup: Boolean,
     val lastBackupMs: Long,
@@ -69,7 +70,7 @@ data class SettingsCallbacks(
     val onBeginnerChange: (Boolean) -> Unit,
     val onShowSavers: () -> Unit,
     val onWarningsChange: (Boolean) -> Unit,
-    val onRemindersChange: (Boolean) -> Unit,
+    val onNotifPrefsChange: (NotificationPrefs) -> Unit,
     val onManageTags: () -> Unit,
     val onAutoBackupChange: (Boolean) -> Unit,
     val onPickBackupFolder: () -> Unit,
@@ -81,6 +82,11 @@ data class SettingsCallbacks(
 @Composable
 fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
     val c = callbacks
+    var showSilent by remember { mutableStateOf(false) }
+    var showPause by remember { mutableStateOf(false) }
+    val prefs = c.notifPrefs
+    val nowMs = System.currentTimeMillis()
+    val paused = pauseActive(prefs, nowMs)
     Column(
         Modifier
             .fillMaxSize()
@@ -127,8 +133,30 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                 SettingsRow(
                     sym = Sym.Alarm, title = "Hourly reminders",
                     subtitle = "A nudge each hour to rate the last one",
-                    onClick = { c.onRemindersChange(!c.remindersOn) }
-                ) { Switch(checked = c.remindersOn, onCheckedChange = { c.onRemindersChange(it) }) }
+                    onClick = { c.onNotifPrefsChange(prefs.copy(remindersOn = !prefs.remindersOn)) }
+                ) { Switch(checked = prefs.remindersOn, onCheckedChange = { c.onNotifPrefsChange(prefs.copy(remindersOn = it)) }) }
+                Divider()
+                SettingsRow(
+                    sym = Sym.Lock, title = "Silent hours",
+                    subtitle = if (prefs.silentOn && prefs.silentStartMin != prefs.silentEndMin)
+                        "Every day, ${formatMinuteOfDay(prefs.silentStartMin)} to ${formatMinuteOfDay(prefs.silentEndMin)} · no sound"
+                    else "Off",
+                    onClick = { showSilent = true }
+                ) { Chevron() }
+                Divider()
+                if (paused) {
+                    SettingsRow(
+                        icon = Icons.Default.Notifications, title = "Paused until ${SimpleDateFormat("EEE h a", Locale.getDefault()).format(Date(prefs.pauseUntilMs))} · ${if (prefs.pauseMode == PauseMode.QUIET) "Quiet" else "Off"}",
+                        subtitle = "Streak alerts and the weekly report still arrive",
+                        onClick = {}, highlight = true
+                    ) { TextButton(onClick = { c.onNotifPrefsChange(prefs.copy(pauseUntilMs = 0L)) }) { Text("End now") } }
+                } else {
+                    SettingsRow(
+                        icon = Icons.Default.Notifications, title = "Pause notifications",
+                        subtitle = "Until a time you choose, up to 2 days",
+                        onClick = { showPause = true }
+                    ) { Chevron() }
+                }
             }
             Section("TAGS") {
                 SettingsRow(
@@ -213,11 +241,13 @@ private fun SettingsRow(
     onClick: () -> Unit,
     sym: Sym? = null,
     icon: ImageVector? = null,
+    highlight: Boolean = false,
     trailing: @Composable () -> Unit
 ) {
     Row(
         Modifier
             .fillMaxWidth()
+            .background(if (highlight) com.example.beeing.ui.theme.LocalBeeExtras.current.accentFill.copy(alpha = 0.18f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
