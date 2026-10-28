@@ -1198,8 +1198,8 @@ private fun TrendsView(
                         val kRestDays = remember(key, allRatings, refresh) {
                             // Mode events re-read on refresh (a toggle bumps it),
                             // so this replays under the same rules as the meter.
-                            computeStreakLog(allRatings, loadReclaimSpends(context), loadModeEvents(context))
-                                .count { it.type == StreakEventType.REST && it.timestamp in kRange.first until kRange.second }
+                            computeStreakEvents(allRatings, emptyList(), loadModeEvents(context))
+                                .count { it.type == StreakEventType.SAVER_USED && it.timestamp in kRange.first until kRange.second }
                         }
                         val kUnitAvgs = remember(key, allRatings, refresh) {
                             kUnits.map { u ->
@@ -1248,7 +1248,7 @@ private fun TrendsView(
                                 StatDivider()
                                 StatCell(
                                     value = "$kRestDays",
-                                    label = "rest days",
+                                    label = "savers used",
                                     modifier = Modifier.weight(1f)
                                 )
                             }

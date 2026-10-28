@@ -125,7 +125,7 @@ fun HourlyPulseApp(
 
     // Mode + streak, shared by the menu copy, the explainer and the nudge
     val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
-        computeStreakState(viewModel.allRatings, loadReclaimSpends(context), viewModel.modeEvents)
+        computeStreakState(viewModel.allRatings, viewModel.modeEvents)
     }
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked

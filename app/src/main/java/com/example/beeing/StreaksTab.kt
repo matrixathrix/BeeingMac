@@ -71,10 +71,10 @@ fun StreaksTab(
     val reclaimSpends = remember(spendsVersion) { loadReclaimSpends(context) }
     val modeEvents = viewModel.modeEvents
     val streakState = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
-        computeStreakState(allRatings, reclaimSpends, modeEvents)
+        computeStreakState(allRatings, modeEvents)
     }
     val outcomes = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
-        computeDayOutcomes(allRatings, reclaimSpends, modeEvents)
+        computeDayOutcomes(allRatings, modeEvents)
     }
     // Per-day average score — tints the calendar dots
     val dayAvgs = remember(allRatings, viewModel.refreshTrigger) {
@@ -554,20 +554,20 @@ private fun DayCell(
         )
         Spacer(Modifier.height(4.dp))
         when (outcome) {
-            DayOutcome.QUALIFIED -> Box(
+            DayOutcome.QUALIFIED, DayOutcome.RECOVERED -> Box(
                 Modifier
                     .size(9.dp)
                     .clip(CircleShape)
                     .background(getScoreColor(avgScore ?: 0.0))
             )
             DayOutcome.BEGINNER_COMPLETE -> BeeIcon(Sym.Beginner, size = 11.dp)
-            DayOutcome.REST -> BeeIcon(Sym.Rest, size = 11.dp)
-            DayOutcome.MISSED -> Box(
+            DayOutcome.SAVED -> BeeIcon(Sym.Star, size = 11.dp)
+            DayOutcome.MISSED, DayOutcome.BROKEN -> Box(
                 Modifier
                     .size(9.dp)
                     .border(1.5.dp, Color(0xFFC62828), CircleShape)
             )
-            null -> Spacer(Modifier.size(9.dp))
+            DayOutcome.FADED, null -> Spacer(Modifier.size(9.dp))
         }
     }
 }
@@ -609,17 +609,19 @@ private fun DayStatsDialog(
         SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(dayCal.time)
     }
     val outcomeSym = when {
-        outcome == DayOutcome.QUALIFIED -> Sym.Streak
+        outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED -> Sym.Streak
         outcome == DayOutcome.BEGINNER_COMPLETE -> Sym.Beginner
-        outcome == DayOutcome.REST -> Sym.Rest
+        outcome == DayOutcome.SAVED -> Sym.Star
         outcome == null && isToday -> Sym.Hourglass
         else -> null   // missed / nothing rated: the words stand alone
     }
     val outcomeLine = when {
         outcome == DayOutcome.QUALIFIED -> "Day complete"
+        outcome == DayOutcome.RECOVERED -> "Streak recovered"
         outcome == DayOutcome.BEGINNER_COMPLETE -> "Beginner day complete"
-        outcome == DayOutcome.REST -> "Rest day — the streak held"
-        outcome == DayOutcome.MISSED -> "Missed"
+        outcome == DayOutcome.SAVED -> "Saver used — the streak held"
+        outcome == DayOutcome.BROKEN -> "Streak broke"
+        outcome == DayOutcome.MISSED || outcome == DayOutcome.FADED -> "Missed"
         isToday -> "In progress"
         else -> "No ratings"
     }

@@ -218,7 +218,7 @@ fun NowTab(
     val allCaughtUp = isLatestHourLogged && isPreviousHourLogged
 
     val streakState = remember(allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
-        computeStreakState(allRatings, loadReclaimSpends(context), viewModel.modeEvents)
+        computeStreakState(allRatings, viewModel.modeEvents)
     }
 
     // Fire the full-screen celebration exactly when today flips to qualified —

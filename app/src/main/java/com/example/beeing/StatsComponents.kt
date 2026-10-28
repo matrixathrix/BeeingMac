@@ -28,7 +28,7 @@ fun buildWeeklySummaryText(context: Context): String {
     val topTag = week.flatMap { it.tags }
         .groupingBy { it }.eachCount()
         .maxByOrNull { it.value }?.key
-    val streak = computeStreakState(ratings, loadReclaimSpends(context), loadModeEvents(context))
+    val streak = computeStreakState(ratings, loadModeEvents(context))
 
     val parts = mutableListOf<String>()
     parts.add("Avg score ${String.format("%.1f", avg)} over ${week.size} hours")
