@@ -29,7 +29,8 @@ class MainActivity : ComponentActivity() {
             pendingRating.value = PendingRating(
                 score = score,
                 targetTs = intent.getLongExtra("TARGET_TS", 0L),
-                label = intent.getStringExtra("TARGET_LABEL") ?: ""
+                label = intent.getStringExtra("TARGET_LABEL") ?: "",
+                tags = (intent.getStringExtra("PENDING_TAGS") ?: "").split(";").filter { it.isNotBlank() }
             )
             // The rating continues in-app; the notification has done its job
             getSystemService(NotificationManager::class.java).cancel(1)

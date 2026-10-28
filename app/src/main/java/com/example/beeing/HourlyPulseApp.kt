@@ -113,6 +113,7 @@ fun HourlyPulseApp(
 
     // Score picked on the notification: jump to Now with it pre-selected
     var pendingScore by remember { mutableStateOf<Int?>(null) }
+    var pendingTags by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(pendingRating) {
         pendingRating?.let { pr ->
             val currentHourStart = Calendar.getInstance().apply {
@@ -126,6 +127,7 @@ fun HourlyPulseApp(
             if (offset in 0..1) {
                 targetedHourOffset = offset
                 pendingScore = pr.score
+                pendingTags = pr.tags
                 selectedTab = 1
             }
             onPendingRatingConsumed()
@@ -319,6 +321,7 @@ fun HourlyPulseApp(
                     onOpenStreaks = { selectedTab = 0 },
                     onMenuClick = { showSettings = true },
                     pendingScore = pendingScore,
+                    pendingTags = pendingTags,
                     onPendingScoreConsumed = { pendingScore = null },
                     onRingClosed = { ringCelebration = it },
                     onStreakMoment = { streakMoment = it }

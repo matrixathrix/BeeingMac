@@ -123,6 +123,7 @@ fun NowTab(
     onOpenStreaks: () -> Unit = {},
     onMenuClick: () -> Unit = {},
     pendingScore: Int? = null,
+    pendingTags: List<String> = emptyList(),
     onPendingScoreConsumed: () -> Unit = {},
     onRingClosed: (RingCelebration) -> Unit = {},
     onStreakMoment: (StreakMoment) -> Unit = {}
@@ -149,6 +150,9 @@ fun NowTab(
     LaunchedEffect(pendingScore) {
         pendingScore?.let {
             selectedScore = it
+            // Tags picked on the notification arrive with it (only ones that still exist)
+            val known = loadTags(context)
+            pendingTags.filter { t -> t in known }.forEach { t -> if (t !in selectedTags) selectedTags.add(t) }
             onPendingScoreConsumed()
         }
     }
