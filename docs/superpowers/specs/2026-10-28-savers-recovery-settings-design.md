@@ -71,10 +71,25 @@ and the user always knows where they stand from the header.
   earns **+1 saver**, at most one per day.
 - **Cap**: **5**. At 5, a 12-hour day earns nothing, with no message and no
   animation.
-- **Spend**: a finished Master-mode day under 8 counted hours, while a streak
-  is running (`streak > 0`), **automatically uses 1 saver**. The streak holds
-  but doesn't grow. *Designer call:* with no streak running, a miss spends
-  nothing, since there's nothing to protect. This mirrors today's rest-day rule.
+- **Spend**: a finished Master-mode day under 8 counted hours **automatically
+  uses 1 saver**, whenever you hold one.
+  - With a streak running, the saver **protects** it: the streak holds but
+    doesn't grow (`DayOutcome.SAVED`).
+  - With **no streak running, the saver still burns** (owner decision: "make it
+    worth it" pressure). It **fades**, protecting nothing. In practice this hits
+    newcomers' starting savers and comeback gifts (below), since a streak only
+    breaks to 0 once savers are already gone. The copy must make it read as a
+    rule, not a bug (see the bell table).
+  - *Designer call:* no saver burns inside an open recovery window, because the
+    window is already the second chance.
+- **Comeback gift** (owner decision): when **7 days in a row** pass with no
+  complete day, the user is gifted **+2 savers** (capped at 5), and it repeats
+  for every further 7 such days. A "complete day" is a Master day with 8+
+  counted hours or a beginner day with 4+ (*designer call:* beginner
+  completions count as activity). The gift is credited at the end of the 7th
+  day, so in replay it applies before the next day's verdict. That means a
+  missed day 8 burns one gifted saver and a missed day 9 burns the other. The
+  lure is the phone notifications below, not a silent balance.
 - **Rest days are removed**: `DayOutcome.REST`, `FORGIVE_WINDOW_DAYS` and their
   copy go. Days that used to replay as REST become SAVED or a break under the
   new rules.
@@ -110,8 +125,11 @@ and the user always knows where they stand from the header.
   the new streak and goes back to normal colours.
 - *Designer call: if the window closes without recovery*, normal streak rules
   apply to the window days after the fact: the new streak is the run of
-  consecutive qualifying days ending at the close. So [8h, 3h, 8h] → 1, and
-  [8h, 8h, 3h] → 0. The forgiveness of short days is part of the recovery
+  consecutive qualifying days ending at the close. Example: a 14-day streak
+  breaks on Monday. Tuesday has 8 hours, Wednesday 3, Thursday 8. None reached
+  10, so the window closes and the new streak is 1 (Thursday only), because
+  Wednesday broke the run. If it had been Tuesday 8, Wednesday 8, Thursday 3,
+  the new streak would be 0. The forgiveness of short days is part of the recovery
   reward and only applies if you recover.
 - *Designer call: beginner mode during a window.* The window is always 3
   **calendar** days. Beginner days use up window days and can't recover the
@@ -133,6 +151,8 @@ Items, with their exact copy patterns (counts are live values):
 | Trigger | Title | Detail |
 |---|---|---|
 | A saver was used | "A streak saver kept your streak alive" | "You missed {Day}. Your {N}-day streak is safe. {S} saver(s) left." |
+| A saver faded (no streak) | "A streak saver faded" | "No streak was running on {Day}. Start one today to keep the {S} you have left." (or "That was your last saver." at 0) |
+| Comeback gift | "2 streak savers on the house" | "Rate a few hours today to start a new streak." |
 | Savers ≤ 2 after a spend | "Only {S} saver(s) left" | "Rate 12 hours in one day to earn another." |
 | Streak broke (no savers) | "Your {N}-day streak broke" | "Rate 10 hours on one of the next 3 days to win it back." |
 | Recovery window, ≤2 days left | "Only {D} day(s) left to win back your {N}-day streak" | "Rate 10 hours on one of them." |
@@ -151,6 +171,35 @@ Items, with their exact copy patterns (counts are live values):
   baseline is reset after every import. Otherwise an existing user's first
   launch would show a badge of ~30 stale items about weeks-old days that the new
   rules replayed.
+
+### Streak phone notifications (owner decision)
+
+These events also post a **phone notification**, not just a bell item, so they
+reach people who've stopped opening the app:
+
+- **Comeback gift**: "2 streak savers on the house" / "Rate a few hours today to
+  start a new streak."
+- **Saver used** (protecting a streak): "A streak saver kept your {N}-day
+  streak alive" / "{S} left."
+- **Saver faded** (no streak): day 8 "One of your gifted savers faded. Rate
+  today to keep the last one.", day 9 "Your last saver faded." Use the general
+  wording when the faded saver wasn't a gift.
+
+Rules:
+- They go on their own **"Streak alerts"** channel, separate from the hourly
+  reminders.
+- **The in-app notification settings don't apply to them.** Silent hours, pause
+  and the hourly-reminders switch control **hourly reminders only** (owner
+  decision). Streak alerts **always arrive**. The one exception is that they
+  post **silently during silent hours**, so they need a silent twin channel too.
+  The weekly report is "another kind" as well: it always arrives, silently in
+  silent hours.
+- Day verdicts land at midnight, so these are computed in the background. A
+  daily alarm shortly after midnight replays the engine, compares it with a
+  persisted "last notified" marker and posts each new event exactly once.
+  *Builder call* on the timing and marker format. Nothing is posted for events
+  from before this version ships (same baseline as the bell).
+- Tapping one opens the app on the Streak tab.
 
 ### Saver-earned celebration
 
@@ -249,9 +298,9 @@ Sections and rows, in order:
   vibration**.
 - Android fixes a channel's sound at creation, so this needs a **second
   channel** (e.g. `hourly_bee_silent`, sound off, vibration off).
-  `NotificationReceiver` picks the channel when it posts. The weekly report
-  follows the same rule. *Builder call* on whether it gets its own silent
-  channel.
+  `NotificationReceiver` picks the channel when it posts. Streak alerts and the
+  weekly report also go silent in silent hours (see Streak phone
+  notifications). Silent hours are the only setting that affects them.
 
 ### Pause notifications (until a time)
 
@@ -267,6 +316,8 @@ Sections and rows, in order:
     at **now + 48 hours**.
   - A read-back line ("Notifications are off until **Thu 9 PM** · 2 days") and
     the confirm button "Pause until Thu 9 PM".
+- A pause applies to **hourly reminders only**. Streak alerts and the weekly
+  report still arrive during any pause.
 - **Quiet** posts on the silent channel. **Off** skips posting. Either way the
   hourly alarm keeps rescheduling, so reminders resume on their own at the end
   time. The pause end is a persisted timestamp, checked when each alarm fires,
@@ -278,6 +329,9 @@ Sections and rows, in order:
   D = calendar days the pause overlaps, not counting today if today is already
   qualified, and not counting beginner days. {Day} = the first day the balance
   would run out. Only shown while a streak is running. Quiet never warns.
+  *Designer call:* with no streak running but savers held, the card instead
+  reads "Savers fade on days you don't complete. You could lose {k} of your
+  {S}."
 
 ## Engine changes (where the logic lives)
 
@@ -297,13 +351,13 @@ log, bell and settings can't disagree:
   "Streak recovered" events (icons from `Sym`). The bell's items are a filtered
   view of these.
 - Constants at the top: `SAVER_START = 2`, `SAVER_CAP = 5`,
-  `SAVER_EARN_HOURS = 12`, `RECOVERY_DAYS = 3`, `RECOVERY_HOURS = 10`,
+  `SAVER_EARN_HOURS = 12`, `COMEBACK_IDLE_DAYS = 7`, `COMEBACK_GIFT = 2`, `RECOVERY_DAYS = 3`, `RECOVERY_HOURS = 10`,
   `RECLAIM_WINDOW_HOURS = 12`. Delete `FORGIVE_WINDOW_DAYS`.
 
 **History is replayed under the new rules**, the same precedent as the
 2026-08-01/08-03 changes. Past rest days become saver spends or breaks, and the
 current streak may change. Unit tests should pin: earn at 12 (and not at 12 with
-backdated hours), the cap at 5, spend on a miss, no spend at streak 0, a break
+backdated hours), the cap at 5, spend on a miss, a fade at streak 0, no burn inside a recovery window, the comeback gift after 7 idle days (and again after 14), a break
 at 0 savers, recovery at 10 on day 1/2/3, no recovery on day 4, the restored
 count, beginner transparency, and the starting balance of 2.
 
