@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BandChrome
 import com.example.beeing.ui.LocalBandChrome
+import com.example.beeing.ui.SaverExplainerDialog
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -86,7 +87,10 @@ fun HourlyPulseApp(
     val streaksScrollState = rememberScrollState()
 
     // Menu and dialogs state
-    var showMenu by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showSaverInfo by remember { mutableStateOf(false) }
+    var showManageTags by remember { mutableStateOf(false) }
+    var remindersOn by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("hourly_reminders", true)) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var autoBackupEnabled by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) }
     var lastBackupTime by remember { mutableStateOf(context.getSharedPreferences("b", 0).getLong("last_backup", 0L)) }
@@ -151,7 +155,7 @@ fun HourlyPulseApp(
         unread = unreadWarnings,
         onStreakClick = { selectedTab = 0 },
         onBellClick = { showWarnings = true },
-        onMenuClick = { showMenu = true }
+        onMenuClick = { showSettings = true }
     )
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
@@ -307,7 +311,7 @@ fun HourlyPulseApp(
                     ratingCardYPosition = ratingCardYPosition,
                     onRatingCardYPosition = { ratingCardYPosition = it },
                     onOpenStreaks = { selectedTab = 0 },
-                    onMenuClick = { showMenu = true },
+                    onMenuClick = { showSettings = true },
                     pendingScore = pendingScore,
                     onPendingScoreConsumed = { pendingScore = null },
                     onRingClosed = { ringCelebration = it },
@@ -322,183 +326,6 @@ fun HourlyPulseApp(
                 )
             }
             }
-        }
-
-        // ORIGINAL SETTINGS MENU
-        if (showMenu) {
-            AlertDialog(
-                onDismissRequest = { showMenu = false },
-                title = { Text("Data options") },
-                text = {
-                    Column {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                colors = BeeButtonDefaults.colors(),
-                                onClick = {
-                                    importLauncher.launch("text/*")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("IMPORT")
-                            }
-
-                            Button(
-                                colors = BeeButtonDefaults.colors(),
-                                onClick = {
-                                    exportLauncher.launch("bee_data.csv")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("EXPORT")
-                            }
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                autoBackupEnabled = !autoBackupEnabled
-                                context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", autoBackupEnabled).apply()
-                                if (autoBackupEnabled) {
-                                    scheduleAutoBackup(context)
-                                } else {
-                                    cancelAutoBackup(context)
-                                }
-                            }.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Auto-backup (Daily 12:05 AM)")
-                            Checkbox(
-                                checked = autoBackupEnabled,
-                                onCheckedChange = {
-                                    autoBackupEnabled = it
-                                    context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
-                                    if (it) {
-                                        scheduleAutoBackup(context)
-                                    } else {
-                                        cancelAutoBackup(context)
-                                    }
-                                }
-                            )
-                        }
-
-                        if (autoBackupEnabled) {
-                            OutlinedButton(
-                                onClick = { folderPickerLauncher.launch(null) },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Settings, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Set Backup Location", fontSize = 12.sp)
-                            }
-
-                            if (lastBackupTime > 0) {
-                                val backupDate = SimpleDateFormat("hh:mma, dd-MMM-yyyy", Locale.getDefault())
-                                    .format(Date(lastBackupTime))
-                                Text(
-                                    "Last backed up: $backupDate",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        // Beginner mode: a softer daily goal while the habit is
-                        // young. Leaving it needs no ceremony; entering it with
-                        // a live streak does, so that path routes via a confirm.
-                        val toggleBeginner: (Boolean) -> Unit = { wantBeginner ->
-                            if (wantBeginner && streakState.currentStreak > 0) {
-                                showMenu = false
-                                showBeginnerConfirm = true
-                            } else {
-                                viewModel.setBeginnerMode(context, wantBeginner)
-                            }
-                        }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { toggleBeginner(!streakState.beginnerMode) }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Beginner mode ($BEGINNER_HOURS_REQUIRED-hour days)")
-                                Text(
-                                    if (streakState.streakPaused)
-                                        "Streak paused at ${streakState.currentStreak}"
-                                    else "Streaks pause while it's on",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Checkbox(
-                                checked = streakState.beginnerMode,
-                                onCheckedChange = { toggleBeginner(it) }
-                            )
-                        }
-
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        // How it works — moved here now that the header's info
-                        // button is gone
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showMenu = false
-                                    showInfoDialog = true
-                                }
-                                .padding(vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("How Beeing works")
-                        }
-
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        // Author information
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "Beeing",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Developed by AthrixMatrix",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "Version 1.0",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showMenu = false }) {
-                        Text("Close")
-                    }
-                }
-            )
         }
 
         // ORIGINAL INFO DIALOG
@@ -677,6 +504,67 @@ fun HourlyPulseApp(
                 }
             )
         }
+    }
+
+    // ---- Settings: a full-screen page above the Scaffold (covers the nav bar).
+    // Registered after the root BackHandler, so system back closes it first. ----
+    if (showSettings) {
+        BackHandler { showSettings = false }
+        SettingsScreen(
+            callbacks = SettingsCallbacks(
+                beginnerMode = streakState.beginnerMode,
+                streakPaused = streakState.streakPaused,
+                pausedAt = streakState.currentStreak,
+                savers = streakState.savers,
+                warningsEnabled = warningsEnabled,
+                remindersOn = remindersOn,
+                tagCount = remember(viewModel.refreshTrigger, showManageTags) { loadTags(context).size },
+                autoBackup = autoBackupEnabled,
+                lastBackupMs = lastBackupTime,
+                versionName = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+                        .getOrNull() ?: ""
+                },
+                onBeginnerChange = { wantBeginner ->
+                    // Entering beginner mode with a live streak pauses it, which needs
+                    // saying out loud first; leaving it needs no ceremony.
+                    if (wantBeginner && streakState.currentStreak > 0) {
+                        showSettings = false
+                        showBeginnerConfirm = true
+                    } else {
+                        viewModel.setBeginnerMode(context, wantBeginner)
+                    }
+                },
+                onShowSavers = { showSaverInfo = true },
+                onWarningsChange = {
+                    warningsEnabled = it
+                    setStreakWarningsEnabled(context, it)
+                },
+                onRemindersChange = {
+                    remindersOn = it
+                    context.getSharedPreferences("b", 0).edit().putBoolean("hourly_reminders", it).apply()
+                },
+                onManageTags = { showManageTags = true },
+                onAutoBackupChange = {
+                    autoBackupEnabled = it
+                    context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
+                    if (it) scheduleAutoBackup(context) else cancelAutoBackup(context)
+                },
+                onPickBackupFolder = { folderPickerLauncher.launch(null) },
+                onExport = { exportLauncher.launch("bee_data.csv") },
+                onImport = { importLauncher.launch("text/*") },
+                onHowItWorks = { showInfoDialog = true }
+            ),
+            onBack = { showSettings = false }
+        )
+    }
+    if (showSaverInfo) SaverExplainerDialog(streakState.savers) { showSaverInfo = false }
+    if (showManageTags) {
+        SettingsManageTags(
+            context = context,
+            onChanged = { viewModel.triggerRefresh() },
+            onDismiss = { showManageTags = false }
+        )
     }
 
     // Duolingo-style full-screen takeover when today's ring closes —

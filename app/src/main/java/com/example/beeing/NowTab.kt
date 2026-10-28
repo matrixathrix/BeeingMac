@@ -136,7 +136,7 @@ fun NowTab(
     var selectedScore by remember { mutableStateOf<Int?>(null) }
     val selectedTags = remember { mutableStateListOf<String>() }
     var currentNote by remember { mutableStateOf("") }
-    var availableTags by remember { mutableStateOf(loadTags(context)) }
+    var availableTags by remember(viewModel.refreshTrigger) { mutableStateOf(loadTags(context)) }
     var tagsExpanded by remember { mutableStateOf(false) }
     var showTagDialog by remember { mutableStateOf(false) }
     var showManageTags by remember { mutableStateOf(false) }
@@ -1018,7 +1018,7 @@ private fun TagPickerSection(
  * add-tag dialog.
  */
 @Composable
-private fun ManageTagsDialog(
+internal fun ManageTagsDialog(
     tags: List<String>,
     onReorder: (List<String>) -> Unit,
     onRename: (String, String) -> Unit,
