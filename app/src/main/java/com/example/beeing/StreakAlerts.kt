@@ -65,6 +65,9 @@ fun resetAlertBaseline(ctx: Context) {
 
 /** Daily exact alarm at 00:01, same pattern as the hourly one. */
 fun scheduleStreakAlerts(context: Context) {
+    // Pin the baseline to the first launch: events before it never alert, and the
+    // first midnight replay (00:01) must not treat the night before as "old".
+    alertBaseline(context)
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return
     val pending = PendingIntent.getBroadcast(
