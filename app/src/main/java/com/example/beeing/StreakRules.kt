@@ -81,7 +81,8 @@ data class StreakState(
     val savers: Int,
     val recoveryOpen: Boolean,
     val recoveryDaysLeft: Int,     // including today; 0 when no window is open
-    val todayEarnedSaver: Boolean
+    val todayEarnedSaver: Boolean,
+    val todayRecovered: Boolean = false // today's hours are what won the streak back
 ) {
     /** In beginner mode the streak is frozen, not lost — say so, don't hide it. */
     val streakPaused: Boolean get() = beginnerMode && currentStreak > 0
@@ -290,7 +291,8 @@ fun computeStreakState(
         savers = r.savers,
         recoveryOpen = r.recoveryOpen,
         recoveryDaysLeft = r.recoveryDaysLeft,
-        todayEarnedSaver = today?.earnedSaver == true
+        todayEarnedSaver = today?.earnedSaver == true,
+        todayRecovered = today?.outcome == DayOutcome.RECOVERED
     )
 }
 
@@ -328,4 +330,23 @@ fun computeStreakEvents(
         )
     }
     return (r.events + added).sortedByDescending { it.timestamp }
+}
+
+/** A full-screen streak moment: a saver just earned, or a broken streak just won back. */
+sealed interface StreakMoment {
+    data class SaverEarned(val savers: Int) : StreakMoment
+    data class Recovered(val streak: Int) : StreakMoment
+}
+
+/**
+ * Compares the state before and after a change and says whether it was a moment.
+ * It only fires when exactly one new counted hour landed, so a replay (first
+ * composition), an import, a backdated save or a mode/goal toggle can never
+ * celebrate: none of them add a single counted hour.
+ */
+fun streakMoment(prev: StreakState?, now: StreakState): StreakMoment? {
+    if (prev == null || now.todayHours != prev.todayHours + 1) return null
+    if (!prev.todayEarnedSaver && now.todayEarnedSaver) return StreakMoment.SaverEarned(now.savers)
+    if (prev.recoveryOpen && !now.recoveryOpen && now.todayRecovered) return StreakMoment.Recovered(now.currentStreak)
+    return null
 }

@@ -122,6 +122,8 @@ fun HourlyPulseApp(
 
     // Full-screen celebration when the daily ring closes (streak day secured)
     var ringCelebration by remember { mutableStateOf<RingCelebration?>(null) }
+    // A saver earned or a streak won back; waits its turn behind the ring celebration
+    var streakMoment by remember { mutableStateOf<StreakMoment?>(null) }
 
     // Mode + streak, shared by the menu copy, the explainer and the nudge
     val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
@@ -283,7 +285,8 @@ fun HourlyPulseApp(
                     onMenuClick = { showMenu = true },
                     pendingScore = pendingScore,
                     onPendingScoreConsumed = { pendingScore = null },
-                    onRingClosed = { ringCelebration = it }
+                    onRingClosed = { ringCelebration = it },
+                    onStreakMoment = { streakMoment = it }
                 )
 
                 2 -> PastTab(
@@ -655,6 +658,11 @@ fun HourlyPulseApp(
             celebration = celebration,
             onDone = { ringCelebration = null }
         )
+    }
+    if (ringCelebration == null) {
+        streakMoment?.let { moment ->
+            StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+        }
     }
     }
 }

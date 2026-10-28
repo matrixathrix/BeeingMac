@@ -123,7 +123,8 @@ fun NowTab(
     onMenuClick: () -> Unit = {},
     pendingScore: Int? = null,
     onPendingScoreConsumed: () -> Unit = {},
-    onRingClosed: (RingCelebration) -> Unit = {}
+    onRingClosed: (RingCelebration) -> Unit = {},
+    onStreakMoment: (StreakMoment) -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -242,6 +243,15 @@ fun NowTab(
                 )
             )
         }
+    }
+
+    // A saver earned / a streak won back. streakMoment() only fires when exactly one
+    // new counted hour landed, so replays, imports, backdated saves and mode
+    // toggles can never celebrate; the first composition just sets the baseline.
+    var previousState by remember { mutableStateOf<StreakState?>(null) }
+    LaunchedEffect(streakState) {
+        streakMoment(previousState, streakState)?.let(onStreakMoment)
+        previousState = streakState
     }
 
     // Dismiss notification when both hours are rated
