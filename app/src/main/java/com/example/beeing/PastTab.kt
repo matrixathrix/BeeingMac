@@ -857,9 +857,14 @@ private fun HourEntryRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // clock icon = rated from memory via a bee, not in the moment
+                // clock icon = added later via "Add a past hour", not rated in the moment
                 if (entry.isReclaimed) {
-                    BeeIcon(Sym.FromMemory, size = 11.dp, modifier = Modifier.padding(end = 4.dp))
+                    BeeIcon(Sym.FromMemory, size = 11.dp, modifier = Modifier.padding(end = 3.dp))
+                    Text(
+                        "Added later", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
                 }
                 val shown = entry.visibleTags()
                 Text(

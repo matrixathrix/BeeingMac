@@ -52,11 +52,14 @@ enum class Sym(@DrawableRes val res: Int, val label: String) {
     /** 🌙 — the one forgiven day a week. */
     Rest(R.drawable.ic_sym_rest, "rest day"),
 
-    /** 🐝 — sending a bee back: reclaiming a missed hour. */
-    Reclaim(R.drawable.ic_sym_reclaim, "send back"),
+    /** 🐝 — the bee: only the catch-the-bee screen uses it now. */
+    Reclaim(R.drawable.ic_sym_reclaim, "bee"),
 
-    /** 🕐 — this hour was rated from memory, not in the moment. */
-    FromMemory(R.drawable.ic_sym_from_memory, "rated from memory"),
+    /** Add a past hour — a clock face with a rewind arrow. */
+    AddPast(R.drawable.ic_sym_history, "add a past hour"),
+
+    /** 🕐 — this hour was added later, not rated in the moment. */
+    FromMemory(R.drawable.ic_sym_from_memory, "added later"),
 
     // Outline (FILL 0) twins of Fire/Hourglass/Chart — the nav bar's inactive
     // tabs; the filled originals mark the active one.

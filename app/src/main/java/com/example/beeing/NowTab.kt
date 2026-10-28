@@ -468,7 +468,7 @@ fun NowTab(
                 if (missedHoursToday.isNotEmpty()) {
                     TextButton(onClick = onOpenStreaks) {
                         Text(
-                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past the window · send a bee back from the Streak tab ›",
+                            "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past · add a past hour from the Streak tab ›",
                             fontSize = NowCaptionSize,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

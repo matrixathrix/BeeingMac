@@ -53,9 +53,9 @@ import java.util.Locale
 /**
  * HIVE TAB — the long game lives here:
  *  - monthly calendar of day outcomes (tinted dot built / 🌙 rest / hollow missed)
- *  - send a bee back: reclaim any of the last RECLAIM_WINDOW_HOURS clock hours
- *    (free, RECLAIM_PER_DAY a day, mandatory note, may cross midnight and
- *    retro-qualify yesterday)
+*  - add a past hour: any unrated hour of the last RECLAIM_WINDOW_HOURS clock
+ *    hours (free, RECLAIM_PER_DAY a day, tags required, note optional, may cross
+ *    midnight). Added hours show in every list but never count toward a streak
  *  - the full hive event log
  */
 @Composable
@@ -92,7 +92,7 @@ fun StreaksTab(
     // Day tapped on the calendar (start-of-day millis) → stats popup
     var statsDayMillis by remember { mutableStateOf<Long?>(null) }
 
-    // Expired unrated hours a bee can still reach: hour starts 3..10 behind the
+    // Expired unrated hours that can still be added: hour starts 3..12 behind the
     // current hour (the last 2 are still normally ratable). Crosses midnight —
     // an early-morning reclaim can retroactively qualify yesterday. Most
     // recent first. Values are hour-start millis.
@@ -106,7 +106,7 @@ fun StreaksTab(
             .filter { it !in ratedStarts }
     }
 
-    // Free, but two bees a day — so the reclaim stays a repair, not a habit.
+    // Free, but two a day — so adding a past hour stays a repair, not a habit.
     val beesLeftToday = remember(spendsVersion, reclaimSpends) {
         (RECLAIM_PER_DAY - reclaimsUsedToday(reclaimSpends)).coerceAtLeast(0)
     }
@@ -133,7 +133,7 @@ fun StreaksTab(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-        // ---- ACTION: send a bee back — the one action on this tab,
+        // ---- ACTION: add a past hour — the one action on this tab,
         // right under the goal it protects; hidden when nothing to recover ----
         if (reclaimableHours.isNotEmpty()) {
             val reclaimEnabled = beesLeftToday > 0
@@ -156,14 +156,14 @@ fun StreaksTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     BeeIcon(
-                        Sym.Reclaim, size = 26.dp, contentDescription = null,
+                        Sym.AddPast, size = 26.dp, contentDescription = null,
                         tint = if (reclaimEnabled) LocalBeeExtras.current.accentText
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Missed rating a special hour?",
+                            "Missed an hour?",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
                             color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurface
@@ -172,8 +172,8 @@ fun StreaksTab(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             if (reclaimEnabled)
-                                "Send a bee back to revisit it · ${reclaimableHours.size} in reach"
-                            else "Today's bees are all out — $RECLAIM_PER_DAY more tomorrow",
+                                "Add a past hour · ${reclaimableHours.size} available"
+                            else "You've added $RECLAIM_PER_DAY past hours today. More tomorrow.",
                             fontSize = 13.sp,
                             color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -300,16 +300,15 @@ fun StreaksTab(
         } // page column
     }
 
-    // ---- Pick which missed hour the bee flies back to ----
+    // ---- Pick which missed hour to add ----
     if (showPickHour) {
         AlertDialog(
             onDismissRequest = { showPickHour = false },
-            title = { SymTitle(Sym.Reclaim, "Which hour?") },
+            title = { SymTitle(Sym.AddPast, "Which hour?") },
             text = {
                 Column {
                     Text(
-                        "You'll add a score and a short note. " +
-                                "$beesLeftToday bee${if (beesLeftToday == 1) "" else "s"} left today.",
+                        "You'll add a score and tags. $beesLeftToday left today.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -344,14 +343,15 @@ fun StreaksTab(
         )
     }
 
-    // ---- Reclaim ceremony (mandatory note) ----
+    // ---- Add the hour: score + tags, optional note ----
     reclaimStartMillis?.let { startMs ->
         ReclaimHourDialog(
             startMillis = startMs,
+            availableTags = remember { loadTags(context) },
             onDismiss = { reclaimStartMillis = null },
-            onReclaim = { score, note ->
+            onReclaim = { score, tags, note ->
                 // Guard the daily cap here too: the dialog can outlive the
-                // tap that opened it (rotation, a second bee sent meanwhile).
+                // tap that opened it (rotation, a second hour added meanwhile).
                 if (beesLeftToday <= 0) {
                     reclaimStartMillis = null
                     return@ReclaimHourDialog
@@ -365,7 +365,7 @@ fun StreaksTab(
                     startMs,
                     "$endHour${getOrdinalSuffix(endHour)}",
                     note,
-                    listOf(RECLAIM_TAG)
+                    tags + RECLAIM_TAG
                 )
                 viewModel.saveRating(context, entry)
                 recordReclaimSpend(context)
@@ -420,7 +420,7 @@ fun StreaksTab(
                         Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("• Send a bee back to revisit any hour missed in the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Revisited hours count toward the ${streakState.hoursRequired}.", fontSize = 14.sp)
+                    Text("• Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Added hours stay in your record but don't count toward the ${streakState.hoursRequired}.", fontSize = 14.sp)
                 }
             },
             confirmButton = {
@@ -709,32 +709,27 @@ private fun LegendDot(color: Color, hollow: Boolean, label: String) {
 }
 
 /**
- * The reclaim ceremony: rating a lost hour requires actually re-entering
- * the memory — the reflection note is mandatory.
+ * Adding a past hour: a score, at least one tag (the same chips as the Now tab),
+ * and an optional note. The entry is stored with RECLAIM_TAG, which keeps it out
+ * of every streak count while it still shows in the journal and Trends.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReclaimHourDialog(
     startMillis: Long,
+    availableTags: List<String>,
     onDismiss: () -> Unit,
-    onReclaim: (score: Int, note: String) -> Unit
+    onReclaim: (score: Int, tags: List<String>, note: String) -> Unit
 ) {
     var score by remember { mutableStateOf<Int?>(null) }
     var note by remember { mutableStateOf("") }
+    val selectedTags = remember { mutableStateListOf<String>() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { SymTitle(Sym.Reclaim, reclaimHourLabel(startMillis)) },
+        title = { SymTitle(Sym.AddPast, reclaimHourLabel(startMillis)) },
         text = {
-            Column {
-                Text("What were you doing?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("A short note is required") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(16.dp))
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("How was that hour?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -762,14 +757,41 @@ fun ReclaimHourDialog(
                         }
                     }
                 }
+                Spacer(Modifier.height(16.dp))
+                Text("What were you doing?", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy((-6).dp)
+                ) {
+                    availableTags.forEach { tag ->
+                        InputChip(
+                            selected = tag in selectedTags,
+                            onClick = {
+                                if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
+                            },
+                            label = { TagChipContent(tag) },
+                            shape = TagChipShape,
+                            colors = tagChipColors(),
+                            border = null
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Add a note (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             Button(
                 colors = BeeButtonDefaults.colors(),
-                onClick = { score?.let { onReclaim(it, note.trim()) } },
-                enabled = score != null && note.isNotBlank()
-            ) { Text("Revisit") }
+                onClick = { score?.let { onReclaim(it, selectedTags.toList(), note.trim()) } },
+                enabled = score != null && selectedTags.isNotEmpty()
+            ) { Text("Add hour") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

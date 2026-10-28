@@ -71,12 +71,17 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                             val shownTags = item.visibleTags()
                             if (shownTags.isNotEmpty() || item.isReclaimed) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // clock icon = rated from memory via a bee
+                                    // clock icon = added later via "Add a past hour"
                                     if (item.isReclaimed) {
                                         BeeIcon(
                                             Sym.FromMemory, size = 12.dp,
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(end = 4.dp)
+                                        )
+                                        Text(
+                                            "Added later", fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 6.dp)
                                         )
                                     }
                                     Text(
