@@ -12,6 +12,12 @@ class WarningsTest {
     ) = StreakEvent("${type.name}:$day:$daysLeft", ts, type, streak, savers, daysLeft, day)
 
     private val label = { _: Long -> "Mon" }
+    private val NOW = 10_000L
+    private val DAY = 24 * 3_600_000L
+
+    /** Old call shape, with "now" fixed so the 7-day expiry never touches the tiny test timestamps. */
+    private fun warningsFrom(events: List<StreakEvent>, baselineMs: Long, dayLabel: (Long) -> String) =
+        com.example.beeing.warningsFrom(events, baselineMs, NOW, dayLabel)
     private fun one(e: StreakEvent) = warningsFrom(listOf(e), 0L, label).single()
 
     @Test fun copy_matches_spec() {
@@ -63,6 +69,16 @@ class WarningsTest {
             ),
             kept
         )
+    }
+
+    @Test fun warnings_expire_after_seven_days() {
+        fun at(ageMs: Long, day: Long) = ev(StreakEventType.SAVER_USED, ts = NOW - ageMs, day = day)
+        val kept = com.example.beeing.warningsFrom(
+            listOf(at(8 * DAY, 1L), at(7 * DAY + 1, 2L), at(7 * DAY, 3L), at(6 * DAY, 4L), at(0L, 5L)),
+            baselineMs = 0L, nowMs = NOW, dayLabel = label
+        )
+        // newest first: just now, 6 days old, exactly 7 days old; 7 days + 1 ms and 8 days are gone
+        assertEquals(listOf(0L, 6 * DAY, 7 * DAY), kept.map { w -> NOW - w.timestamp })
     }
 
     @Test fun newest_thirty_only_newest_first() {

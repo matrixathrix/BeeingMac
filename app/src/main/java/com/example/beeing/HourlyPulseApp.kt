@@ -157,7 +157,8 @@ fun HourlyPulseApp(
         val dayFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
         warningsFrom(
             computeStreakEvents(viewModel.allRatings, emptyList(), viewModel.modeEvents),
-            warningsBaselineMs
+            warningsBaselineMs,
+            System.currentTimeMillis()
         ) { dayFmt.format(Date(it)) }
     }
     val unreadWarnings = if (warningsEnabled) unreadCount(warnings, readWarningIds, warningsBaselineMs) else 0

@@ -48,10 +48,16 @@ internal fun StreakEvent.warningDetail(dayLabel: String): String = when (type) {
     else -> ""
 }
 
-/** Newest first, at most 30. `dayLabel` formats an event's day-start millis ("Mon 27 Oct"). */
-fun warningsFrom(events: List<StreakEvent>, baselineMs: Long, dayLabel: (Long) -> String): List<Warning> =
+/** Warnings disappear from the bell this long after they happened. */
+const val WARNING_TTL_MS = 7L * 24 * 3_600_000L
+
+/**
+ * Newest first, at most 30, and only from the last 7 days (older ones expire).
+ * `dayLabel` formats an event's day-start millis ("Mon 27 Oct").
+ */
+fun warningsFrom(events: List<StreakEvent>, baselineMs: Long, nowMs: Long, dayLabel: (Long) -> String): List<Warning> =
     events.asSequence()
-        .filter { it.type in WARNING_TYPES }
+        .filter { it.type in WARNING_TYPES && nowMs - it.timestamp <= WARNING_TTL_MS }
         .sortedByDescending { it.timestamp }
         .take(MAX_WARNINGS)
         .map { Warning(it.id, it.timestamp, it.type, it.warningTitle(), it.warningDetail(dayLabel(it.dayStartMs))) }

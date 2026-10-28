@@ -128,13 +128,12 @@ fun reclaimsUsedToday(spends: List<Long>): Int {
 
 
 // ============================================================
-// STREAK METER  (8-segment ring; grows full-width when the dial rests)
+// STREAK METER  (today's hour ring + the streak count, on the Streak tab's brand band)
 // ============================================================
 
 @Composable
 fun StreakMeter(
     state: StreakState,
-    expanded: Boolean,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
@@ -180,23 +179,27 @@ fun StreakMeter(
     }
     val accent = Color(0xFFFFE082) // pastel honey yellow
     val done = Color(0xFF66BB6A)
-    val track = Color.White.copy(alpha = 0.18f)   // drawn on the brand band
+    val track = Color.White.copy(alpha = 0.16f)   // drawn on the brand band
     val ringColor = if (state.todayQualified) done else accent
 
-    // The ring shows TODAY's hours, so the count inside is hours; the hive
-    // (one cell built per qualifying day) lives outside the ring.
     val atRisk = state.recoveryOpen
     val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
+    // A running streak reads as a big numeral; the other states (paused, beginner,
+    // none yet) are sentences, so they stay text.
+    val bigCount = when {
+        atRisk -> state.displayStreak
+        state.streakPaused || state.beginnerMode -> null
+        state.currentStreak > 0 -> state.currentStreak
+        else -> null
+    }
     val streakTitle = when {
-        atRisk -> "${state.displayStreak}-day streak at risk!"
         state.streakPaused -> "Streak paused at ${state.currentStreak}"
         state.beginnerMode -> "Beginner mode"
-        state.currentStreak > 0 -> "${state.currentStreak}-day streak"
         else -> "No streak yet"
     }
     val remaining = (goal - state.todayHours).coerceAtLeast(0)
     val statusText = when {
-        atRisk -> "${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back — rate $RECOVERY_HOURS hours in one"
+        atRisk -> "${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back. Rate $RECOVERY_HOURS hours in one."
         state.todayQualified && state.beginnerMode -> "Beginner day complete ✓"
         state.todayQualified -> "Today is secured ✓"
         state.beginnerMode -> "$remaining more hour${if (remaining == 1) "" else "s"} to complete today"
@@ -204,122 +207,70 @@ fun StreakMeter(
     }
     // A paused streak has to say it is paused, or beginner mode reads as a loss
     val pausedNote = if (state.streakPaused) "Resumes in Master mode" else null
-
-    val card = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(20.dp))
-        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+    val soft = Color.White.copy(alpha = 0.78f)
 
     // No card: the meter sits directly on the Streak tab's brand band.
-    Box(modifier = modifier.then(card)) {
-        // Two fixed layouts with an animated size change between them: nothing
-        // is re-measured per frame, so the grow/shrink stays smooth to the end
-        // (the old per-frame size/font lerp dropped frames as it settled).
-        AnimatedContent(
-            targetState = expanded,
-            transitionSpec = {
-                (fadeIn(tween(260, delayMillis = 130)) togetherWith fadeOut(tween(130)))
-                    .using(SizeTransform(clip = false) { _, _ ->
-                        tween(500, easing = FastOutSlowInEasing)
-                    })
-            },
-            label = "meterLayout",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-        ) { isExpanded ->
-            if (isExpanded) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    StreakRing(
-                        animatedFill = animatedFill,
-                        animatedExtra = animatedExtra,
-                        ringColor = ringColor,
-                        trackColor = track,
-                        hoursRequired = goal,
-                        ringSize = 240.dp,
-                        strokeWidth = 30.dp,
-                        scale = ringScale.value
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "${state.todayHours}/$goal",
-                                fontSize = 44.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
-                            )
-                            Text(
-                                "hours today",
-                                fontSize = 13.sp,
-                                color = Color.White.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (atRisk) riskColor else Color.Unspecified)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(22.dp)
+    ) {
+        StreakRing(
+            animatedFill = animatedFill,
+            animatedExtra = animatedExtra,
+            ringColor = ringColor,
+            trackColor = track,
+            hoursRequired = goal,
+            ringSize = 116.dp,
+            strokeWidth = 12.dp,
+            scale = ringScale.value
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${state.todayHours}",
+                    fontSize = 36.sp, lineHeight = 38.sp,
+                    fontWeight = FontWeight.ExtraBold, color = Color.White
+                )
+                Text("of $goal hours", fontSize = 11.sp, color = soft)
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (bigCount != null) {
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        statusText,
-                        fontSize = 13.sp,
-                        color = if (state.todayQualified) done
-                        else Color.White.copy(alpha = 0.75f)
+                        "$bigCount",
+                        fontSize = 56.sp, lineHeight = 58.sp, fontWeight = FontWeight.Black,
+                        color = if (atRisk) riskColor else Color.White
                     )
-                    pausedNote?.let {
-                        Text(it, fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f))
-                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (atRisk) "day streak at risk!" else "day streak",
+                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        color = if (atRisk) riskColor else soft,
+                        modifier = Modifier.padding(bottom = 9.dp)
+                    )
                 }
             } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    StreakRing(
-                        animatedFill = animatedFill,
-                        animatedExtra = animatedExtra,
-                        ringColor = ringColor,
-                        trackColor = track,
-                        hoursRequired = goal,
-                        ringSize = 112.dp,
-                        strokeWidth = 15.dp,
-                        scale = ringScale.value
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "${state.todayHours}/$goal",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
-                            )
-                            Text(
-                                "hours",
-                                fontSize = 10.sp,
-                                color = Color.White.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (atRisk) riskColor else Color.Unspecified)
-                        Text(
-                            statusText,
-                            fontSize = 12.sp,
-                            color = if (state.todayQualified) done
-                            else Color.White.copy(alpha = 0.75f)
-                        )
-                        pausedNote?.let {
-                            Text(it, fontSize = 11.sp, color = Color.White.copy(alpha = 0.75f))
-                        }
-                    }
-                }
+                Text(streakTitle, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
             }
+            Text(
+                statusText,
+                fontSize = 13.sp, lineHeight = 17.sp,
+                color = if (state.todayQualified) done else soft
+            )
+            pausedNote?.let { Text(it, fontSize = 12.sp, color = soft) }
         }
     }
 }
 
 /**
- * The hour ring: one segment per hour the active mode asks for (8 in Master,
- * 4 in beginner mode), flat start edge at 12 o'clock, convex leading tip while
- * filling. Once closed it becomes one seamless circle, and hours beyond the
- * goal grow a pointy head past 12 o'clock (toward 1 o'clock), its color
- * darkening toward the tip.
+ * The hour ring: one continuous arc that fills toward the goal (8 hours in Master,
+ * 4 in beginner mode), with a thin tick at each hour so the count is still legible
+ * without chunky segments. Once closed it becomes a solid circle, and hours beyond
+ * the goal grow a pointy head past 12 o'clock, its color darkening toward the tip.
  */
 @Composable
 private fun StreakRing(
@@ -344,36 +295,20 @@ private fun StreakRing(
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = strokeWidth.toPx()
-            val gapDeg = 6f
-            val slotDeg = 360f / hoursRequired
-            val segSweep = slotDeg - gapDeg
             val inset = stroke / 2
             val arcSize = Size(size.width - stroke, size.height - stroke)
             val topLeft = Offset(inset, inset)
-            val a0 = -90f + gapDeg / 2
             val ringRadius = (size.minDimension - stroke) / 2f
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val fraction = (animatedFill / hoursRequired).coerceIn(0f, 1f)
             val complete = animatedFill >= hoursRequired - 0.001f
 
-            // Track: all segments drawn FIRST so the fill always sits on top
-            for (i in 0 until hoursRequired) {
-                drawArc(
-                    color = trackColor,
-                    startAngle = a0 + i * slotDeg, sweepAngle = segSweep, useCenter = false,
-                    topLeft = topLeft, size = arcSize,
-                    style = Stroke(width = stroke, cap = StrokeCap.Round)
-                )
-            }
+            drawCircle(color = trackColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
             if (complete) {
-                // Closed ring: one seamless circle, no seam at 12 o'clock
-                drawCircle(
-                    color = ringColor,
-                    radius = ringRadius,
-                    center = Offset(size.width / 2f, size.height / 2f),
-                    style = Stroke(width = stroke)
-                )
+                drawCircle(color = ringColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
-                // Overflow head: each hour beyond 8 pushes a tapering point
+                // Overflow head: each hour beyond the goal pushes a tapering point
                 // further past 12 o'clock, darkening toward the tip
                 val headSweep = (animatedExtra * 4f).coerceAtMost(32f)
                 if (headSweep > 0.1f) {
@@ -391,51 +326,43 @@ private fun StreakRing(
                             style = Stroke(width = stroke * (1f - 0.82f * t), cap = StrokeCap.Butt)
                         )
                     }
-                    // round off the very tip
                     val tipRad = Math.toRadians((-90f + headSweep).toDouble())
                     drawCircle(
                         color = tipColor,
                         radius = stroke * 0.09f,
                         center = Offset(
-                            size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
-                            size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
+                            c.x + (ringRadius * cos(tipRad)).toFloat(),
+                            c.y + (ringRadius * sin(tipRad)).toFloat()
                         )
                     )
                 }
-            } else {
-                // Filling: ONE merged arc over the track. Butt cap keeps the
-                // 12-o'clock starting edge a straight line; a half-disc at the
-                // leading end makes it convex, pointing in the fill direction.
-                val whole = animatedFill.toInt().coerceIn(0, hoursRequired)
-                val frac = animatedFill - whole
-                val fillSweep = when {
-                    frac > 0f -> whole * slotDeg + segSweep * frac
-                    whole > 0 -> (whole - 1) * slotDeg + segSweep
-                    else -> 0f
-                }
-                if (fillSweep > 0f) {
-                    drawArc(
-                        color = ringColor,
-                        startAngle = a0, sweepAngle = fillSweep, useCenter = false,
-                        topLeft = topLeft, size = arcSize,
-                        style = Stroke(width = stroke, cap = StrokeCap.Butt)
-                    )
-                    val tipRad = Math.toRadians((a0 + fillSweep).toDouble())
-                    drawCircle(
-                        color = ringColor,
-                        radius = stroke / 2f,
-                        center = Offset(
-                            size.width / 2f + (ringRadius * cos(tipRad)).toFloat(),
-                            size.height / 2f + (ringRadius * sin(tipRad)).toFloat()
-                        )
-                    )
-                }
+            } else if (fraction > 0f) {
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            }
+
+            // One hairline tick per hour, in the band's own dark, across the stroke
+            val tickColor = Color(0xFF1C0920).copy(alpha = 0.55f)
+            val half = stroke / 2f + 0.5f
+            for (i in 0 until hoursRequired) {
+                val a = Math.toRadians((-90f + i * 360f / hoursRequired).toDouble())
+                val dx = cos(a).toFloat()
+                val dy = sin(a).toFloat()
+                drawLine(
+                    color = tickColor,
+                    start = Offset(c.x + dx * (ringRadius - half), c.y + dy * (ringRadius - half)),
+                    end = Offset(c.x + dx * (ringRadius + half), c.y + dy * (ringRadius + half)),
+                    strokeWidth = 2.dp.toPx()
+                )
             }
         }
         centerContent()
     }
 }
-
 
 // ============================================================
 // STREAK LOG  (timestamped event history; the bell shows a filtered view)

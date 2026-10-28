@@ -121,22 +121,30 @@ fun StreaksTab(
         // must never scroll away and leave them over the light page. ----
         BrandBand {
             BandTopRowSpacer()
-            Spacer(Modifier.height(12.dp))
-            StreakMeter(
-                state = streakState,
-                expanded = false
-            )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
+            StreakMeter(state = streakState)
+            Spacer(Modifier.height(16.dp))
+            // Savers: one calm pill under the ring, tap for how they work
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showSavers = true },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(com.example.beeing.ui.OnBandFill)
+                    .clickable(onClickLabel = "How savers work") { showSavers = true }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SaverSlots(streakState.savers)
                 Text(
-                    "${streakState.savers} of $SAVER_CAP savers",
+                    "Streak savers",
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.weight(1f)
+                )
+                SaverSlots(streakState.savers)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "${streakState.savers}/$SAVER_CAP",
+                    fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color.White
                 )
             }
         }

@@ -37,39 +37,29 @@ import com.example.beeing.ui.icons.SymTitle
 import com.example.beeing.ui.theme.HoneyGold
 
 /**
- * [SAVER_CAP] shield slots: filled up to [savers], the rest dashed outlines. Drawn
- * for dark surfaces (the brand band, the celebration); [highlightIndex] pops one slot.
+ * [SAVER_CAP] shield slots: honey shields up to [savers], the rest the same shield
+ * faded back, so earning one visibly "lights it up". Drawn for dark surfaces (the
+ * brand band, the celebration); [highlightIndex] pops one slot.
  */
 @Composable
 fun SaverSlots(
     savers: Int,
     modifier: Modifier = Modifier,
     highlightIndex: Int? = null,
-    emptyColor: Color = Color.White.copy(alpha = 0.35f)
+    emptyColor: Color = Color.White.copy(alpha = 0.22f)
 ) {
     Row(
         modifier.semantics { contentDescription = "$savers of $SAVER_CAP streak savers" },
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(SAVER_CAP) { i ->
-            val popped = highlightIndex == i
-            Box(Modifier.size(26.dp).scale(if (popped) 1.2f else 1f), contentAlignment = Alignment.Center) {
-                if (i < savers) {
-                    BeeIcon(Sym.Saver, size = 26.dp, tint = HoneyGold, contentDescription = null)
-                } else {
-                    Canvas(Modifier.size(22.dp)) {
-                        val stroke = 1.5.dp.toPx()
-                        drawRoundRect(
-                            color = emptyColor,
-                            topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
-                            size = Size(size.width - stroke, size.height - stroke),
-                            cornerRadius = CornerRadius(size.width * 0.3f),
-                            style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f)))
-                        )
-                    }
-                }
-            }
+            BeeIcon(
+                Sym.Saver, size = 26.dp,
+                tint = if (i < savers) HoneyGold else emptyColor,
+                contentDescription = null,
+                modifier = Modifier.scale(if (highlightIndex == i) 1.25f else 1f)
+            )
         }
     }
 }
