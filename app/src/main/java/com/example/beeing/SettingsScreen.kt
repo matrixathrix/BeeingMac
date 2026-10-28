@@ -87,6 +87,8 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // Swallow touches so the tabs and the fixed top row underneath stay inert
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {}
     ) {
         BrandBand {
             Row(verticalAlignment = Alignment.CenterVertically) {
