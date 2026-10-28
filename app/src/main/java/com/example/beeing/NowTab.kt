@@ -44,8 +44,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -310,17 +315,20 @@ fun NowTab(
     val tagsScroll = rememberScrollState()
     var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
-    // Compact hour range: collapse the shared meridiem ("3–4pm") so it fits
-    // the picker chip; spell both out only across the noon boundary ("11am–12pm").
-    fun hourRange(offset: Int): String {
+    // Picker range, spelled out in full: "8 PM to 9 PM". The connecting "to" is
+    // set lighter and dimmer so the two times carry the weight and the label
+    // scans as a pair of times, not a sentence.
+    fun hourRange(offset: Int): AnnotatedString {
         val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
         val endH = cal.get(Calendar.HOUR_OF_DAY)
         val startH = if (endH == 0) 23 else endH - 1
-        val startNum = if (startH % 12 == 0) 12 else startH % 12
-        return if ((startH < 12) == (endH < 12)) {
-            "$startNum–${formatHour(endH)}"
-        } else {
-            "${formatHour(startH)}–${formatHour(endH)}"
+        fun clock(h: Int) = "${if (h % 12 == 0) 12 else h % 12} ${if (h < 12) "AM" else "PM"}"
+        return buildAnnotatedString {
+            append(clock(startH))
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))) {
+                append(" to ")
+            }
+            append(clock(endH))
         }
     }
     fun minutesFor(offset: Int) =
@@ -405,7 +413,11 @@ fun NowTab(
                 } else {
                     val mins = minutesFor(targetedHourOffset)
                     Text("How was your hour?", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
+                    // Three tiers of emphasis on one line: the picker is the control
+                    // (solid pill, 18sp), the countdown is its caption (14sp, no
+                    // container), the info icon is a quiet aside. All three share the
+                    // picker's 44dp centre line so nothing floats.
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         HourWindowPicker(
                             rangeLabel = hourRange(targetedHourOffset),
@@ -414,25 +426,29 @@ fun NowTab(
                             onEarlier = { onTargetedHourOffsetChange(1) },
                             onLater = { onTargetedHourOffsetChange(0) }
                         )
-                        Spacer(Modifier.width(10.dp))
-                        // Countdown turns honey in its last 15 minutes.
-                        val countdownColor = if (mins <= 15) HoneyGold else Color.White.copy(alpha = 0.75f)
-                        BeeIcon(Sym.Hourglass, size = 13.dp, tint = countdownColor, contentDescription = null)
-                        Text(
-                            "${mins}m left",
-                            fontSize = NowCaptionSize,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            color = countdownColor,
-                            modifier = Modifier.padding(start = 3.dp)
-                        )
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(24.dp)) {
+                        Spacer(Modifier.width(12.dp))
+                        // Countdown turns honey in its last 15 minutes. It takes the
+                        // leftover width (and ellipsizes in the worst case, "11 AM to
+                        // 12 PM" on a 360dp phone) so the info icon is never pushed off.
+                        val countdownColor = if (mins <= 15) HoneyGold else Color.White.copy(alpha = 0.8f)
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            BeeIcon(Sym.Hourglass, size = 16.dp, tint = countdownColor, contentDescription = null)
+                            Text(
+                                "${mins}m left",
+                                fontSize = NowBodySize,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = countdownColor,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                        IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(36.dp)) {
                             Icon(
                                 Icons.Default.Info,
                                 contentDescription = "Why only these hours?",
-                                tint = Color.White.copy(alpha = 0.75f),
-                                modifier = Modifier.size(17.dp)
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -1472,57 +1488,61 @@ private fun RowActionButton(
  * the targeted hour range flanked by ‹ › carets. A caret is enabled only when
  * the neighbouring hour is itself still pending, so the user can only step to a
  * window that actually needs a rating. The countdown lives beside the chip, not
- * inside it, so the whole control stays one text-height tall.
+ * inside it, so the pill holds only the one thing it controls.
  */
 @Composable
 private fun HourWindowPicker(
-    rangeLabel: String,
+    rangeLabel: AnnotatedString,
     canGoEarlier: Boolean,
     canGoLater: Boolean,
     onEarlier: () -> Unit,
     onLater: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Lives on the brand band: translucent white pill, white text and carets.
+    // Lives on the brand band: the band's pill language (OnBandFill, like the
+    // StatusStrip) but a step louder — 44dp tall, a hairline white edge and an
+    // 18sp ExtraBold range matching the strip's numerals — so the hour being
+    // rated is the first thing read under the question.
     val onContainer = Color.White
     Card(
-        modifier = modifier,
+        modifier = modifier.height(44.dp),
         shape = RoundedCornerShape(50),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
         colors = CardDefaults.cardColors(
             containerColor = OnBandFill,
             contentColor = Color.White
         )
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = onEarlier,
                 enabled = canGoEarlier,
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                     contentDescription = "Earlier hour",
                     tint = onContainer.copy(alpha = if (canGoEarlier) 1f else 0.25f),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
             Text(
                 rangeLabel,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
                 maxLines = 1,
                 color = onContainer
             )
             IconButton(
                 onClick = onLater,
                 enabled = canGoLater,
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(40.dp)
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = "Later hour",
                     tint = onContainer.copy(alpha = if (canGoLater) 1f else 0.25f),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
