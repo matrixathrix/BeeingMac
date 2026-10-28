@@ -26,8 +26,8 @@ import com.example.beeing.R
  * never a design system: they render differently on every OEM skin, they can't
  * be tinted, they don't scale with the text they sit beside, and screen readers
  * announce them as prose. A [Sym] is one tintable, size-controlled, described
- * glyph — so a rest day looks the same on every device and announces as
- * "rest day", not "crescent moon".
+ * glyph — so a saver looks the same on every device and announces as
+ * "streak saver", not "shield".
  *
  * Two things deliberately keep their emoji and are NOT in this enum:
  *  - **tag names** (`DEFAULT_TAGS`, e.g. "💼 Work") — those are user-editable
@@ -49,14 +49,17 @@ enum class Sym(@DrawableRes val res: Int, val label: String) {
     /** 🌱 — beginner mode / a completed 4-hour beginner day. */
     Beginner(R.drawable.ic_sym_beginner, "beginner day"),
 
-    /** 🌙 — the one forgiven day a week. */
-    Rest(R.drawable.ic_sym_rest, "rest day"),
+    /** The "Rest" tag glyph (tags reuse it). Rest days themselves are gone. */
+    Rest(R.drawable.ic_sym_rest, "rest"),
 
     /** 🐝 — the bee: only the catch-the-bee screen uses it now. */
     Reclaim(R.drawable.ic_sym_reclaim, "bee"),
 
     /** Add a past hour — a clock face with a rewind arrow. */
     AddPast(R.drawable.ic_sym_history, "add a past hour"),
+
+    /** A streak saver: a shield with the streak flame inside. */
+    Saver(R.drawable.ic_sym_saver, "streak saver"),
 
     /** 🕐 — this hour was added later, not rated in the moment. */
     FromMemory(R.drawable.ic_sym_from_memory, "added later"),

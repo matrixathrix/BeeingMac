@@ -42,3 +42,7 @@ val HairlineDark = Color(0xFF2A2630)
 val HoneyGold = Color(0xFFFFB300)
 val RingQualifiedGreen = Color(0xFF66BB6A)
 
+// The streak count while a recovery window is open: light enough to read on the
+// aubergine band (the 1-4 score red is too dark there).
+val StreakAtRiskRed = Color(0xFFFF6B6B)
+

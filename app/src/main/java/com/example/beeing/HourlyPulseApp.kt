@@ -501,7 +501,7 @@ fun HourlyPulseApp(
                         InfoSection(Sym.Fire, "Build Your Streak")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Come up short one day and it becomes a rest day: the streak holds, once a week. Miss an hour instead? Send a bee back to revisit any of the last $RECLAIM_WINDOW_HOURS — free, twice a day.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SAVER_EARN_HOURS to earn a streak saver (up to $SAVER_CAP): miss a day and one steps in on its own, so the streak holds. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
@@ -510,7 +510,7 @@ fun HourlyPulseApp(
                         InfoSection(Sym.Beginner, "Beginner Mode")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "New here? Beginner mode asks for $BEGINNER_HOURS_REQUIRED hours a day instead of $STREAK_HOURS_REQUIRED, and those days sit outside the streak entirely — nothing to break, nothing to lose. Any streak you already have is paused and waiting when you switch back. Send a bee back still works. Turn it on or off any time in the menu." +
+                            "New here? Beginner mode asks for $BEGINNER_HOURS_REQUIRED hours a day instead of $STREAK_HOURS_REQUIRED, and those days sit outside the streak entirely: nothing to break, nothing to lose, and savers neither earn nor fade. Any streak you already have is paused and waiting when you switch back. Adding a past hour still works. Turn it on or off any time in Settings." +
                                     if (streakState.beginnerMode) "\n\nIt's on right now — today's goal is $BEGINNER_HOURS_REQUIRED hours." else "",
                             fontSize = 13.sp,
                             lineHeight = 18.sp

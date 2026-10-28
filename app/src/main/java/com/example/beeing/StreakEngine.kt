@@ -185,7 +185,10 @@ fun StreakMeter(
 
     // The ring shows TODAY's hours, so the count inside is hours; the hive
     // (one cell built per qualifying day) lives outside the ring.
+    val atRisk = state.recoveryOpen
+    val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
     val streakTitle = when {
+        atRisk -> "${state.displayStreak}-day streak at risk!"
         state.streakPaused -> "Streak paused at ${state.currentStreak}"
         state.beginnerMode -> "Beginner mode"
         state.currentStreak > 0 -> "${state.currentStreak}-day streak"
@@ -193,6 +196,7 @@ fun StreakMeter(
     }
     val remaining = (goal - state.todayHours).coerceAtLeast(0)
     val statusText = when {
+        atRisk -> "${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back — rate $RECOVERY_HOURS hours in one"
         state.todayQualified && state.beginnerMode -> "Beginner day complete ✓"
         state.todayQualified -> "Today is secured ✓"
         state.beginnerMode -> "$remaining more hour${if (remaining == 1) "" else "s"} to complete today"
@@ -251,7 +255,7 @@ fun StreakMeter(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = if (atRisk) riskColor else Color.Unspecified)
                     Text(
                         statusText,
                         fontSize = 13.sp,
@@ -293,7 +297,7 @@ fun StreakMeter(
                         }
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(streakTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (atRisk) riskColor else Color.Unspecified)
                         Text(
                             statusText,
                             fontSize = 12.sp,
@@ -442,7 +446,7 @@ internal fun StreakEventType.sym(): Sym = when (this) {
     StreakEventType.COMPLETED -> Sym.Streak
     StreakEventType.BEGINNER -> Sym.Beginner
     StreakEventType.SAVER_EARNED, StreakEventType.SAVER_USED, StreakEventType.SAVER_FADED,
-    StreakEventType.LOW_SAVERS, StreakEventType.COMEBACK_GIFT -> Sym.Star
+    StreakEventType.LOW_SAVERS, StreakEventType.COMEBACK_GIFT -> Sym.Saver
     StreakEventType.STREAK_BROKE -> Sym.Reset
     StreakEventType.RECOVERY_DAYS_LEFT, StreakEventType.RECOVERED -> Sym.Fire
     StreakEventType.PAST_HOUR_ADDED -> Sym.FromMemory

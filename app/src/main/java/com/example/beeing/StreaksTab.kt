@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.SaverExplainerDialog
+import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -89,6 +91,7 @@ fun StreaksTab(
     var showPickHour by remember { mutableStateOf(false) }
     var reclaimStartMillis by remember { mutableStateOf<Long?>(null) }
     var showRules by remember { mutableStateOf(false) }
+    var showSavers by remember { mutableStateOf(false) }
     // Day tapped on the calendar (start-of-day millis) → stats popup
     var statsDayMillis by remember { mutableStateOf<Long?>(null) }
 
@@ -122,6 +125,19 @@ fun StreaksTab(
                 state = streakState,
                 expanded = false
             )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { showSavers = true },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SaverSlots(streakState.savers)
+                Text(
+                    "${streakState.savers} of $SAVER_CAP savers",
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
         }
 
         Column(
@@ -244,7 +260,7 @@ fun StreaksTab(
                 ) {
                     LegendDot(color = getScoreColor(6.0), hollow = false, label = "complete")
                     LegendItem(Sym.Beginner, "beginner day")
-                    LegendItem(Sym.Rest, "rest day")
+                    LegendItem(Sym.Saver, "saver used")
                     LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
@@ -388,7 +404,9 @@ fun StreaksTab(
         )
     }
 
-    // ---- The one explainer: how the hive works ----
+    if (showSavers) SaverExplainerDialog(streakState.savers) { showSavers = false }
+
+    // ---- The one explainer: how streaks work ----
     if (showRules) {
         val beginner = streakState.beginnerMode
         AlertDialog(
@@ -411,13 +429,15 @@ fun StreaksTab(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(8.dp))
-                        Text("• Master mode asks for $STREAK_HOURS_REQUIRED hours a day and turns complete days into a streak. Switch any time from the menu.", fontSize = 14.sp)
+                        Text("• Master mode asks for $STREAK_HOURS_REQUIRED hours a day and turns complete days into a streak. Savers neither earn nor fade in beginner mode. Switch any time from Settings.", fontSize = 14.sp)
                     } else {
                         Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("• Come up short one day and it becomes a rest day — the streak holds. One rest day a week, no charge.", fontSize = 14.sp)
+                        Text("• Rate $SAVER_EARN_HOURS hours in a day to earn a streak saver (up to $SAVER_CAP). Miss a day and a saver steps in on its own: the streak holds, it just doesn't grow.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("• Come up short twice inside a week and the streak resets.", fontSize = 14.sp)
+                        Text("• With no streak running, a missed day makes a saver fade — so start one. $COMEBACK_IDLE_DAYS days in a row without a complete day earns $COMEBACK_GIFT savers on the house.", fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("• Out of savers? The streak breaks, but you get $RECOVERY_DAYS days to win it back: rate $RECOVERY_HOURS hours on any one of them.", fontSize = 14.sp)
                     }
                     Spacer(Modifier.height(8.dp))
                     Text("• Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS — even into yesterday. $RECLAIM_PER_DAY a day, free. Added hours stay in your record but don't count toward the ${streakState.hoursRequired}.", fontSize = 14.sp)
@@ -515,7 +535,7 @@ private fun MonthGrid(
 
 /**
  * A calendar day. Repeated identical emoji carry no information, so a hive
- * day shows a dot tinted by that day's average score, a rest day shows the
+ * day shows a dot tinted by that day's average score, a saved day shows the
  * small moon, and a missed day is a hollow red ring. A completed beginner day
  * gets the beginner icon — not a hollow tinted dot, which would read as the missed
  * ring at 9dp. Today gets the primary-color outline. Color never travels alone
@@ -561,7 +581,7 @@ private fun DayCell(
                     .background(getScoreColor(avgScore ?: 0.0))
             )
             DayOutcome.BEGINNER_COMPLETE -> BeeIcon(Sym.Beginner, size = 11.dp)
-            DayOutcome.SAVED -> BeeIcon(Sym.Star, size = 11.dp)
+            DayOutcome.SAVED -> BeeIcon(Sym.Saver, size = 12.dp, tint = LocalBeeExtras.current.accentText)
             DayOutcome.MISSED, DayOutcome.BROKEN -> Box(
                 Modifier
                     .size(9.dp)
@@ -611,7 +631,7 @@ private fun DayStatsDialog(
     val outcomeSym = when {
         outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED -> Sym.Streak
         outcome == DayOutcome.BEGINNER_COMPLETE -> Sym.Beginner
-        outcome == DayOutcome.SAVED -> Sym.Star
+        outcome == DayOutcome.SAVED -> Sym.Saver
         outcome == null && isToday -> Sym.Hourglass
         else -> null   // missed / nothing rated: the words stand alone
     }

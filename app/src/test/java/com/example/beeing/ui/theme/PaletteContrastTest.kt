@@ -50,6 +50,14 @@ class PaletteContrastTest {
         assertContrast(7.0, Color.White, x.bandBottom, "$n white/bandBottom")
     }
 
+    // The at-risk streak count (flame, number and "!") sits on the band.
+    
+    fun at_risk_red_reads_on_band() {
+        listOf(BandTopLight, BandBottomLight, BandTopDark, BandBottomDark).forEach { band ->
+            assertContrast(3.0, StreakAtRiskRed, band, "at-risk red on band $band")
+        }
+    }
+
     // M3 draws TextButtons (every dialog's Cancel/OK), switches and checkboxes
     // in `primary`, so primary must read as text on a card.
     @Test

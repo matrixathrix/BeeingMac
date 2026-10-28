@@ -871,7 +871,11 @@ private fun StatusStrip(
     val stripBg = OnBandFill
     // Screen readers would otherwise announce only the bare numbers ("5", "3/8"),
     // so the strip speaks as one labelled target instead of its two children.
+    val atRisk = state.recoveryOpen
+    val shownStreak = state.displayStreak
+    val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
     val streakLabel = when {
+        atRisk -> "${state.displayStreak}-day streak at risk · ${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back"
         state.streakPaused -> "Beginner mode · streak paused at ${state.currentStreak}"
         state.beginnerMode -> "Beginner mode · no streak yet"
         state.currentStreak > 0 -> "${state.currentStreak}-day streak"
@@ -899,19 +903,25 @@ private fun StatusStrip(
                 // mode has to be visible from the main screen, and the paused
                 // count beside it reads as held, not lost. (The merged
                 // semantics on the Card already announce both.)
-                if (state.beginnerMode) {
+                if (state.beginnerMode && !atRisk) {
                     BeeIcon(Sym.Beginner, size = 17.dp, contentDescription = null)
                 } else {
                     BeeIcon(
                         Sym.Fire, size = 17.dp, contentDescription = null,
-                        tint = HoneyGold // hive identity
+                        tint = if (atRisk) riskColor else HoneyGold // hive identity
                     )
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "${state.currentStreak}",
+                    "$shownStreak",
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp
+                    fontSize = 18.sp,
+                    color = if (atRisk) riskColor else Color.Unspecified
+                )
+                // Colour never travels alone: the mark says "at risk" too.
+                if (atRisk) Text(
+                    "!", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    color = riskColor, modifier = Modifier.padding(start = 2.dp)
                 )
             }
             StripDivider()
