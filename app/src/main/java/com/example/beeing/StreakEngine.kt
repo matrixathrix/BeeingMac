@@ -452,21 +452,12 @@ internal fun StreakEventType.sym(): Sym = when (this) {
     StreakEventType.PAST_HOUR_ADDED -> Sym.FromMemory
 }
 
-private fun plural(n: Int, one: String, many: String = one + "s") = if (n == 1) one else many
-
 internal fun StreakEvent.logTitle(): String = when (type) {
     StreakEventType.COMPLETED -> if (streak == 1) "Streak started" else "Day complete"
     StreakEventType.BEGINNER -> "Beginner day complete"
     StreakEventType.SAVER_EARNED -> "Streak saver earned"
-    StreakEventType.SAVER_USED -> "A streak saver kept your streak alive"
-    StreakEventType.SAVER_FADED -> "A streak saver faded"
-    StreakEventType.LOW_SAVERS -> "Only $savers ${plural(savers, "saver")} left"
-    StreakEventType.COMEBACK_GIFT -> "$COMEBACK_GIFT streak savers on the house"
-    StreakEventType.STREAK_BROKE -> "Your $streak-day streak broke"
-    StreakEventType.RECOVERY_DAYS_LEFT ->
-        "Only $daysLeft ${plural(daysLeft, "day")} left to win back your $streak-day streak"
-    StreakEventType.RECOVERED -> "Streak recovered"
     StreakEventType.PAST_HOUR_ADDED -> "Past hour added"
+    else -> warningTitle()
 }
 
 internal fun StreakEvent.logDetail(): String {
@@ -476,15 +467,8 @@ internal fun StreakEvent.logDetail(): String {
         StreakEventType.BEGINNER -> "$BEGINNER_HOURS_REQUIRED hours on $day" +
             if (streak > 0) " — streak paused at $streak" else ""
         StreakEventType.SAVER_EARNED -> "$SAVER_EARN_HOURS hours on $day — $savers of $SAVER_CAP saved up"
-        StreakEventType.SAVER_USED -> "You missed $day. Your $streak-day streak is safe. $savers ${plural(savers, "saver")} left."
-        StreakEventType.SAVER_FADED -> "No streak was running on $day." +
-            if (savers == 0) " That was your last saver." else " Start one today to keep the $savers you have left."
-        StreakEventType.LOW_SAVERS -> "Rate $SAVER_EARN_HOURS hours in one day to earn another."
-        StreakEventType.COMEBACK_GIFT -> "Rate a few hours today to start a new streak."
-        StreakEventType.STREAK_BROKE -> "Rate $RECOVERY_HOURS hours on one of the next $RECOVERY_DAYS days to win it back."
-        StreakEventType.RECOVERY_DAYS_LEFT -> "Rate $RECOVERY_HOURS hours on one of them."
-        StreakEventType.RECOVERED -> "Your $streak-day streak is back."
         StreakEventType.PAST_HOUR_ADDED -> "Added an hour from earlier"
+        else -> warningDetail(day)
     }
 }
 

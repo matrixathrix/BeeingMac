@@ -60,6 +60,7 @@ import com.example.beeing.ui.BandFillLayout
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.BandTopRow
 import com.example.beeing.ui.OnBandFill
 import com.example.beeing.ui.animatedHeight
 import com.example.beeing.ui.scaledLayout
@@ -382,26 +383,11 @@ fun NowTab(
             // screen is asking — the question + hour picker while an hour is
             // pending, "All caught up" + the countdown once none is.
             BrandBand {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    // Hamburger — carries all data options and "How it works".
-                    // Menu + title scale together with the band (24→30sp), drawn at
-                    // full size and scaled down at rest.
-                    Row(
-                        Modifier.scaledLayout { (24f + 6f * grow()) / 30f },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onMenuClick, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", modifier = Modifier.size(30.dp))
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            "Beeing",
-                            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 38.sp)
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    StatusStrip(state = streakState, onClick = onOpenStreaks)
-                }
+                // Title scales with the band (24→30sp): drawn at full size, scaled down at rest.
+                BandTopRow(
+                    titleModifier = Modifier.scaledLayout { (24f + 6f * grow()) / 30f },
+                    titleStyle = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 38.sp)
+                )
                 Spacer(Modifier.animatedHeight { 18.dp + 56.dp * grow() })
                 // Rounding slack only: keeps the question on the band's bottom edge.
                 Spacer(Modifier.weight(1f))
@@ -863,124 +849,6 @@ fun NowTab(
                     }
                 )
             }
-        }
-    }
-}
-
-// ============================================================
-// STATUS STRIP  (streak icon + count · ring x/goal — leaf + x/4 in beginner mode)
-// ============================================================
-
-@Composable
-private fun StatusStrip(
-    state: StreakState,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Sits on the brand band: a translucent white pill, white content.
-    val stripBg = OnBandFill
-    // Screen readers would otherwise announce only the bare numbers ("5", "3/8"),
-    // so the strip speaks as one labelled target instead of its two children.
-    val atRisk = state.recoveryOpen
-    val shownStreak = state.displayStreak
-    val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
-    val streakLabel = when {
-        atRisk -> "${state.displayStreak}-day streak at risk · ${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back"
-        state.streakPaused -> "Beginner mode · streak paused at ${state.currentStreak}"
-        state.beginnerMode -> "Beginner mode · no streak yet"
-        state.currentStreak > 0 -> "${state.currentStreak}-day streak"
-        else -> "No streak yet"
-    }
-    val stripDescription =
-        "$streakLabel · ${state.todayHours} of ${state.hoursRequired} hours rated today"
-    Card(
-        modifier = modifier
-            .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = stripDescription },
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(
-            containerColor = stripBg,
-            contentColor = Color.White
-        )
-    ) {
-        Row(
-            Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The leaf replaces the hexagon while beginner mode is on: the
-                // mode has to be visible from the main screen, and the paused
-                // count beside it reads as held, not lost. (The merged
-                // semantics on the Card already announce both.)
-                if (state.beginnerMode && !atRisk) {
-                    BeeIcon(Sym.Beginner, size = 17.dp, contentDescription = null)
-                } else {
-                    BeeIcon(
-                        Sym.Fire, size = 17.dp, contentDescription = null,
-                        tint = if (atRisk) riskColor else HoneyGold // hive identity
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "$shownStreak",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    color = if (atRisk) riskColor else Color.Unspecified
-                )
-                // Colour never travels alone: the mark says "at risk" too.
-                if (atRisk) Text(
-                    "!", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
-                    color = riskColor, modifier = Modifier.padding(start = 2.dp)
-                )
-            }
-            StripDivider()
-            MiniHourRing(
-                hours = state.todayHours,
-                hoursRequired = state.hoursRequired,
-                qualified = state.todayQualified
-            )
-            Text(
-                "${state.todayHours}/${state.hoursRequired}",
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun StripDivider() {
-    Box(
-        Modifier
-            .size(width = 1.dp, height = 18.dp)
-            .background(Color.White.copy(alpha = 0.3f))
-    )
-}
-
-@Composable
-private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean) {
-    val track = Color.White.copy(alpha = 0.22f)   // on the band
-    val fill = if (qualified) RingQualifiedGreen else HoneyGold
-    val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
-    Canvas(Modifier.size(24.dp)) {
-        val stroke = 4.dp.toPx()
-        val inset = stroke / 2
-        drawArc(
-            color = track,
-            startAngle = -90f, sweepAngle = 360f, useCenter = false,
-            topLeft = Offset(inset, inset),
-            size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-        if (fraction > 0f) {
-            drawArc(
-                color = fill,
-                startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
-                style = Stroke(width = stroke, cap = StrokeCap.Round)
-            )
         }
     }
 }

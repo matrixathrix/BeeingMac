@@ -33,6 +33,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.beeing.ui.BeeButtonDefaults
+import com.example.beeing.ui.BandChrome
+import com.example.beeing.ui.LocalBandChrome
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -129,6 +131,28 @@ fun HourlyPulseApp(
     val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
         computeStreakState(viewModel.allRatings, viewModel.modeEvents)
     }
+
+    // ---- The warnings bell: the "Heads up" items are a filtered view of the replayed
+    // streak events; only read ids and a baseline are persisted. ----
+    var warningsEnabled by remember { mutableStateOf(streakWarningsEnabled(context)) }
+    var readWarningIds by remember { mutableStateOf(loadReadWarningIds(context)) }
+    var warningsBaselineMs by remember { mutableLongStateOf(warningsBaseline(context)) }
+    var showWarnings by remember { mutableStateOf(false) }
+    val warnings = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger, warningsBaselineMs) {
+        val dayFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+        warningsFrom(
+            computeStreakEvents(viewModel.allRatings, emptyList(), viewModel.modeEvents),
+            warningsBaselineMs
+        ) { dayFmt.format(Date(it)) }
+    }
+    val unreadWarnings = if (warningsEnabled) unreadCount(warnings, readWarningIds, warningsBaselineMs) else 0
+    val bandChrome = BandChrome(
+        state = streakState,
+        unread = unreadWarnings,
+        onStreakClick = { selectedTab = 0 },
+        onBellClick = { showWarnings = true },
+        onMenuClick = { showMenu = true }
+    )
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
     // as shown the moment it appears, so declining is not re-asked.
@@ -235,6 +259,7 @@ fun HourlyPulseApp(
         }
     }
 
+    CompositionLocalProvider(LocalBandChrome provides bandChrome) {
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         // The calm page every tab's cards sit on. No topBar: each tab opens
@@ -636,6 +661,9 @@ fun HourlyPulseApp(
                         val imported = loadFromCsv(context, pendingImportUri!!)
                         if (imported.isNotEmpty()) {
                             imported.forEach { viewModel.saveRating(context, it) }
+                            // The whole history re-derives: nothing in it may badge the bell.
+                            resetWarningsBaseline(context)
+                            warningsBaselineMs = warningsBaseline(context)
                         }
                         pendingImportUri = null
                     }) {
@@ -664,6 +692,20 @@ fun HourlyPulseApp(
             StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
         }
     }
+    }
+    }
+
+    if (showWarnings) {
+        val snapshot = remember { readWarningIds }
+        val markRead = {
+            markWarningsRead(context, warnings.map { it.id })
+            readWarningIds = loadReadWarningIds(context)
+        }
+        LaunchedEffect(Unit) { markRead() }
+        WarningsSheet(
+            warnings = warnings, readIds = snapshot, baselineMs = warningsBaselineMs,
+            onMarkAllRead = markRead, onDismiss = { showWarnings = false }
+        )
     }
 }
 
