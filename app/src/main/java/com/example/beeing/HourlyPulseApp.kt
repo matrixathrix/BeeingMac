@@ -53,13 +53,19 @@ import kotlinx.coroutines.launch
 @Composable
 fun HourlyPulseApp(
     pendingRating: PendingRating? = null,
-    onPendingRatingConsumed: () -> Unit = {}
+    onPendingRatingConsumed: () -> Unit = {},
+    openTab: Int? = null,
+    onOpenTabConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     // 0 = Streaks, 1 = Now (default), 2 = Past
     var selectedTab by remember { mutableIntStateOf(1) }
+    // A streak alert tapped on the phone opens the Streak tab
+    LaunchedEffect(openTab) {
+        openTab?.let { selectedTab = it; onOpenTabConsumed() }
+    }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
         if (pagerState.currentPage != selectedTab) {
@@ -490,6 +496,7 @@ fun HourlyPulseApp(
                             imported.forEach { viewModel.saveRating(context, it) }
                             // The whole history re-derives: nothing in it may badge the bell.
                             resetWarningsBaseline(context)
+                            resetAlertBaseline(context)
                             warningsBaselineMs = warningsBaseline(context)
                         }
                         pendingImportUri = null

@@ -19,9 +19,11 @@ class MainActivity : ComponentActivity() {
 
     // Score picked on the hourly notification, to be finished in-app
     private val pendingRating = mutableStateOf<PendingRating?>(null)
+    private val openTab = mutableStateOf<Int?>(null)
 
     private fun consumePendingRating(intent: Intent?) {
         if (intent == null) return
+        intent.getIntExtra("OPEN_TAB", -1).let { if (it in 0..2) openTab.value = it }
         val score = intent.getIntExtra("PENDING_SCORE", -1)
         if (score in 1..10) {
             pendingRating.value = PendingRating(
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         createNotificationChannel(this)
         scheduleWeeklyReport(this)
+        scheduleStreakAlerts(this)
         // A first-ever launch starts in beginner mode (4-hour days). Runs before
         // any composition so the first frame already knows its goal.
         ensureModeInitialized(this)
@@ -71,7 +74,9 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     HourlyPulseApp(
                         pendingRating = pendingRating.value,
-                        onPendingRatingConsumed = { pendingRating.value = null }
+                        onPendingRatingConsumed = { pendingRating.value = null },
+                        openTab = openTab.value,
+                        onOpenTabConsumed = { openTab.value = null }
                     )
                 }
             }

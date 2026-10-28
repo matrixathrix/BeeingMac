@@ -118,6 +118,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             "android.intent.action.BOOT_COMPLETED" -> {
                 scheduleExactHourlyAlarm(context)
                 scheduleWeeklyReport(context)
+                scheduleStreakAlerts(context)
             }
             ACTION_WEEKLY_REPORT -> {
                 showWeeklyReportNotification(context)

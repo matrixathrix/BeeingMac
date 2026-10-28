@@ -37,6 +37,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Daily 00:01 replay that posts streak alerts (gift, saver used, saver faded) -->
+        <receiver
+            android:name=".StreakAlertReceiver"
+            android:exported="false" />
+
         <!-- Backup receiver for auto-backup -->
         <receiver
             android:name=".BackupReceiver"
