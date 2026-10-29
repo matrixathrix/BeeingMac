@@ -81,6 +81,9 @@ fun StreaksTab(
     val outcomes = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
         computeDayOutcomes(allRatings, modeEvents)
     }
+    val superDays = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+        computeSuperDays(allRatings, modeEvents)
+    }
     // Per-day average score — tints the calendar dots
     val dayAvgs = remember(allRatings, viewModel.refreshTrigger) {
         val cal = Calendar.getInstance()
@@ -240,6 +243,7 @@ fun StreaksTab(
                     MonthGrid(
                         monthOffset = offset,
                         outcomes = outcomes,
+                        superDays = superDays,
                         dayAvgs = dayAvgs,
                         onDayClick = { statsDayMillis = it }
                     )
@@ -255,6 +259,7 @@ fun StreaksTab(
                     verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
                     LegendDot(color = LocalBeeExtras.current.accentFill, hollow = false, label = "complete")
+                    LegendSuperDay()
                     LegendItem(Sym.Beginner, "beginner day")
                     LegendItem(Sym.Saver, "saver used")
                     LegendDot(color = Color(0xFFE57373), hollow = true, label = "missed")
@@ -478,6 +483,7 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
 private fun MonthGrid(
     monthOffset: Int,
     outcomes: Map<Long, DayOutcome>,
+    superDays: Set<Long>,
     dayAvgs: Map<Long, Double>,
     onDayClick: (Long) -> Unit
 ) {
@@ -521,6 +527,7 @@ private fun MonthGrid(
                             dayNumber = day,
                             outcome = outcomes[key],
                             avgScore = dayAvgs[key],
+                            superDay = key in superDays,
                             isToday = key == todayKey,
                             enabled = key <= todayKey,
                             onClick = { onDayClick(dayMillis) },
@@ -539,7 +546,8 @@ private fun MonthGrid(
  * colour, never the score bands: a complete 4.5 day must not read as a red
  * alarm next to the hollow red missed tile), so a run reads as one block. A
  * saved day is a honey-washed tile with the
- * saver glyph, a beginner day carries the leaf, a missed day is a hollow red
+ * saver glyph, a beginner day carries the leaf, a Super day keeps the complete
+ * fill and adds a sparkle in the same slot (no outline or halo), a missed day is a hollow red
  * tile, and any other past day a faint one, so the grid has structure even when
  * empty. Today gets an ink outline. Colour never travels alone: fill vs. outline
  * vs. glyph carry the outcome, and tapping opens the stats dialog with digits.
@@ -549,6 +557,7 @@ private fun DayCell(
     dayNumber: Int,
     outcome: DayOutcome?,
     avgScore: Double?,
+    superDay: Boolean,
     isToday: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -592,12 +601,16 @@ private fun DayCell(
             color = ink,
             fontWeight = if (isToday || complete) FontWeight.Bold else FontWeight.Normal
         )
-        when (outcome) {
-            DayOutcome.BEGINNER_COMPLETE -> BeeIcon(
+        when {
+            superDay -> BeeIcon(
+                Sym.Sparkle, size = 9.dp, tint = LocalBeeExtras.current.onAccentFill,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
+            )
+            outcome == DayOutcome.BEGINNER_COMPLETE -> BeeIcon(
                 Sym.Beginner, size = 9.dp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
             )
-            DayOutcome.SAVED -> BeeIcon(
+            outcome == DayOutcome.SAVED -> BeeIcon(
                 Sym.Saver, size = 9.dp, tint = LocalBeeExtras.current.accentText,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
             )
@@ -723,6 +736,27 @@ private fun LegendItem(sym: Sym, label: String) {
         BeeIcon(sym, size = 13.dp, contentDescription = null)
         Spacer(Modifier.width(4.dp))
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A honey square carrying the sparkle: the key for a Super day's calendar tile. */
+@Composable
+private fun LegendSuperDay() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(13.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(LocalBeeExtras.current.accentFill),
+            contentAlignment = Alignment.Center
+        ) {
+            BeeIcon(
+                Sym.Sparkle, size = 9.dp, tint = LocalBeeExtras.current.onAccentFill,
+                contentDescription = null
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Text("Super day", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

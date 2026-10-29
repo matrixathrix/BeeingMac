@@ -426,6 +426,8 @@ fun PastTab(
     val allRatings = viewModel.allRatings
     val refresh = viewModel.refreshTrigger
     val window = remember(allRatings, refresh) { computeActiveWindow(allRatings) }
+    val modeEvents = viewModel.modeEvents
+    val superDays = remember(allRatings, modeEvents, refresh) { computeSuperDays(allRatings, modeEvents) }
 
     // Journal is home; Trends is a full-screen view over it (back returns).
     var showTrends by remember { mutableStateOf(false) }
@@ -477,6 +479,7 @@ fun PastTab(
                 JournalView(
                     allRatings = allRatings,
                     refresh = refresh,
+                    superDays = superDays,
                     listState = journalListState,
                     expandedDay = expandedDay,
                     onExpandedDayChange = { expandedDay = it },
@@ -538,6 +541,7 @@ fun PastTab(
 private fun JournalView(
     allRatings: List<RatingEntry>,
     refresh: Int,
+    superDays: Set<Long>,
     listState: androidx.compose.foundation.lazy.LazyListState,
     expandedDay: Long?,
     onExpandedDayChange: (Long?) -> Unit,
@@ -638,6 +642,7 @@ private fun JournalView(
                             day = row.day,
                             first = row.first,
                             last = row.last,
+                            superDay = Calendar.getInstance().apply { timeInMillis = row.day.dayStartMs }.dayKey() in superDays,
                             expanded = row.day.dayStartMs == expandedDay,
                             onToggle = {
                                 onExpandedDayChange(
@@ -757,6 +762,7 @@ private fun JournalDayItem(
     day: JournalDay,
     first: Boolean,
     last: Boolean,
+    superDay: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
     onEditEntry: (RatingEntry) -> Unit
@@ -801,6 +807,21 @@ private fun JournalDayItem(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (superDay) {
+                    Spacer(Modifier.width(8.dp))
+                    BeeIcon(
+                        Sym.Sparkle, size = 14.dp, tint = LocalBeeExtras.current.accentText,
+                        contentDescription = null
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        "Super day",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LocalBeeExtras.current.accentText,
+                        maxLines = 1
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 Box(
                     Modifier

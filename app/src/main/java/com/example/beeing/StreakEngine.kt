@@ -589,7 +589,21 @@ internal fun StreakEvent.logTitle(): String = when (type) {
     else -> warningTitle()
 }
 
-internal fun StreakEvent.logDetail(): String {
+/**
+ * The History rows: a Super day and its saver are one moment (same timestamp), so the saver row is
+ * folded into the Super day's detail line instead of listing twice. The flag says whether a
+ * SAVER_EARNED shares the Super day's [StreakEvent.dayStartMs] (absent at the cap).
+ */
+internal fun logRows(events: List<StreakEvent>): List<Pair<StreakEvent, Boolean>> {
+    val earned = events.filter { it.type == StreakEventType.SAVER_EARNED }.associateBy { it.dayStartMs }
+    return events.filter { it.type != StreakEventType.SAVER_EARNED }.map { ev ->
+        val saver = if (ev.type == StreakEventType.SUPER_DAY) earned[ev.dayStartMs] else null
+        // The Super day is logged just before the saver lands, so its own count is one short.
+        if (saver != null) ev.copy(savers = saver.savers) to true else ev to false
+    }
+}
+
+internal fun StreakEvent.logDetail(earnedSaver: Boolean = false): String {
     val day = SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(dayStartMs))
     return when (type) {
         StreakEventType.COMPLETED -> "Day $streak of your streak — $STREAK_HOURS_REQUIRED hours on $day"
@@ -597,7 +611,9 @@ internal fun StreakEvent.logDetail(): String {
             if (streak > 0) " — streak paused at $streak" else ""
         StreakEventType.SAVER_EARNED -> "$SAVER_EARN_HOURS hours on $day — $savers of $SAVER_CAP saved up"
         StreakEventType.PAST_HOUR_ADDED -> "Added an hour from earlier"
-        StreakEventType.SUPER_DAY -> "$SUPER_DAY_HOURS hours on $day"
+        StreakEventType.SUPER_DAY -> "$SUPER_DAY_HOURS hours on $day — " +
+            if (earnedSaver) "streak saver earned, $savers of $SAVER_CAP saved up"
+            else "all $SAVER_CAP savers saved up"
         else -> warningDetail(day)
     }
 }
@@ -615,6 +631,7 @@ fun StreakLogContent(
         computeStreakEvents(ratings, loadReclaimSpends(context), modeEvents)
             .filter { it.timestamp >= cutoff }
     }
+    val rows = remember(events) { logRows(events) }
     val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
     val goal = hoursRequiredFor(isBeginnerMode(modeEvents))
 
@@ -622,7 +639,7 @@ fun StreakLogContent(
         Text("Nothing in the last 3 months — rate $goal hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
-            events.take(60).forEach { ev ->
+            rows.take(60).forEach { (ev, earnedSaver) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     BeeIcon(
                         ev.type.sym(), size = 20.dp,
@@ -630,7 +647,7 @@ fun StreakLogContent(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(ev.logTitle(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(ev.logDetail(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(ev.logDetail(earnedSaver), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
                             fmt.format(java.util.Date(ev.timestamp)),
                             fontSize = 11.sp,
@@ -640,10 +657,10 @@ fun StreakLogContent(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
             }
-            if (events.size > 60) {
+            if (rows.size > 60) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Showing latest 60 of ${events.size} events",
+                    "Showing latest 60 of ${rows.size} events",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
