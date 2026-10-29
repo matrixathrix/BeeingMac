@@ -1,17 +1,22 @@
 package com.example.beeing
 
-import android.content.Context
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.clip
+import com.example.beeing.ui.BeeButtonDefaults
+import com.example.beeing.ui.beeChipColors
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.tagDisplayText
+import com.example.beeing.ui.icons.tagLabelOf
+import com.example.beeing.ui.icons.tagSym
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,244 +25,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 //import androidx.compose.ui.layout.onGloballyPositioned
 //import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.cos
-import kotlin.math.sin
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ProfessionalChart(ratings: List<RatingEntry>) {
-    val isDark = isSystemInDarkTheme()
-    val axisTextColor = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.BLACK
-
-    var period by remember { mutableStateOf(StatPeriod.DAY) }
-    var pageOffset by remember { mutableIntStateOf(0) }
-    LaunchedEffect(period) { pageOffset = 0 }
-
-    val buckets = remember(period, pageOffset) { buildPeriodBuckets(period, pageOffset, 7) }
-    val data = remember(ratings, buckets) {
-        buckets.map { b ->
-            val avg = ratings.filter { it.timestamp in b.startMillis until b.endMillisExclusive }
-                .map { it.score }.average()
-            b.label to (if (avg.isNaN()) 0f else avg.toFloat())
-        }
-    }
-
-    val textPaint = remember(axisTextColor) {
-        android.graphics.Paint().apply { color = axisTextColor; textSize = 26f; isAntiAlias = true }
-    }
-    val goalTextPaint = remember {
-        android.graphics.Paint().apply {
-            color = android.graphics.Color.GREEN; textSize = 22f; isFakeBoldText = true; isAntiAlias = true
-        }
-    }
-    val labelPaint = remember(axisTextColor) {
-        android.graphics.Paint().apply {
-            color = axisTextColor; textSize = 22f
-            textAlign = android.graphics.Paint.Align.CENTER; isAntiAlias = true
-        }
-    }
-
-    Column(Modifier.fillMaxWidth()) {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                StatPeriod.entries.forEachIndexed { i, p ->
-                    SegmentedButton(
-                        selected = period == p,
-                        onClick = { period = p },
-                        shape = SegmentedButtonDefaults.itemShape(i, StatPeriod.entries.size)
-                    ) { Text(p.label, fontSize = 13.sp) }
-                }
-            }
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { pageOffset++ }) {
-                    Icon(Icons.Default.KeyboardArrowLeft, "Earlier")
-                }
-                Text(
-                    "${buckets.first().label} – ${buckets.last().label}",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-                IconButton(onClick = { if (pageOffset > 0) pageOffset-- }, enabled = pageOffset > 0) {
-                    Icon(
-                        Icons.Default.KeyboardArrowRight, "Later",
-                        tint = if (pageOffset > 0) LocalContentColor.current else Color.Gray
-                    )
-                }
-            }
-
-            Box(Modifier.fillMaxWidth().height(230.dp)) {
-                Canvas(
-                    Modifier.fillMaxSize().padding(top = 18.dp, bottom = 34.dp, start = 26.dp, end = 8.dp)
-                ) {
-                    val canvasH = size.height
-                    val canvasW = size.width
-                    val barSpacing = canvasW / data.size
-                    val barWidth = barSpacing * 0.55f
-
-                    (0..10 step 2).forEach { i ->
-                        val y = canvasH - (i / 10f) * canvasH
-                        drawLine(
-                            color = Color.Gray.copy(0.45f),
-                            start = Offset(0f, y), end = Offset(canvasW, y),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
-                        )
-                        drawContext.canvas.nativeCanvas.drawText(i.toString(), -34f, y + 8f, textPaint)
-                    }
-
-                    val goalY = canvasH - (7 / 10f) * canvasH
-                    drawLine(
-                        color = Color(0xFF4CAF50),
-                        start = Offset(0f, goalY), end = Offset(canvasW, goalY),
-                        strokeWidth = 2f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f))
-                    )
-                    drawContext.canvas.nativeCanvas.drawText("Goal", canvasW - 50f, goalY - 10f, goalTextPaint)
-
-                    data.forEachIndexed { i, pair ->
-                        val score = pair.second
-                        val center = i * barSpacing + barSpacing / 2
-                        val left = center - barWidth / 2
-                        if (score > 0f) {
-                            val barHeight = (score / 10f) * canvasH
-                            val barColor = when {
-                                score >= 8f -> Color(0xFF66BB6A)
-                                score >= 5f -> Color(0xFFFFB300)
-                                else -> Color(0xFFB71C1C)
-                            }
-                            drawRoundRect(
-                                color = barColor,
-                                topLeft = Offset(left, canvasH - barHeight),
-                                size = Size(barWidth, barHeight),
-                                cornerRadius = CornerRadius(12f, 12f)
-                            )
-                            drawContext.canvas.nativeCanvas.drawText(
-                                String.format("%.1f", score), center, canvasH - barHeight - 10f, labelPaint
-                            )
-                        }
-                        drawContext.canvas.nativeCanvas.drawText(pair.first, center, canvasH + 34f, labelPaint)
-                    }
-                }
-            }
-        }
-}
-
-@Composable
-fun InsightPanel(ratings: List<RatingEntry>, view: ChartView) {
-    val periodDays = when(view) {
-        ChartView.HOURLY -> 1
-        ChartView.DAY -> 10
-        ChartView.WEEK -> 70
-        ChartView.MONTH -> 300
-    }
-
-    val relevant = ratings.filter { isWithinDays(it.timestamp, periodDays) }
-    if (relevant.isEmpty()) return
-
-    val allTags = relevant.flatMap { it.tags }.distinct()
-
-    data class TagImpact(val tag: String, val impact: Double, val confidence: Int)
-    val tagImpacts = allTags.mapNotNull { tag ->
-        val withTag = relevant.filter { tag in it.tags }
-        if (withTag.size < 2) return@mapNotNull null
-
-        val avgWithTag = withTag.map { it.score }.average()
-        val withoutTag = relevant.filter { entry ->
-            tag !in entry.tags && entry.tags.any { it in withTag.flatMap { w -> w.tags } }
-        }
-
-        if (withoutTag.isEmpty()) {
-            val overallAvg = relevant.map { it.score }.average()
-            TagImpact(tag, avgWithTag - overallAvg, withTag.size)
-        } else {
-            val avgWithoutTag = withoutTag.map { it.score }.average()
-            TagImpact(tag, avgWithTag - avgWithoutTag, withTag.size)
-        }
-    }
-
-    val sortedImpacts = tagImpacts.sortedByDescending { it.impact }
-    val topBoosters = sortedImpacts.filter { it.impact > 0.5 }.take(3)
-    val topDraggers = sortedImpacts.filter { it.impact < -0.5 }.sortedBy { it.impact }.take(3)
-
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        if (topBoosters.isNotEmpty()) {
-            Card(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF2E7D32).copy(0.1f))
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(
-                        "💖🚀 Soul Fuel Tags:",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2E7D32)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    topBoosters.forEach { impact ->
-                        Text(
-                            "• ${impact.tag}: +${String.format("%.1f", impact.impact)} pts on average",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B5E20)
-                        )
-                    }
-                }
-            }
-        }
-
-        if (topDraggers.isNotEmpty()) {
-            Card(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C).copy(0.1f))
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(
-                        "⚠️💔 Vibe Killer Tags:",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFB71C1C)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    topDraggers.forEach { impact ->
-                        Text(
-                            "• ${impact.tag}: ${String.format("%.1f", impact.impact)} pts on average",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFB71C1C)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
@@ -287,13 +68,29 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                                 "$dateStr, $range (${item.hourLabel} hour)",
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            if (item.tags.isNotEmpty()) {
-                                Text(
-                                    item.tags.joinToString(", "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
+                            val shownTags = item.visibleTags()
+                            if (shownTags.isNotEmpty() || item.isReclaimed) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // clock icon = added later via "Add a past hour"
+                                    if (item.isReclaimed) {
+                                        BeeIcon(
+                                            Sym.FromMemory, size = 12.dp,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 4.dp)
+                                        )
+                                        Text(
+                                            "Added later", fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 6.dp)
+                                        )
+                                    }
+                                    Text(
+                                        shownTags.joinToString(", ") { tagDisplayText(it) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                         Box(
@@ -349,58 +146,150 @@ fun HeaderSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onInfoClick) {
-                Icon(Icons.Default.Info, "How it works", tint = Color.Gray)
+                Icon(Icons.Default.Info, "How it works", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onMenuClick) {
-                Icon(Icons.Default.MoreVert, "Menu", tint = Color.Gray)
+                Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
+// Compact overline used to group the edit sheet into Score / Tags / Note.
+@Composable
+private fun SectionLabel(text: String, top: Dp) {
+    Spacer(Modifier.height(top))
+    Text(
+        text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.8.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(8.dp))
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditEntrySheet(
     entry: RatingEntry,
-    onUpdate: (RatingEntry) -> Unit,
+    dayEntries: List<RatingEntry>,
+    onPersist: (RatingEntry) -> Unit,
+    onClose: () -> Unit,
     onDelete: (Long) -> Unit
 ) {
-    var editedEntry by remember { mutableStateOf(entry) }
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val availableTags = remember { loadTags(context) }
 
-    var availableTags by remember { mutableStateOf(loadTags(context)) }
-    val selectedTags = remember { mutableStateListOf<String>().apply { addAll(entry.tags) } }
-    var showTagDialog by remember { mutableStateOf(false) }
+    // Today's rated hours, oldest → newest — what the ‹ › carets step through.
+    val sorted = remember(dayEntries) { dayEntries.sortedBy { it.timestamp } }
+
+    // The hour currently on screen; carets swap it without closing the sheet.
+    var currentEntry by remember { mutableStateOf(entry) }
+    val index = sorted.indexOfFirst { it.id == currentEntry.id }
+    val hasPrev = index > 0
+    val hasNext = index in 0 until sorted.size - 1
+
+    // Editable only inside the 10h window (EDIT_WINDOW_MS, same rule as the
+    // Now tab's today strip). Older entries open as a read-only record —
+    // score/tags/note locked, delete still available. Re-evaluated per hour
+    // so the ‹ › carets can't sneak an old entry past the gate.
+    val editable = remember(currentEntry.timestamp) {
+        System.currentTimeMillis() - currentEntry.timestamp <= EDIT_WINDOW_MS
+    }
+
+    // Edited buffer + tag selection reset whenever we land on a new hour.
+    var editedEntry by remember(currentEntry.id) { mutableStateOf(currentEntry) }
+    val selectedTags = remember(currentEntry.id) { currentEntry.tags.toMutableStateList() }
+
+    val hasUnsavedEdits = editedEntry.score != currentEntry.score ||
+            editedEntry.note != currentEntry.note ||
+            selectedTags.toSet() != currentEntry.tags.toSet()
+
+    // A caret tapped mid-edit stashes the destination and asks save-or-discard.
+    var pendingTarget by remember { mutableStateOf<RatingEntry?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    fun seekTo(target: RatingEntry) {
+        if (hasUnsavedEdits) pendingTarget = target else currentEntry = target
+    }
+
+    val cal = remember(currentEntry.timestamp) { Calendar.getInstance().apply { timeInMillis = currentEntry.timestamp } }
+    val startH = cal.get(Calendar.HOUR_OF_DAY)
+    val endH = if (startH == 23) 0 else startH + 1
+    val dateLabel = remember(currentEntry.timestamp) { SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(cal.time) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
-            Text(
-                text = "Edit Entry",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = if (editable) "Edit entry" else "Entry details",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(top = 6.dp)
+                )
+                // Time period + seek carets in a pill, with the date centered below.
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { sorted.getOrNull(index - 1)?.let { seekTo(it) } },
+                                enabled = hasPrev,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowLeft, "Previous rated hour")
+                            }
+                            Text(
+                                text = "${formatHour(startH)} – ${formatHour(endH)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            IconButton(
+                                onClick = { sorted.getOrNull(index + 1)?.let { seekTo(it) } },
+                                enabled = hasNext,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowRight, "Next rated hour")
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = dateLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(16.dp))
-            Text("Select new score:")
-            Spacer(Modifier.height(12.dp))
-
+            SectionLabel("SCORE", top = 18.dp)
             Row(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
             ) {
                 (1..10).forEach { score ->
                     val isSelected = editedEntry.score == score
                     Box(
                         modifier = Modifier
-                            .size(if (isSelected) 56.dp else 48.dp)
+                            .size(if (isSelected) 42.dp else 36.dp)
                             .background(
                                 when {
                                     score >= 8 -> Color(0xFF66BB6A).copy(alpha = if (isSelected) 1f else 0.3f)
@@ -409,12 +298,12 @@ fun EditEntrySheet(
                                 },
                                 shape = CircleShape
                             )
-                            .clickable {
+                            .clickable(enabled = editable) {
                                 editedEntry = editedEntry.copy(score = score)
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                             .border(
-                                width = if (isSelected) 3.dp else 0.dp,
+                                width = if (isSelected) 2.dp else 0.dp,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                 shape = CircleShape
                             ),
@@ -422,7 +311,7 @@ fun EditEntrySheet(
                     ) {
                         Text(
                             text = "$score",
-                            fontSize = if (isSelected) 20.sp else 16.sp,
+                            fontSize = if (isSelected) 15.sp else 13.sp,
                             fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
                             color = if (score >= 5) Color.Black else Color.White
                         )
@@ -430,15 +319,11 @@ fun EditEntrySheet(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text("Tags:", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-
-            @OptIn(ExperimentalLayoutApi::class)
+            SectionLabel("TAGS", top = 14.dp)
             FlowRow(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy((-6).dp)
             ) {
                 availableTags.forEach { tag ->
                     InputChip(
@@ -446,58 +331,65 @@ fun EditEntrySheet(
                         onClick = {
                             if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                         },
-                        label = { Text(tag) },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-
-                IconButton(
-                    onClick = { showTagDialog = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add tag",
-                        modifier = Modifier.size(18.dp)
+                        enabled = editable,
+                        label = { TagChipContent(tag) },
+                        shape = TagChipShape,
+                        colors = tagChipColors(),
+                        border = null
                     )
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            SectionLabel("NOTE", top = 14.dp)
+            OutlinedTextField(
+                value = editedEntry.note,
+                onValueChange = { editedEntry = editedEntry.copy(note = it) },
+                enabled = editable,
+                placeholder = { Text("Add a note") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            )
+
+            Spacer(Modifier.height(20.dp))
 
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 IconButton(
-                    onClick = {
-                        val deletedEntry = editedEntry
-                        onDelete(entry.id)
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Entry deleted",
-                                actionLabel = "Undo",
-                                duration = SnackbarDuration.Short
-                            )
-                            if (result == SnackbarResult.ActionPerformed) {
-                                saveRating(context, deletedEntry)
-                            }
-                        }
-                    },
+                    onClick = { confirmDelete = true },
                     modifier = Modifier.weight(0.2f)
                 ) {
                     Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                 }
-                Button(
-                    onClick = {
-                        onUpdate(editedEntry.copy(tags = selectedTags.toList()))
-                    },
-                    modifier = Modifier.weight(0.8f)
-                ) {
-                    Text("Save Changes")
+                if (editable) {
+                    Button(
+                        colors = BeeButtonDefaults.colors(),
+                        onClick = {
+                            onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                            onClose()
+                        },
+                        modifier = Modifier.weight(0.8f)
+                    ) {
+                        Text("Save Changes")
+                    }
+                } else {
+                    // Past the 10h edit window: a read-only record. Deletion
+                    // stays available; there is nothing to save.
+                    Box(
+                        Modifier
+                            .weight(0.8f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Editable for 10 hours after the hour ends",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(32.dp))
@@ -511,36 +403,91 @@ fun EditEntrySheet(
         )
     }
 
-    if (showTagDialog) {
-        var newTag by remember { mutableStateOf("") }
+    // Deleting is one confirm away, never a single tap.
+    if (confirmDelete) {
         AlertDialog(
-            onDismissRequest = { showTagDialog = false },
-            title = { Text("Add new tag") },
-            text = {
-                OutlinedTextField(
-                    newTag,
-                    onValueChange = { newTag = it },
-                    label = { Text("Tag name") }
-                )
-            },
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete this hour?") },
+            text = { Text("The rating for ${formatHour(startH)} – ${formatHour(endH)}, $dateLabel will be removed.") },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTag.isNotBlank()) {
-                            availableTags = (availableTags + newTag.trim()).distinct()
-                            saveTags(context, availableTags)
-                            selectedTags.add(newTag.trim())
+                TextButton(onClick = {
+                    confirmDelete = false
+                    val deletedEntry = currentEntry
+                    onDelete(currentEntry.id)
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Entry deleted",
+                            actionLabel = "Undo",
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            saveRating(context, deletedEntry)
                         }
-                        showTagDialog = false
-                    },
-                    enabled = newTag.isNotBlank()
-                ) {
-                    Text("Add")
-                }
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Save-or-discard before a caret moves us off an edited hour.
+    pendingTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingTarget = null },
+            title = { Text("Save changes?") },
+            text = { Text("You have unsaved edits to this hour.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                    currentEntry = target
+                    pendingTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    currentEntry = target
+                    pendingTarget = null
+                }) { Text("Discard") }
             }
         )
     }
 }
+
+// Shared by every InputChip tag picker (NowTab's collapsed picker, this
+// section, EditEntrySheet) so the fixed-palette look can't drift out of
+// sync across call sites. Fixed orange/tan, matching the reference
+// screenshot's tag chips, in place of Material You's dynamic primary.
+/**
+ * Fully-rounded tag chips: 50% of the chip's own height, so the sides are
+ * semicircular caps at any text length. Shared for the same reason the colors
+ * are — four call sites, one look.
+ */
+internal val TagChipShape = RoundedCornerShape(50)
+
+/**
+ * A chip's contents: a built-in tag shows its Material Symbol and its name with
+ * the stored emoji stripped; a tag the user wrote is left exactly as typed,
+ * because their emoji is their choice, not app chrome. Lives in the `label`
+ * slot rather than `leadingIcon` so all four chip call sites stay one-liners.
+ */
+@Composable
+internal fun TagChipContent(tag: String) {
+    val sym = tagSym(tag)
+    if (sym == null) {
+        Text(tag)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BeeIcon(sym, size = 15.dp, contentDescription = null)
+            Spacer(Modifier.width(5.dp))
+            Text(tagLabelOf(tag))
+        }
+    }
+}
+
+@Composable
+internal fun tagChipColors() = beeChipColors()
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -548,78 +495,66 @@ fun SoulFuelTagsSection(
     allRatings: List<RatingEntry>,
     availableTags: List<String>,
     selectedTags: androidx.compose.runtime.snapshots.SnapshotStateList<String>,
-    isTagDeleteMode: Boolean,
     isEnabled: Boolean,
-    onTagDeleteModeChange: (Boolean) -> Unit,
     onTagsUpdate: (List<String>) -> Unit,
-    onShowTagDialog: () -> Unit
+    onManageTags: () -> Unit,
+    onCollapse: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
-
-    // Centered chips that read as part of the rating dial above; a single
-    // pencil toggles edit mode (delete existing tags / add new ones).
+    // Centered chips that read as part of the rating dial above; the single
+    // pencil opens the manage-tags popup (reorder / rename / delete / add).
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
-            if (isTagDeleteMode) {
-                AssistChip(
-                    onClick = onShowTagDialog,
-                    enabled = isEnabled && availableTags.size < 30,
-                    label = { Text("New tag") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Add, "Add tag", Modifier.size(16.dp))
-                    }
+            availableTags.forEach { tag ->
+                InputChip(
+                    selected = tag in selectedTags,
+                    onClick = {
+                        if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
+                    },
+                    label = { TagChipContent(tag) },
+                    enabled = isEnabled,
+                    shape = TagChipShape,
+                    colors = tagChipColors(),
+                    border = null
                 )
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = false,
-                        onClick = {
-                            val newTags = availableTags.filter { it != tag }
-                            saveTags(context, newTags)
-                            selectedTags.remove(tag)
-                            onTagsUpdate(newTags)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Delete $tag",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    )
-                }
-            } else {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = tag in selectedTags,
-                        onClick = {
-                            if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                        },
-                        label = { Text(tag) },
-                        enabled = isEnabled,
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
             }
 
             IconButton(
-                onClick = { onTagDeleteModeChange(!isTagDeleteMode) },
+                onClick = onManageTags,
                 enabled = isEnabled,
                 modifier = Modifier.size(32.dp).align(Alignment.CenterVertically)
             ) {
                 Icon(
-                    if (isTagDeleteMode) Icons.Default.Check else Icons.Default.Edit,
-                    contentDescription = if (isTagDeleteMode) "Done editing" else "Edit tags",
+                    Icons.Default.Edit,
+                    contentDescription = "Manage tags",
                     modifier = Modifier.size(18.dp),
-                    tint = if (isTagDeleteMode) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // "Show less" rides in the same flow line as the chips so the
+            // expanded editor spends no extra vertical space on it.
+            if (onCollapse != null) {
+                // Same chip type and metrics as the tags (and as "+N more"): a
+                // 32dp pill inside the 48dp touch row the FlowRow's -8dp line
+                // spacing is tuned for. A 30dp button here got pulled up into the
+                // row above by that same -8dp.
+                AssistChip(
+                    onClick = onCollapse,
+                    label = { Text("Show less") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    shape = TagChipShape,
+                    border = null,
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
             }
         }
@@ -632,16 +567,67 @@ fun NotesSection(
     onNoteChange: (String) -> Unit,
     enabled: Boolean = true
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        OutlinedTextField(
+    // Deliberately low-contrast and collapsed by default — an optional
+    // afterthought, not a call to action. A slim "+ Add a note" row until
+    // tapped; then a compact single-row field at hint-text emphasis.
+    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    var expanded by remember { mutableStateOf(noteText.isNotEmpty()) }
+    var wantFocus by remember { mutableStateOf(false) }
+    // onFocusChanged fires once with isFocused=false when the field first
+    // attaches, so only collapse after the field has genuinely held focus.
+    var hadFocus by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    if (!expanded && noteText.isEmpty()) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled) { expanded = true; wantFocus = true }
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Add, contentDescription = null,
+                tint = hint.copy(alpha = 0.55f), modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("Add a note", fontSize = 13.sp, color = hint.copy(alpha = 0.55f))
+        }
+    } else {
+        BasicTextField(
             value = noteText,
             onValueChange = onNoteChange,
-            label = { Text("Add a note (optional)") },
-            modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
-            shape = RoundedCornerShape(16.dp),
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = hint),
+            cursorBrush = SolidColor(hint),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onFocusChanged {
+                    if (it.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus && noteText.isEmpty()) {
+                        expanded = false
+                        hadFocus = false
+                    }
+                },
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, hint.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
+                    if (noteText.isEmpty()) {
+                        Text("Add a note", fontSize = 14.sp, color = hint.copy(alpha = 0.4f))
+                    }
+                    inner()
+                }
+            }
         )
+        LaunchedEffect(wantFocus) {
+            if (wantFocus) { focusRequester.requestFocus(); wantFocus = false }
+        }
     }
 }
 
@@ -649,73 +635,10 @@ fun NotesSection(
 // HELPER FUNCTIONS
 // ==============================================
 
-fun getChartData(ratings: List<RatingEntry>, view: ChartView, selectedDate: Calendar? = null): List<Pair<String, Float>> {
-    return when(view) {
-        ChartView.HOURLY -> {
-            // Show all 24 hours (1st..24th) for the selected date.
-            // The selected date defaults to today.
-            val targetDay = selectedDate ?: Calendar.getInstance()
-            (0..23).map { hourIndex ->
-                // hourIndex 0 = 1st hour (12AM-1AM), startH=0, endH=1
-                val startH = hourIndex
-                val endH = if (startH == 23) 0 else startH + 1
-                val label = "${formatHour(startH)}-${formatHour(endH)}"
-
-                // Find a rating whose timestamp falls on this hour of the target day
-                val match = ratings.find {
-                    val c = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    c.get(Calendar.HOUR_OF_DAY) == startH &&
-                            c.get(Calendar.DAY_OF_YEAR) == targetDay.get(Calendar.DAY_OF_YEAR) &&
-                            c.get(Calendar.YEAR) == targetDay.get(Calendar.YEAR)
-                }
-                label to (match?.score?.toFloat() ?: 0f)
-            }
-        }
-        ChartView.DAY -> {
-            (0..9).map { i ->
-                val target = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -(9 - i)) }
-                val avg = ratings.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    isSameDay(cal, target)
-                }.map { it.score }.average()
-                SimpleDateFormat("d-MMM", Locale.getDefault()).format(target.time) to (if(avg.isNaN()) 0f else avg.toFloat())
-            }
-        }
-        ChartView.WEEK -> {
-            (0..9).map { i ->
-                val target = Calendar.getInstance().apply { add(Calendar.WEEK_OF_YEAR, -(9 - i)) }
-                val week = target.get(Calendar.WEEK_OF_YEAR)
-                val year = target.get(Calendar.YEAR)
-                val avg = ratings.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    cal.get(Calendar.WEEK_OF_YEAR) == week && cal.get(Calendar.YEAR) == year
-                }.map { it.score }.average()
-                "W$week" to (if(avg.isNaN()) 0f else avg.toFloat())
-            }
-        }
-        ChartView.MONTH -> {
-            (0..9).map { i ->
-                val target = Calendar.getInstance().apply { add(Calendar.MONTH, -(9 - i)) }
-                val targetMonth = target.get(Calendar.MONTH)
-                val targetYear = target.get(Calendar.YEAR)
-                val avg = ratings.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
-                    cal.get(Calendar.MONTH) == targetMonth && cal.get(Calendar.YEAR) == targetYear
-                }.map { it.score }.average()
-                SimpleDateFormat("MMM").format(target.time) to (if(avg.isNaN()) 0f else avg.toFloat())
-            }
-        }
-    }
-}
-
 fun isSameDay(c1: Calendar, c2: Calendar) =
     c1.get(Calendar.DAY_OF_YEAR) == c2.get(Calendar.DAY_OF_YEAR) &&
             c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR)
 
-fun isWithinDays(ts: Long, days: Int): Boolean {
-    val limit = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -days) }.timeInMillis
-    return ts >= limit
-}
 
 fun formatHour(h: Int) = "${if(h%12==0) 12 else h%12}${if(h<12)"am" else "pm"}"
 

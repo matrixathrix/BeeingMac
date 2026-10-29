@@ -6,30 +6,21 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
@@ -41,10 +32,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.example.beeing.ui.BeeButtonDefaults
+import com.example.beeing.ui.BandChrome
+import com.example.beeing.ui.BandTopRow
+import com.example.beeing.ui.BandTopRowHeight
+import com.example.beeing.ui.LocalBandChrome
+import com.example.beeing.ui.SaverExplainerDialog
+import com.example.beeing.ui.icons.BeeIcon
+import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.SymTitle
+import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Main app with ORIGINAL info dialog and menu
@@ -53,13 +55,19 @@ import java.util.*
 @Composable
 fun HourlyPulseApp(
     pendingRating: PendingRating? = null,
-    onPendingRatingConsumed: () -> Unit = {}
+    onPendingRatingConsumed: () -> Unit = {},
+    openTab: Int? = null,
+    onOpenTabConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     // 0 = Streaks, 1 = Now (default), 2 = Past
     var selectedTab by remember { mutableIntStateOf(1) }
+    // A streak alert tapped on the phone opens the Streak tab
+    LaunchedEffect(openTab) {
+        openTab?.let { selectedTab = it; onOpenTabConsumed() }
+    }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
     LaunchedEffect(selectedTab) {
         if (pagerState.currentPage != selectedTab) {
@@ -87,11 +95,18 @@ fun HourlyPulseApp(
     val streaksScrollState = rememberScrollState()
 
     // Menu and dialogs state
-    var showMenu by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showSaverInfo by remember { mutableStateOf(false) }
+    var showManageTags by remember { mutableStateOf(false) }
+    var notifPrefs by remember { mutableStateOf(loadNotificationPrefs(context)) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var autoBackupEnabled by remember { mutableStateOf(context.getSharedPreferences("b", 0).getBoolean("auto_backup", false)) }
     var lastBackupTime by remember { mutableStateOf(context.getSharedPreferences("b", 0).getLong("last_backup", 0L)) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    // Entering beginner mode with a live streak pauses it — that needs saying
+    // out loud before it happens, not after.
+    var showBeginnerConfirm by remember { mutableStateOf(false) }
+    var showGraduation by remember { mutableStateOf(false) }
 
     // Notification handling state
     var targetedHourOffset by remember { mutableIntStateOf(0) }
@@ -100,6 +115,7 @@ fun HourlyPulseApp(
 
     // Score picked on the notification: jump to Now with it pre-selected
     var pendingScore by remember { mutableStateOf<Int?>(null) }
+    var pendingTags by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(pendingRating) {
         pendingRating?.let { pr ->
             val currentHourStart = Calendar.getInstance().apply {
@@ -113,6 +129,7 @@ fun HourlyPulseApp(
             if (offset in 0..1) {
                 targetedHourOffset = offset
                 pendingScore = pr.score
+                pendingTags = pr.tags
                 selectedTab = 1
             }
             onPendingRatingConsumed()
@@ -120,7 +137,51 @@ fun HourlyPulseApp(
     }
 
     // Full-screen celebration when the daily ring closes (streak day secured)
-    var ringCelebrationDays by remember { mutableStateOf<Int?>(null) }
+    var ringCelebration by remember { mutableStateOf<RingCelebration?>(null) }
+    // A saver earned or a streak won back; waits its turn behind the ring celebration
+    var streakMoment by remember { mutableStateOf<StreakMoment?>(null) }
+
+    // Mode + streak, shared by the menu copy, the explainer and the nudge
+    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+        computeStreakState(viewModel.allRatings, viewModel.modeEvents)
+    }
+
+    // ---- The warnings bell: the "Heads up" items are a filtered view of the replayed
+    // streak events; only read ids and a baseline are persisted. ----
+    var warningsEnabled by remember { mutableStateOf(streakWarningsEnabled(context)) }
+    var readWarningIds by remember { mutableStateOf(loadReadWarningIds(context)) }
+    var warningsBaselineMs by remember { mutableLongStateOf(warningsBaseline(context)) }
+    var showWarnings by remember { mutableStateOf(false) }
+    var topRowHidden by remember { mutableStateOf(false) }
+    val warnings = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger, warningsBaselineMs) {
+        val dayFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+        warningsFrom(
+            computeStreakEvents(viewModel.allRatings, emptyList(), viewModel.modeEvents),
+            warningsBaselineMs,
+            System.currentTimeMillis()
+        ) { dayFmt.format(Date(it)) }
+    }
+    val unreadWarnings = if (warningsEnabled) unreadCount(warnings, readWarningIds, warningsBaselineMs) else 0
+    val bandChrome = BandChrome(
+        state = streakState,
+        unread = unreadWarnings,
+        onStreakClick = { selectedTab = 0 },
+        onBellClick = { showWarnings = true },
+        onMenuClick = { showSettings = true },
+        onTopRowHidden = { topRowHidden = it }
+    )
+
+    // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
+    // as shown the moment it appears, so declining is not re-asked.
+    LaunchedEffect(streakState.beginnerMode, streakState.beginnerDaysCompleted) {
+        if (streakState.beginnerMode &&
+            streakState.beginnerDaysCompleted >= BEGINNER_GRADUATION_DAYS &&
+            !beginnerGraduationShown(context)
+        ) {
+            markBeginnerGraduationShown(context)
+            showGraduation = true
+        }
+    }
 
     // Back press handling (double tap to exit)
     var lastBackPress by remember { mutableLongStateOf(0L) }
@@ -153,6 +214,7 @@ fun HourlyPulseApp(
     // Initial data load
     LaunchedEffect(Unit) {
         viewModel.loadRatings(context)
+        viewModel.loadModeEvents(context)
     }
 
     // Lifecycle observer for app resume
@@ -160,6 +222,7 @@ fun HourlyPulseApp(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.loadRatings(context)
+                viewModel.loadModeEvents(context)
                 viewModel.triggerRefresh()
 
                 // Auto-focus logic
@@ -199,9 +262,11 @@ fun HourlyPulseApp(
                         delay(100)
                         nowScrollState.animateScrollTo(ratingCardYPosition.toInt())
                     }
-                } else {
+                } else if (isPreviousHourLogged) {
                     targetedHourOffset = 0
                 }
+                // both pending: leave the target alone — NowTab defaults to
+                // the expiring hour unless a notification chose otherwise
             }
         }
 
@@ -211,18 +276,25 @@ fun HourlyPulseApp(
         }
     }
 
+    CompositionLocalProvider(LocalBandChrome provides bandChrome) {
     Box(Modifier.fillMaxSize()) {
     Scaffold(
-        topBar = {
-            // Original HeaderSection
-            HeaderSection(
-                onImport = { importLauncher.launch("text/*") },
-                onExport = { exportLauncher.launch("bee_data.csv") },
-                onMenuClick = { showMenu = true },
-                onStreakClick = {
-                    selectedTab = 0  // Switch to Streaks tab
-                },
-                onInfoClick = { showInfoDialog = true }
+        // The calm page every tab's cards sit on. No topBar: each tab opens
+        // with its own BrandBand, which draws under the status bar and owns
+        // that inset itself (see BeeSurfaces.kt).
+        containerColor = MaterialTheme.colorScheme.background,
+        // Top is owned by each tab's BrandBand and bottom by the nav bar; keep only
+        // the side insets (landscape nav bar, camera cutout) for the content.
+        contentWindowInsets = WindowInsets.systemBars
+            .union(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Horizontal),
+        // A real bottom fixture, not an overlay: as the Scaffold's bottomBar it
+        // insets the pager, so content ends above it instead of scrolling under
+        // it and every tab's trailing spacer shrinks to ordinary breathing room.
+        bottomBar = {
+            BottomNavBar(
+                pagerState = pagerState,
+                onTabSelected = { selectedTab = it }
             )
         },
     ) { paddingValues ->
@@ -252,9 +324,12 @@ fun HourlyPulseApp(
                     ratingCardYPosition = ratingCardYPosition,
                     onRatingCardYPosition = { ratingCardYPosition = it },
                     onOpenStreaks = { selectedTab = 0 },
+                    onMenuClick = { showSettings = true },
                     pendingScore = pendingScore,
+                    pendingTags = pendingTags,
                     onPendingScoreConsumed = { pendingScore = null },
-                    onRingClosed = { ringCelebrationDays = it }
+                    onRingClosed = { ringCelebration = it },
+                    onStreakMoment = { streakMoment = it }
                 )
 
                 2 -> PastTab(
@@ -265,144 +340,13 @@ fun HourlyPulseApp(
                 )
             }
             }
-
-            // Floating translucent nav pill — content scrolls beneath it
-            FloatingPillNavBar(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-
-        // ORIGINAL SETTINGS MENU
-        if (showMenu) {
-            AlertDialog(
-                onDismissRequest = { showMenu = false },
-                title = { Text("Data options") },
-                text = {
-                    Column {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    importLauncher.launch("text/*")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("IMPORT")
-                            }
-
-                            Button(
-                                onClick = {
-                                    exportLauncher.launch("bee_data.csv")
-                                    showMenu = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("EXPORT")
-                            }
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                autoBackupEnabled = !autoBackupEnabled
-                                context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", autoBackupEnabled).apply()
-                                if (autoBackupEnabled) {
-                                    scheduleAutoBackup(context)
-                                } else {
-                                    cancelAutoBackup(context)
-                                }
-                            }.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Auto-backup (Daily 12:05 AM)")
-                            Checkbox(
-                                checked = autoBackupEnabled,
-                                onCheckedChange = {
-                                    autoBackupEnabled = it
-                                    context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
-                                    if (it) {
-                                        scheduleAutoBackup(context)
-                                    } else {
-                                        cancelAutoBackup(context)
-                                    }
-                                }
-                            )
-                        }
-
-                        if (autoBackupEnabled) {
-                            OutlinedButton(
-                                onClick = { folderPickerLauncher.launch(null) },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Settings, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Set Backup Location", fontSize = 12.sp)
-                            }
-
-                            if (lastBackupTime > 0) {
-                                val backupDate = SimpleDateFormat("hh:mma, dd-MMM-yyyy", Locale.getDefault())
-                                    .format(Date(lastBackupTime))
-                                Text(
-                                    "Last backed up: $backupDate",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.Gray,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                        // Author information
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "🐝 Beeing",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Developed by AthrixMatrix",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                            Text(
-                                "Version 1.0",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showMenu = false }) {
-                        Text("Close")
-                    }
-                }
-            )
         }
 
         // ORIGINAL INFO DIALOG
         if (showInfoDialog) {
             AlertDialog(
                 onDismissRequest = { showInfoDialog = false },
-                title = {
-                    Text(
-                        "🐝 How Beeing Works",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
+                title = { SymTitle(Sym.Hive, "How Beeing Works") },
                 text = {
                     Column(
                         Modifier.verticalScroll(rememberScrollState())
@@ -414,11 +358,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "⏰ The Rating System",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Alarm, "The Rating System")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Every hour, Beeing asks you to rate how well you spent your time on a scale of 1-10. This simple practice brings awareness to each hour of your day.",
@@ -427,24 +367,26 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "🏆 Build Your Streak",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Fire, "Build Your Streak")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate consistently and watch your streak grow! Missing ratings for more than 2 hours resets your streak, encouraging you to stay mindful.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SAVER_EARN_HOURS to earn a streak saver (up to $SAVER_CAP): miss a day and one steps in on its own, so the streak holds. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
                         Spacer(Modifier.height(12.dp))
 
+                        InfoSection(Sym.Beginner, "Beginner Mode")
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "🏷️ Tag Your Activities",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            "New here? Beginner mode asks for $BEGINNER_HOURS_REQUIRED hours a day instead of $STREAK_HOURS_REQUIRED, and those days sit outside the streak entirely: nothing to break, nothing to lose, and savers neither earn nor fade. Any streak you already have is paused and waiting when you switch back. Adding a past hour still works. Turn it on or off any time in Settings." +
+                                    if (streakState.beginnerMode) "\n\nIt's on right now — today's goal is $BEGINNER_HOURS_REQUIRED hours." else "",
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
                         )
+                        Spacer(Modifier.height(12.dp))
+
+                        InfoSection(Sym.Tag, "Tag Your Activities")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Add tags to track what you're doing—work, exercise, reading, family time.",
@@ -453,11 +395,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "📊 Discover Patterns",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Chart, "Discover Patterns")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Your charts reveal trends. Soul Fuel Tags show what boosts your score, while Vibe Killer Tags highlight what brings you down. Use these insights to design better days.",
@@ -466,11 +404,7 @@ fun HourlyPulseApp(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        Text(
-                            "✨ The Impact",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        InfoSection(Sym.Sparkle, "The Impact")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "By tracking each hour, you're not just logging time—you're taking ownership of how you live. Small adjustments compound into a more intentional, fulfilling life.",
@@ -485,7 +419,7 @@ fun HourlyPulseApp(
                                 withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
                                     append("Bee")
                                 }
-                                append(" is to stretch your being into them. 🌟")
+                                append(" is to stretch your being into them.")
                             },
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
@@ -502,6 +436,61 @@ fun HourlyPulseApp(
             )
         }
 
+        // Entering beginner mode with a streak running: say what "paused" means
+        if (showBeginnerConfirm) {
+            AlertDialog(
+                onDismissRequest = { showBeginnerConfirm = false },
+                title = { SymTitle(Sym.Beginner, "Turn on beginner mode?") },
+                text = {
+                    Text(
+                        "Your ${streakState.currentStreak}-day streak pauses — it won't grow and it " +
+                                "can't break while beginner mode is on. Days need only " +
+                                "$BEGINNER_HOURS_REQUIRED rated hours and are marked as beginner days on the " +
+                                "calendar. Switch back any time and the streak picks up at " +
+                                "${streakState.currentStreak} again.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
+                        viewModel.setBeginnerMode(context, true)
+                        showBeginnerConfirm = false
+                    }) { Text("Pause and switch") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBeginnerConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // The one-time graduation nudge — declining costs nothing and never repeats
+        if (showGraduation) {
+            AlertDialog(
+                onDismissRequest = { showGraduation = false },
+                title = { SymTitle(Sym.Beginner, "Ready for more?") },
+                text = {
+                    Text(
+                        "You've completed $BEGINNER_GRADUATION_DAYS beginner days. " +
+                                "Level up to Master mode ($STREAK_HOURS_REQUIRED hours)? " +
+                                "Complete days start counting toward a streak again. " +
+                                "No rush — you can switch whenever you like from the menu.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                confirmButton = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
+                        viewModel.setBeginnerMode(context, false)
+                        showGraduation = false
+                    }) { Text("Level up") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showGraduation = false }) { Text("Not yet") }
+                }
+            )
+        }
+
         // Import confirmation
         if (pendingImportUri != null) {
             AlertDialog(
@@ -509,10 +498,14 @@ fun HourlyPulseApp(
                 title = { Text("Confirm Import") },
                 text = { Text("This will replace all current data. Continue?") },
                 confirmButton = {
-                    Button(onClick = {
+                    Button(colors = BeeButtonDefaults.colors(), onClick = {
                         val imported = loadFromCsv(context, pendingImportUri!!)
                         if (imported.isNotEmpty()) {
                             imported.forEach { viewModel.saveRating(context, it) }
+                            // The whole history re-derives: nothing in it may badge the bell.
+                            resetWarningsBaseline(context)
+                            resetAlertBaseline(context)
+                            warningsBaselineMs = warningsBaseline(context)
                         }
                         pendingImportUri = null
                     }) {
@@ -528,103 +521,177 @@ fun HourlyPulseApp(
         }
     }
 
-    // Duolingo-style full-screen takeover when today's ring closes —
-    // drawn above everything, header and nav pill included
-    ringCelebrationDays?.let { days ->
-        RingClosedCelebration(
-            streakDays = days,
-            onDone = { ringCelebrationDays = null }
+    // ---- The top row is drawn ONCE, above the pager, so it stays put while tabs
+    // slide underneath. Each tab's band reserves its height with BandTopRowSpacer.
+    // Hidden while Trends is open (it has its own back row). ----
+    if (!topRowHidden) {
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal))
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                .height(BandTopRowHeight)
+        ) { BandTopRow() }
+    }
+
+    // ---- Settings: a full-screen page above the Scaffold (covers the nav bar).
+    // Registered after the root BackHandler, so system back closes it first. ----
+    if (showSettings) {
+        BackHandler { showSettings = false }
+        SettingsScreen(
+            callbacks = SettingsCallbacks(
+                beginnerMode = streakState.beginnerMode,
+                streakPaused = streakState.streakPaused,
+                pausedAt = streakState.currentStreak,
+                streakState = streakState,
+                notifPrefs = notifPrefs,
+                tagCount = remember(viewModel.refreshTrigger, showManageTags) { loadTags(context).size },
+                autoBackup = autoBackupEnabled,
+                lastBackupMs = lastBackupTime,
+                versionName = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+                        .getOrNull() ?: ""
+                },
+                onBeginnerChange = { wantBeginner ->
+                    // Entering beginner mode with a live streak pauses it, which needs
+                    // saying out loud first; leaving it needs no ceremony.
+                    if (wantBeginner && streakState.currentStreak > 0) {
+                        showSettings = false
+                        showBeginnerConfirm = true
+                    } else {
+                        viewModel.setBeginnerMode(context, wantBeginner)
+                    }
+                },
+                onNotifPrefsChange = {
+                    notifPrefs = it
+                    saveNotificationPrefs(context, it)
+                },
+                onManageTags = { showManageTags = true },
+                onAutoBackupChange = {
+                    autoBackupEnabled = it
+                    context.getSharedPreferences("b", 0).edit().putBoolean("auto_backup", it).apply()
+                    if (it) scheduleAutoBackup(context) else cancelAutoBackup(context)
+                },
+                onPickBackupFolder = { folderPickerLauncher.launch(null) },
+                onExport = { exportLauncher.launch("bee_data.csv") },
+                onImport = { importLauncher.launch("text/*") },
+                onHowItWorks = { showInfoDialog = true }
+            ),
+            onBack = { showSettings = false }
         )
     }
+    if (showSaverInfo) SaverExplainerDialog(streakState.savers) { showSaverInfo = false }
+    if (showManageTags) {
+        SettingsManageTags(
+            context = context,
+            onChanged = { viewModel.triggerRefresh() },
+            onDismiss = { showManageTags = false }
+        )
+    }
+
+    // Duolingo-style full-screen takeover when today's ring closes —
+    // drawn above everything, header and nav pill included
+    ringCelebration?.let { celebration ->
+        RingClosedCelebration(
+            celebration = celebration,
+            onDone = { ringCelebration = null }
+        )
+    }
+    if (ringCelebration == null) {
+        streakMoment?.let { moment ->
+            StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+        }
+    }
+    }
+    }
+
+    if (showWarnings) {
+        val snapshot = remember { readWarningIds }
+        val markRead = {
+            markWarningsRead(context, warnings.map { it.id })
+            readWarningIds = loadReadWarningIds(context)
+        }
+        LaunchedEffect(Unit) { markRead() }
+        WarningsSheet(
+            warnings = warnings, readIds = snapshot, baselineMs = warningsBaselineMs,
+            onMarkAllRead = markRead, onDismiss = { showWarnings = false }
+        )
     }
 }
 
-private data class NavItem(val label: String, val icon: ImageVector)
+private data class NavItem(val label: String, val sym: Sym, val activeSym: Sym)
 
 private val bottomNavItems = listOf(
-    NavItem("Streaks", Icons.Default.Star),
-    NavItem("Now", Icons.Default.Home),
-    NavItem("Past", Icons.Default.DateRange)
+    NavItem("Streak", Sym.FireOutline, Sym.Fire),
+    NavItem("Now", Sym.HourglassOutline, Sym.Hourglass),
+    NavItem("Past", Sym.ChartOutline, Sym.Chart)
 )
 
+/** One section heading in "How Beeing works" — its icon, then its title. */
+@Composable
+private fun InfoSection(sym: Sym, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BeeIcon(sym, size = 16.dp, contentDescription = null)
+        Spacer(Modifier.width(6.dp))
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    }
+}
+
 /**
- * Floating pill-shaped bottom navigation bar with a fixed width, centered.
- * Every item keeps a fixed slot (icon + label); a filled highlight slides
- * between slots as the selection changes.
- * Translucent — it floats over the content, which scrolls beneath it.
+ * The app's bottom navigation, Swiggy-style: a plain card-coloured bar with a
+ * hairline top edge, each tab an icon over its label. Inactive tabs wear the
+ * outline icon in `onSurfaceVariant`; the active one switches to the filled
+ * icon and a bold label in the accent-as-text colour. No pill. Colour is
+ * driven by the pager's continuous position, so it crossfades with the swipe.
  */
 @Composable
-private fun FloatingPillNavBar(
-    selectedTab: Int,
+private fun BottomNavBar(
+    pagerState: PagerState,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val slotWidth = 92.dp
-    val slotHeight = 52.dp
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 28.dp, vertical = 14.dp),
-        contentAlignment = Alignment.Center
+    val accent = LocalBeeExtras.current.accentText
+    val idle = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
-            tonalElevation = 0.dp,
-            shadowElevation = 8.dp
-        ) {
-            Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                // Sliding highlight behind the selected slot
-                val highlightX by animateDpAsState(
-                    targetValue = slotWidth * selectedTab,
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    label = "navHighlight"
-                )
-                Box(
-                    Modifier
-                        .offset(x = highlightX)
-                        .size(slotWidth, slotHeight)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-
-                Row {
-                    bottomNavItems.forEachIndexed { index, item ->
-                        val selected = selectedTab == index
-                        val contentColor by animateColorAsState(
-                            targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = tween(250),
-                            label = "navItemContent"
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
+                // Continuous pager position: whole part = page, fraction = swipe progress
+                val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
+                bottomNavItems.forEachIndexed { index, item ->
+                    val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
+                    val active = focus > 0.5f
+                    val contentColor = lerp(idle, accent, focus)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClickLabel = "Open ${item.label}"
+                            ) { onTabSelected(index) },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        BeeIcon(
+                            if (active) item.activeSym else item.sym,
+                            size = 24.dp,
+                            tint = contentColor,
+                            contentDescription = item.label
                         )
-
-                        Column(
-                            modifier = Modifier
-                                .size(slotWidth, slotHeight)
-                                .clip(RoundedCornerShape(20.dp))
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) { onTabSelected(index) },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                item.icon,
-                                contentDescription = item.label,
-                                tint = contentColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                item.label,
-                                color = contentColor,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp
-                            )
-                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            item.label,
+                            color = contentColor,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }

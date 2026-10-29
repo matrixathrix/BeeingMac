@@ -37,10 +37,29 @@
             </intent-filter>
         </receiver>
 
+        <!-- Daily 00:01 replay that posts streak alerts (gift, saver used, saver faded) -->
+        <receiver
+            android:name=".StreakAlertReceiver"
+            android:exported="false" />
+
         <!-- Backup receiver for auto-backup -->
         <receiver
             android:name=".BackupReceiver"
             android:exported="false" />
+
+        <!-- Locks the screen for "Lock phone and bee mindful" without touching
+             biometric/keyguard policy (unlike device-admin lockNow). -->
+        <service
+            android:name=".LockAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/lock_accessibility_service_config" />
+        </service>
 
     </application>
 

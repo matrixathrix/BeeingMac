@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark mode: a dark window so launching never flashes white. -->
+    <style name="Theme.Beeing" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bee_page</item>
+    </style>
+</resources>

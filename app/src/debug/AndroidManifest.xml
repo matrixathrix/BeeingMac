@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: lets `adb shell am broadcast -n ...` trigger the receivers for manual testing. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <receiver
+            android:name=".NotificationReceiver"
+            android:exported="true"
+            tools:node="merge"
+            tools:replace="android:exported" />
+        <receiver
+            android:name=".StreakAlertReceiver"
+            android:exported="true"
+            tools:node="merge"
+            tools:replace="android:exported" />
+    </application>
+</manifest>

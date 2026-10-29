@@ -16,14 +16,41 @@ class RatingsViewModel : ViewModel() {
     // Refresh trigger to force UI updates
     var refreshTrigger by mutableStateOf(0)
         private set
-    
+
+    // Beginner/Master toggle history. Lives here rather than in each tab because
+    // it is replay input: change it and the meter, calendar and log must all
+    // re-derive from the same list, in the same composition.
+    var modeEvents by mutableStateOf<List<ModeEvent>>(emptyList())
+        private set
+
+    /** Today's mode — the latest event. */
+    val beginnerMode: Boolean get() = isBeginnerMode(modeEvents)
+
     /**
      * Load all ratings from storage
      */
     fun loadRatings(context: Context) {
         allRatings = com.example.beeing.loadRatings(context)
     }
-    
+
+    /**
+     * Load the beginner/Master toggle history
+     */
+    fun loadModeEvents(context: Context) {
+        modeEvents = com.example.beeing.loadModeEvents(context)
+    }
+
+    /**
+     * Flip the mode. Appends an event rather than overwriting a flag, so past
+     * days keep replaying under the mode they were actually lived in.
+     */
+    fun setBeginnerMode(context: Context, beginner: Boolean) {
+        if (beginnerMode == beginner) return
+        recordModeEvent(context, beginner)
+        loadModeEvents(context)
+        triggerRefresh()
+    }
+
     /**
      * Add or update a rating
      */

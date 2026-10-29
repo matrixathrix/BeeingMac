@@ -24,10 +24,8 @@ data class RatingEntry(
     val tags: List<String> = emptyList()
 )
 
-enum class ChartView { HOURLY, DAY, WEEK, MONTH }
-
 /** A score chosen on the hourly notification, waiting to be finished in-app. */
-data class PendingRating(val score: Int, val targetTs: Long, val label: String)
+data class PendingRating(val score: Int, val targetTs: Long, val label: String, val tags: List<String> = emptyList())
 
 // Score band colors shared by the dial, history dots and reclaim dialog
 fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
@@ -37,6 +35,12 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 }
 
 // --- NOTIFICATIONS ---
+const val ACTION_NOTIF_SCORE = "com.example.beeing.NOTIF_SCORE"
+const val ACTION_NOTIF_TAG = "com.example.beeing.NOTIF_TAG"
+const val ACTION_NOTIF_SUBMIT = "com.example.beeing.NOTIF_SUBMIT"
+const val CHANNEL_STREAK_ALERTS = "streak_alerts"
+const val CHANNEL_STREAK_ALERTS_SILENT = "streak_alerts_silent"
+
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
@@ -62,6 +66,22 @@ fun createNotificationChannel(context: Context) {
             setSound(soundUri, audioAttributes)
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(weeklyChannel)
+
+        // Silent twins: a channel's sound is fixed at creation, so "no sound" needs its own.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        fun silent(id: String, name: String, importance: Int) = NotificationChannel(id, name, importance).apply {
+            setSound(null, null)
+            enableVibration(false)
+        }
+        manager.createNotificationChannel(silent("hourly_bee_silent", "Hourly Reminders (silent)", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(silent("weekly_report_silent", "Weekly Report (silent)", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_STREAK_ALERTS, "Streak alerts", NotificationManager.IMPORTANCE_HIGH)
+                .apply { setSound(soundUri, audioAttributes) }
+        )
+        manager.createNotificationChannel(
+            silent(CHANNEL_STREAK_ALERTS_SILENT, "Streak alerts (silent)", NotificationManager.IMPORTANCE_DEFAULT)
+        )
     }
 }
 
@@ -101,11 +121,14 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             "android.intent.action.BOOT_COMPLETED" -> {
                 scheduleExactHourlyAlarm(context)
                 scheduleWeeklyReport(context)
+                scheduleStreakAlerts(context)
             }
             ACTION_WEEKLY_REPORT -> {
                 showWeeklyReportNotification(context)
                 scheduleWeeklyReport(context) // reschedule for next week
             }
+            ACTION_NOTIF_SCORE, ACTION_NOTIF_TAG -> onDraftTap(context, manager, intent)
+            ACTION_NOTIF_SUBMIT -> onSubmit(context, manager, intent)
             else -> {
                 // STANDARD TRIGGER (Start of a new hour)
                 // Calculate the "Previous Hour" NOW and freeze it
@@ -127,18 +150,33 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                showCustomNotification(context, manager, targetTimestamp, ordinal)
+                // Hourly reminders obey silent hours, pause and the reminders switch;
+                // the alarm keeps rescheduling either way, so a pause ends on its own.
+                when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
+                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee")
+                    Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
+                    Delivery.NONE -> {}
+                }
                 scheduleExactHourlyAlarm(context)
             }
         }
     }
 
+    /**
+     * Posts (or re-posts) the rating notification. Taps on a score or tag are
+     * broadcasts back to this receiver that update the [NotifDraft] and call this
+     * again; `alertOnce` keeps those re-posts from ringing a second time.
+     */
     private fun showCustomNotification(
         context: Context,
         manager: NotificationManager,
         targetTs: Long,
-        targetLabel: String
+        targetLabel: String,
+        channelId: String,
+        alertOnce: Boolean = false
     ) {
+        val draft = draftFor(loadNotifDraft(context), targetTs)
+        val tags = quickTags(loadRatings(context), loadTags(context), System.currentTimeMillis(), 6)
         val remoteViews = RemoteViews(context.packageName, R.layout.notification_rating)
 
         // 1. Format the text
@@ -149,74 +187,156 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
         val rangeText = "${formatH(startH)}-${formatH(endH)}"
         remoteViews.setTextViewText(R.id.notif_title, "How was your last hour? ($rangeText)")
 
-        // 2. Setup Chips with Color Logic
-        val buttonIds = listOf(
-            R.id.btn_1, R.id.btn_2, R.id.btn_3, R.id.btn_4, R.id.btn_5,
-            R.id.btn_6, R.id.btn_7, R.id.btn_8, R.id.btn_9, R.id.btn_10
-        )
-
-        buttonIds.forEachIndexed { index, id ->
-            val score = index + 1
-
-            remoteViews.setInt(id, "setBackgroundResource", R.drawable.rounded_notif_btn_neutral)
-            val textColor = when {
-                score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
-                score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
-                else -> android.graphics.Color.parseColor("#B71C1C") // Red
-            }
-            remoteViews.setTextColor(id, textColor)
-
-            // Tapping a score opens the app with that score pre-selected for
-            // this hour — tags are mandatory, so rating finishes in the app.
-            val selectIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra("PENDING_SCORE", score)
-                putExtra("TARGET_TS", targetTs)
-                putExtra("TARGET_LABEL", targetLabel)
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                context, score, selectIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            remoteViews.setOnClickPendingIntent(id, pendingIntent)
-        }
-
         // Detect system dark mode once — used for all button text colours
         val isDarkMode = (context.resources.configuration.uiMode and
                 android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         val themeTextColor = if (isDarkMode) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+        val selectedText = android.graphics.Color.BLACK
 
-        // 3. Open App Intent
-        val mainIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context, 0, mainIntent,
+        fun broadcast(code: Int, action: String, fill: Intent.() -> Unit = {}) = PendingIntent.getBroadcast(
+            context, code,
+            Intent(context, NotificationReceiver::class.java).apply {
+                this.action = action
+                putExtra("TARGET_TS", targetTs)
+                putExtra("TARGET_LABEL", targetLabel)
+                fill()
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        remoteViews.setOnClickPendingIntent(R.id.btn_open_app, pendingIntent)
+
+        // 2. Score chips: a tap selects (and highlights) instead of leaving the notification
+        val buttonIds = listOf(
+            R.id.btn_1, R.id.btn_2, R.id.btn_3, R.id.btn_4, R.id.btn_5,
+            R.id.btn_6, R.id.btn_7, R.id.btn_8, R.id.btn_9, R.id.btn_10
+        )
+        buttonIds.forEachIndexed { index, id ->
+            val score = index + 1
+            val selected = draft.score == score
+            remoteViews.setInt(
+                id, "setBackgroundResource",
+                if (selected) R.drawable.rounded_notif_btn_selected else R.drawable.rounded_notif_btn_neutral
+            )
+            remoteViews.setTextColor(
+                id,
+                if (selected) selectedText else when {
+                    score >= 8 -> android.graphics.Color.parseColor("#2E7D32") // Green
+                    score >= 5 -> android.graphics.Color.parseColor("#F57C00") // Orange
+                    else -> android.graphics.Color.parseColor("#B71C1C") // Red
+                }
+            )
+            remoteViews.setOnClickPendingIntent(
+                id, broadcast(100 + score, ACTION_NOTIF_SCORE) { putExtra("SCORE", score) }
+            )
+        }
+
+        // 3. Tag chips (the most used lately); more tags live in the app
+        val tagIds = listOf(R.id.btn_tag_1, R.id.btn_tag_2, R.id.btn_tag_3, R.id.btn_tag_4, R.id.btn_tag_5, R.id.btn_tag_6)
+        tagIds.forEachIndexed { i, id ->
+            val tag = tags.getOrNull(i)
+            if (tag == null) {
+                remoteViews.setViewVisibility(id, android.view.View.INVISIBLE)
+                return@forEachIndexed
+            }
+            val selected = tag in draft.tags
+            remoteViews.setViewVisibility(id, android.view.View.VISIBLE)
+            remoteViews.setTextViewText(id, com.example.beeing.ui.icons.tagLabelOf(tag))
+            remoteViews.setInt(
+                id, "setBackgroundResource",
+                if (selected) R.drawable.rounded_notif_btn_selected else R.drawable.rounded_notif_btn_neutral
+            )
+            remoteViews.setTextColor(id, if (selected) selectedText else themeTextColor)
+            remoteViews.setOnClickPendingIntent(id, broadcast(200 + i, ACTION_NOTIF_TAG) { putExtra("TAG", tag) })
+        }
+
+        // 4. Open the app, carrying whatever has been picked so far
+        val mainIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            draft.score?.let {
+                putExtra("PENDING_SCORE", it)
+                putExtra("TARGET_TS", targetTs)
+                putExtra("TARGET_LABEL", targetLabel)
+                putExtra("PENDING_TAGS", draft.tags.joinToString(";"))
+            }
+        }
+        val openIntent = PendingIntent.getActivity(
+            context, 0, mainIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        remoteViews.setOnClickPendingIntent(R.id.btn_open_app, openIntent)
         remoteViews.setTextColor(R.id.btn_open_app, themeTextColor)
 
-        // 4. Rating always finishes in the app — no in-notification submit
-        remoteViews.setViewVisibility(R.id.btn_open_app, android.view.View.VISIBLE)
-        remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.GONE)
+        // 5. Submit stays dimmed until there is a score and a tag
+        remoteViews.setViewVisibility(R.id.btn_submit, android.view.View.VISIBLE)
+        remoteViews.setInt(
+            R.id.btn_submit, "setBackgroundResource",
+            if (draft.canSubmit) R.drawable.rounded_notif_btn_selected else R.drawable.rounded_notif_btn_neutral
+        )
+        remoteViews.setTextColor(R.id.btn_submit, if (draft.canSubmit) selectedText else themeTextColor)
+        remoteViews.setTextViewText(
+            R.id.btn_submit,
+            when {
+                draft.score == null -> "Pick a score"
+                draft.tags.isEmpty() -> "Pick a tag"
+                else -> "Submit"
+            }
+        )
+        remoteViews.setOnClickPendingIntent(R.id.btn_submit, broadcast(300, ACTION_NOTIF_SUBMIT))
 
-        // 5. Build
-        val notification = NotificationCompat.Builder(context, "hourly_bee")
+        // 6. Build
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setCustomContentView(remoteViews)
+            .setCustomContentView(remoteViews) // same full picker when collapsed: it shows up already open
             .setCustomBigContentView(remoteViews)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(alertOnce)
+            .setAutoCancel(true) // body tap only; the chips are broadcasts and never cancel
+            .setContentIntent(openIntent)
             .build()
 
         manager.notify(1, notification)
     }
+
+    /** A tap on the notification: update the draft, then re-post it with the selection shown. */
+    private fun onDraftTap(context: Context, manager: NotificationManager, intent: Intent) {
+        val targetTs = intent.getLongExtra("TARGET_TS", 0L)
+        if (!hourStillRatable(targetTs, System.currentTimeMillis())) {
+            clearNotifDraft(context); manager.cancel(1); return
+        }
+        val label = intent.getStringExtra("TARGET_LABEL") ?: hourLabelFor(targetTs)
+        var draft = draftFor(loadNotifDraft(context), targetTs)
+        when (intent.action) {
+            ACTION_NOTIF_SCORE -> draft = draft.copy(score = intent.getIntExtra("SCORE", -1).takeIf { it in 1..10 } ?: draft.score)
+            ACTION_NOTIF_TAG -> intent.getStringExtra("TAG")?.let { draft = draft.toggleTag(it) }
+        }
+        saveNotifDraft(context, draft)
+        // Quiet channel on re-posts: the selection must never ring again.
+        showCustomNotification(context, manager, targetTs, label, "hourly_bee_silent", alertOnce = true)
+    }
+
+    /** Saves the draft as an ordinary in-the-moment rating, then dismisses the notification. */
+    private fun onSubmit(context: Context, manager: NotificationManager, intent: Intent) {
+        val targetTs = intent.getLongExtra("TARGET_TS", 0L)
+        val draft = draftFor(loadNotifDraft(context), targetTs)
+        val now = System.currentTimeMillis()
+        if (!hourStillRatable(targetTs, now)) {
+            clearNotifDraft(context); manager.cancel(1); return
+        }
+        if (!draft.canSubmit) return // dimmed button: nothing to save yet
+        val alreadyRated = loadRatings(context).any { it.timestamp == targetTs }
+        if (!alreadyRated) {
+            saveRating(
+                context,
+                RatingEntry(
+                    id = now, score = draft.score!!, timestamp = targetTs,
+                    hourLabel = hourLabelFor(targetTs), note = "", tags = draft.tags
+                )
+            )
+        }
+        clearNotifDraft(context)
+        manager.cancel(1)
+    }
+
 
     // Private helpers to ensure Utils.kt is self-contained
     private fun formatH(h: Int) = "${if(h%12==0) 12 else h%12}${if(h<12)"am" else "pm"}"
@@ -461,6 +581,48 @@ class BackupReceiver : android.content.BroadcastReceiver() {
         }
         scheduleAutoBackup(context)
     }
+}
+
+// --- ACTIVE WINDOW ---
+// The stable hour range the day-strip and pattern grid render. Smallest
+// contiguous range covering ~90% of the hours rated in the trailing 30 days,
+// never narrower than 8 hours. Ratings outside it still count everywhere —
+// the UI shows them via compact "early/late" cap rows instead of dead rows.
+const val EDIT_WINDOW_MS = 10L * 3600_000L // ratings editable up to 10h back
+
+fun computeActiveWindow(ratings: List<RatingEntry>): IntRange {
+    val cutoff = System.currentTimeMillis() - 30L * 24 * 3600_000L
+    val counts = IntArray(24)
+    var total = 0
+    val cal = Calendar.getInstance()
+    for (e in ratings) {
+        if (e.timestamp < cutoff) continue
+        cal.timeInMillis = e.timestamp
+        counts[cal.get(Calendar.HOUR_OF_DAY)]++
+        total++
+    }
+    if (total == 0) return 7..22
+
+    var lo = 0
+    var hi = 23
+    while (lo < hi && counts[lo] == 0) lo++
+    while (hi > lo && counts[hi] == 0) hi--
+
+    var kept = 0
+    for (h in lo..hi) kept += counts[h]
+    val minKeep = Math.ceil(total * 0.9).toInt()
+    while (hi - lo >= 8) {
+        val trimLow = counts[lo] <= counts[hi]
+        val edgeCount = if (trimLow) counts[lo] else counts[hi]
+        if (kept - edgeCount < minKeep) break
+        kept -= edgeCount
+        if (trimLow) lo++ else hi--
+    }
+    // A strip narrower than 8 hours looks broken; widen symmetrically
+    while (hi - lo < 7) {
+        if (lo > 0) lo-- else if (hi < 23) hi++ else break
+    }
+    return lo..hi
 }
 
 fun calculateStreak(r: List<RatingEntry>): Int {
