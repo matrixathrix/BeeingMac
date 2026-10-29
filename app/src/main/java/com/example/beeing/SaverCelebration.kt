@@ -77,7 +77,7 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
     val bob = if (animationsOn) sin(float.value * PI.toFloat() * 2f) * 6f else 0f
 
     val (label, title, sub, sym) = when (moment) {
-        is StreakMoment.SaverEarned -> Copy(
+        is StreakMoment.SuperDay -> Copy(
             "$SAVER_EARN_HOURS-HOUR DAY", "Streak saver earned",
             "It will step in automatically the next time you miss a day.", Sym.Saver
         )
@@ -131,7 +131,7 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Text(sub, fontSize = 15.sp, color = Color.White.copy(alpha = 0.8f), textAlign = TextAlign.Center)
-            if (moment is StreakMoment.SaverEarned) {
+            if (moment is StreakMoment.SuperDay) {
                 Spacer(Modifier.height(22.dp))
                 SaverSlots(moment.savers, highlightIndex = moment.savers - 1)
             }

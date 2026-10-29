@@ -391,21 +391,55 @@ fun computeStreakEvents(
     return (r.events + added).sortedByDescending { it.timestamp }
 }
 
-/** A full-screen streak moment: a saver just earned, or a broken streak just won back. */
+/**
+ * A full-screen streak moment: a Super day just reached (with or without a saver,
+ * which it can't earn at the cap), or a broken streak just won back. `late` = the
+ * day it belongs to is yesterday, finished off after midnight.
+ */
 sealed interface StreakMoment {
-    data class SaverEarned(val savers: Int) : StreakMoment
+    data class SuperDay(val savers: Int, val earnedSaver: Boolean, val late: Boolean) : StreakMoment
     data class Recovered(val streak: Int) : StreakMoment
+}
+
+/**
+ * The one day that gained exactly one counted hour between two snapshots, or null.
+ * Days are keyed by `dayStartMs` over `now.recentDays`: a day `prev` didn't have
+ * counts as 0, a day only `prev` had (it rolled off at midnight) is ignored. Any
+ * other change — two days moving, a jump of several hours, no new hour at all —
+ * returns null, and so does a first composition (`prev == null`).
+ */
+internal fun singleNewHourDay(prev: StreakState?, now: StreakState): DayTally? {
+    if (prev == null) return null
+    val before = prev.recentDays.associate { it.dayStartMs to it.countedHours }
+    val changed = now.recentDays.filter { it.countedHours != (before[it.dayStartMs] ?: 0) }
+    val day = changed.singleOrNull() ?: return null
+    return day.takeIf { it.countedHours == (before[it.dayStartMs] ?: 0) + 1 }
+}
+
+/** The daily ring just closed on `day`. `count` is what the takeover announces. */
+data class RingClosed(val day: DayTally, val count: Int, val beginner: Boolean, val late: Boolean)
+
+/** Fires on the one new hour that brings a day exactly to its goal; same guard as [streakMoment]. */
+fun ringClosed(prev: StreakState?, now: StreakState): RingClosed? {
+    val d = singleNewHourDay(prev, now) ?: return null
+    if (d.countedHours != d.goal) return null
+    val count = if (d.beginner) now.beginnerDaysCompleted else d.streakAfter
+    return RingClosed(d, count, d.beginner, late = !d.isToday)
 }
 
 /**
  * Compares the state before and after a change and says whether it was a moment.
  * It only fires when exactly one new counted hour landed, so a replay (first
  * composition), an import, a backdated save or a mode/goal toggle can never
- * celebrate: none of them add a single counted hour.
+ * celebrate: none of them add a single counted hour. It is keyed by day, so a save
+ * for yesterday after midnight still counts.
  */
 fun streakMoment(prev: StreakState?, now: StreakState): StreakMoment? {
-    if (prev == null || now.todayHours != prev.todayHours + 1) return null
-    if (!prev.todayEarnedSaver && now.todayEarnedSaver) return StreakMoment.SaverEarned(now.savers)
-    if (prev.recoveryOpen && !now.recoveryOpen && now.todayRecovered) return StreakMoment.Recovered(now.currentStreak)
+    if (prev == null) return null
+    val d = singleNewHourDay(prev, now) ?: return null
+    if (!d.beginner && d.countedHours == SUPER_DAY_HOURS) {
+        return StreakMoment.SuperDay(now.savers, d.earnedSaver, late = !d.isToday)
+    }
+    if (prev.recoveryOpen && !now.recoveryOpen && d.recovered) return StreakMoment.Recovered(now.currentStreak)
     return null
 }
