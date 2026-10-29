@@ -39,7 +39,7 @@ class WarningsTest {
         }
         one(ev(StreakEventType.LOW_SAVERS, savers = 1)).let {
             assertEquals("Only 1 saver left", it.title)
-            assertEquals("Rate 12 hours in one day to earn another.", it.detail)
+            assertEquals("Rate 12 hours and it's a Super day, which earns another.", it.detail)
         }
         assertEquals("Only 2 savers left", one(ev(StreakEventType.LOW_SAVERS, savers = 2)).title)
         one(ev(StreakEventType.STREAK_BROKE, streak = 14)).let {
