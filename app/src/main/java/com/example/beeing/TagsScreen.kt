@@ -31,6 +31,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +46,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.withFrameNanos
@@ -74,6 +79,7 @@ import com.example.beeing.ui.icons.tagGlyphOf
 import com.example.beeing.ui.icons.tagLabelOf
 import com.example.beeing.ui.icons.tagSym
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 private const val MAX_TAGS = 30
 private const val TAG_NAME_MAX = 20
@@ -116,6 +122,8 @@ fun TagsScreen(context: android.content.Context, onChanged: () -> Unit, onBack: 
     var editingTag by remember { mutableStateOf<String?>(null) }
     var adding by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     // Every row is the same fixed height (its divider is drawn inside it), so
     // one row height is exactly one drag step.
     val rowHeight = 58.dp
@@ -276,6 +284,13 @@ fun TagsScreen(context: android.content.Context, onChanged: () -> Unit, onBack: 
             Spacer(Modifier.navigationBarsPadding())
         }
     }
+    // Undo for a deleted tag, over the page (not inside the scrolling list).
+    Box(Modifier.fillMaxSize()) {
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)
+        )
+    }
 
     if (adding) {
         TagNameDialog(
@@ -318,9 +333,22 @@ fun TagsScreen(context: android.content.Context, onChanged: () -> Unit, onBack: 
             text = { Text("Removed from the picker. Past hours keep it.", fontSize = 14.sp, lineHeight = 20.sp) },
             confirmButton = {
                 TextButton(onClick = {
+                    val at = tags.indexOf(tag)
                     tags.remove(tag)
                     persist()
                     confirmDelete = null
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Deleted \"${tagParts(tag).second}\"",
+                            actionLabel = "Undo",
+                            duration = SnackbarDuration.Short
+                        )
+                        // Back in its old slot, unless it was re-added meanwhile.
+                        if (result == SnackbarResult.ActionPerformed && tag !in tags) {
+                            tags.add(at.coerceIn(0, tags.size), tag)
+                            persist()
+                        }
+                    }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } }

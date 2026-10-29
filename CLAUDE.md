@@ -993,3 +993,17 @@ case verify by static review and say so explicitly — the user compiles locally
   sheet's ‹ ›; days stay newest first). The 6am/12pm/6pm ticks are gone:
   collapsed rows show the bare line (for scanning), and only an **expanded** day
   gets "12am · 12pm · 12am" labels under it, in the Now strip's 10sp type.
+- 2026-10-29 (read-only hours · undo everywhere): past `EDIT_WINDOW_MS`,
+  `EditEntrySheet` no longer shows a greyed-out editor. `ReadOnlyEntry`
+  (private, `UIComponents.kt`) shows what was logged: the score as a 60dp
+  `scoreBandColor` circle + its `DIAL_WORDS` word, "Rated h:mm" (from `id`, only
+  when it falls after the hour began) or the 🕐 "Added later" badge, only the
+  picked tags (`visibleTags()`), the note or an italic "No note", and one footer
+  line — lock · "Locked · hours can be edited for 10 hours" · red "Delete"
+  (still behind "Delete this hour?"). Header and ‹ › carets are shared, so
+  stepping between an editable and a locked hour swaps the body in place.
+  **Undo is the caller's job now**: the sheet dropped its own snackbar (the
+  callers close the sheet on delete, which killed it — the Now tab had no
+  working undo at all). `PastTab` and `NowTab` each show "Rating deleted ·
+  Undo" (Now's host floats above the pinned footer), and the Tags page shows
+  "Deleted "X" · Undo", which restores the tag to its old slot.

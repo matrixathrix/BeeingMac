@@ -81,6 +81,7 @@ import com.example.beeing.ui.theme.RingQualifiedGreen
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * NOW TAB — one job: this hour.
@@ -135,6 +136,8 @@ fun NowTab(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val allRatings = viewModel.allRatings
 
@@ -780,6 +783,12 @@ fun NowTab(
             )
         }
 
+        // Undo for a deleted hour, floating just above the pinned footer.
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp)
+        )
+
         // Edit a rated hour from the today strip (inside the 10h window)
         if (editingEntry != null) {
             ModalBottomSheet(
@@ -792,8 +801,19 @@ fun NowTab(
                     onPersist = { updated -> viewModel.saveRating(context, updated) },
                     onClose = { editingEntry = null },
                     onDelete = { id ->
+                        val deleted = allRatings.find { it.id == id }
                         viewModel.deleteRating(context, id)
                         editingEntry = null
+                        // Undo lives here, not in the sheet: the sheet is gone
+                        // the moment the hour is deleted.
+                        if (deleted != null) scope.launch {
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Rating deleted",
+                                actionLabel = "Undo",
+                                duration = SnackbarDuration.Short
+                            )
+                            if (result == SnackbarResult.ActionPerformed) viewModel.saveRating(context, deleted)
+                        }
                     }
                 )
             }

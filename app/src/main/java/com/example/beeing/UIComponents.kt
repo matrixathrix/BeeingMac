@@ -31,6 +31,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 //import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -179,8 +180,6 @@ fun EditEntrySheet(
     onDelete: (Long) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val availableTags = remember { loadTags(context) }
 
@@ -225,7 +224,8 @@ fun EditEntrySheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp)
         ) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -278,132 +278,117 @@ fun EditEntrySheet(
                 }
             }
 
-            SectionLabel("SCORE", top = 18.dp)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
-            ) {
-                (1..10).forEach { score ->
-                    val isSelected = editedEntry.score == score
-                    Box(
-                        modifier = Modifier
-                            .size(if (isSelected) 42.dp else 36.dp)
-                            .background(
-                                when {
-                                    score >= 8 -> Color(0xFF66BB6A).copy(alpha = if (isSelected) 1f else 0.3f)
-                                    score >= 5 -> Color(0xFFFFB300).copy(alpha = if (isSelected) 1f else 0.3f)
-                                    else -> Color(0xFFB71C1C).copy(alpha = if (isSelected) 1f else 0.3f)
-                                },
-                                shape = CircleShape
-                            )
-                            .clickable(enabled = editable) {
-                                editedEntry = editedEntry.copy(score = score)
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            }
-                            .border(
-                                width = if (isSelected) 2.dp else 0.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "$score",
-                            fontSize = if (isSelected) 15.sp else 13.sp,
-                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
-                            color = if (score >= 5) Color.Black else Color.White
-                        )
-                    }
-                }
-            }
-
-            SectionLabel("TAGS", top = 14.dp)
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy((-6).dp)
-            ) {
-                availableTags.forEach { tag ->
-                    InputChip(
-                        selected = tag in selectedTags,
-                        onClick = {
-                            if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                        },
-                        enabled = editable,
-                        label = { TagChipContent(tag) },
-                        shape = TagChipShape,
-                        colors = tagChipColors(),
-                        border = null
-                    )
-                }
-            }
-
-            SectionLabel("NOTE", top = 14.dp)
-            OutlinedTextField(
-                value = editedEntry.note,
-                onValueChange = { editedEntry = editedEntry.copy(note = it) },
-                enabled = editable,
-                placeholder = { Text("Add a note") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                IconButton(
-                    onClick = { confirmDelete = true },
-                    modifier = Modifier.weight(0.2f)
+            if (editable) {
+                SectionLabel("SCORE", top = 18.dp)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                 ) {
-                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
-                }
-                if (editable) {
-                    Button(
-                        colors = BeeButtonDefaults.colors(),
-                        onClick = {
-                            onPersist(editedEntry.copy(tags = selectedTags.toList()))
-                            onClose()
-                        },
-                        modifier = Modifier.weight(0.8f)
-                    ) {
-                        Text("Save Changes")
+                    (1..10).forEach { score ->
+                        val isSelected = editedEntry.score == score
+                        Box(
+                            modifier = Modifier
+                                .size(if (isSelected) 42.dp else 36.dp)
+                                .background(
+                                    when {
+                                        score >= 8 -> Color(0xFF66BB6A).copy(alpha = if (isSelected) 1f else 0.3f)
+                                        score >= 5 -> Color(0xFFFFB300).copy(alpha = if (isSelected) 1f else 0.3f)
+                                        else -> Color(0xFFB71C1C).copy(alpha = if (isSelected) 1f else 0.3f)
+                                    },
+                                    shape = CircleShape
+                                )
+                                .clickable(enabled = editable) {
+                                    editedEntry = editedEntry.copy(score = score)
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                                .border(
+                                    width = if (isSelected) 2.dp else 0.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "$score",
+                                fontSize = if (isSelected) 15.sp else 13.sp,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                color = if (score >= 5) Color.Black else Color.White
+                            )
+                        }
                     }
-                } else {
-                    // Past the 10h edit window: a read-only record. Deletion
-                    // stays available; there is nothing to save.
-                    Box(
-                        Modifier
-                            .weight(0.8f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Editable for 10 hours after the hour ends",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
+                }
+
+                SectionLabel("TAGS", top = 14.dp)
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy((-6).dp)
+                ) {
+                    availableTags.forEach { tag ->
+                        InputChip(
+                            selected = tag in selectedTags,
+                            onClick = {
+                                if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
+                            },
+                            enabled = editable,
+                            label = { TagChipContent(tag) },
+                            shape = TagChipShape,
+                            colors = tagChipColors(),
+                            border = null
                         )
                     }
                 }
-            }
-            Spacer(Modifier.height(32.dp))
-        }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-        )
+                SectionLabel("NOTE", top = 14.dp)
+                OutlinedTextField(
+                    value = editedEntry.note,
+                    onValueChange = { editedEntry = editedEntry.copy(note = it) },
+                    enabled = editable,
+                    placeholder = { Text("Add a note") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    IconButton(
+                        onClick = { confirmDelete = true },
+                        modifier = Modifier.weight(0.2f)
+                    ) {
+                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                    }
+                    run {
+                        Button(
+                            colors = BeeButtonDefaults.colors(),
+                            onClick = {
+                                onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                                onClose()
+                            },
+                            modifier = Modifier.weight(0.8f)
+                        ) {
+                            Text("Save Changes")
+                        }
+                    }
+                }
+            } else {
+                // Past the 10h window you're here to read, not edit: what you
+                // logged and nothing else, then one quiet line saying why it's
+                // locked, with delete at its end.
+                ReadOnlyEntry(entry = currentEntry, onDelete = { confirmDelete = true })
+            }
+            Spacer(Modifier.height(24.dp))
+        }
     }
 
-    // Deleting is one confirm away, never a single tap.
+    // Deleting is one confirm away, never a single tap. The undo snackbar is
+    // shown by the caller, which outlives this sheet.
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -412,18 +397,7 @@ fun EditEntrySheet(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    val deletedEntry = currentEntry
                     onDelete(currentEntry.id)
-                    scope.launch {
-                        val result = snackbarHostState.showSnackbar(
-                            message = "Entry deleted",
-                            actionLabel = "Undo",
-                            duration = SnackbarDuration.Short
-                        )
-                        if (result == SnackbarResult.ActionPerformed) {
-                            saveRating(context, deletedEntry)
-                        }
-                    }
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
@@ -452,6 +426,96 @@ fun EditEntrySheet(
                 }) { Text("Discard") }
             }
         )
+    }
+}
+
+/**
+ * An hour past the edit window, as a finished entry: the score as one big
+ * coloured number with its word, when it was rated (or "Added later"), only the
+ * tags that were picked, the note or "No note", and a footer line that says why
+ * it's locked, with delete at its end.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReadOnlyEntry(entry: RatingEntry, onDelete: () -> Unit) {
+    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    Spacer(Modifier.height(20.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .background(scoreBandColor(entry.score), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "${entry.score}",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = dialDigitColor(entry.score)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(
+                (DIAL_WORDS[entry.score] ?: "").replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            if (entry.isReclaimed) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BeeIcon(Sym.FromMemory, size = 14.dp, tint = hint, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Added later", fontSize = 12.sp, color = hint)
+                }
+            } else {
+                // id is the wall-clock time it was saved; only trust it when it
+                // falls after the hour began (imports may carry other ids).
+                val savedAt = entry.id.takeIf { it >= entry.timestamp && it <= System.currentTimeMillis() }
+                if (savedAt != null) Text(
+                    "Rated " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(savedAt)).lowercase(),
+                    fontSize = 12.sp,
+                    color = hint
+                )
+            }
+        }
+    }
+
+    val tags = entry.visibleTags()
+    if (tags.isNotEmpty()) {
+        Spacer(Modifier.height(16.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            tags.forEach { tag ->
+                Surface(shape = TagChipShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Box(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) { TagChipContent(tag) }
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+    if (entry.note.isNotBlank()) {
+        Text(entry.note, style = MaterialTheme.typography.bodyLarge)
+    } else {
+        Text("No note", fontSize = 14.sp, fontStyle = FontStyle.Italic, color = hint)
+    }
+
+    Spacer(Modifier.height(20.dp))
+    HorizontalDivider(color = hint.copy(alpha = 0.15f))
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        BeeIcon(Sym.Lock, size = 16.dp, tint = hint, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Locked · hours can be edited for 10 hours",
+            fontSize = 12.sp,
+            color = hint,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onDelete) {
+            Text("Delete", color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
