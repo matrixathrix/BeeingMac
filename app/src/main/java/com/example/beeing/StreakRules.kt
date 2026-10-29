@@ -407,21 +407,42 @@ sealed interface StreakMoment {
  * counts as 0, a day only `prev` had (it rolled off at midnight) is ignored. Any
  * other change — two days moving, a jump of several hours, no new hour at all —
  * returns null, and so does a first composition (`prev == null`).
+ *
+ * The new hour must also be one of the two hours ratable at [nowMs] (the last two
+ * finished clock hours). That is the only way an in-the-moment counted hour appears;
+ * a Delete + Undo from the journal restores an old timestamp, and must not celebrate.
  */
-internal fun singleNewHourDay(prev: StreakState?, now: StreakState): DayTally? {
+internal fun singleNewHourDay(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()
+): DayTally? {
     if (prev == null) return null
-    val before = prev.recentDays.associate { it.dayStartMs to it.countedHours }
-    val changed = now.recentDays.filter { it.countedHours != (before[it.dayStartMs] ?: 0) }
+    val before = prev.recentDays.associate { it.dayStartMs to it.countedStarts }
+    val changed = now.recentDays.filter { it.countedHours != (before[it.dayStartMs]?.size ?: 0) }
     val day = changed.singleOrNull() ?: return null
-    return day.takeIf { it.countedHours == (before[it.dayStartMs] ?: 0) + 1 }
+    val old = before[day.dayStartMs].orEmpty()
+    if (day.countedHours != old.size + 1) return null
+    val added = day.countedStarts.filter { it !in old }.singleOrNull() ?: return null
+    return day.takeIf { added in ratableHourStarts(nowMs) }
+}
+
+/** Start millis of the two hours ratable at [nowMs]: the last two finished clock hours, DST-aware. */
+private fun ratableHourStarts(nowMs: Long): Set<Long> {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+    cal.add(Calendar.HOUR_OF_DAY, -1)
+    val latest = cal.timeInMillis
+    cal.add(Calendar.HOUR_OF_DAY, -1)
+    return setOf(latest, cal.timeInMillis)
 }
 
 /** The daily ring just closed on `day`. `count` is what the takeover announces. */
 data class RingClosed(val day: DayTally, val count: Int, val beginner: Boolean, val late: Boolean)
 
 /** Fires on the one new hour that brings a day exactly to its goal; same guard as [streakMoment]. */
-fun ringClosed(prev: StreakState?, now: StreakState): RingClosed? {
-    val d = singleNewHourDay(prev, now) ?: return null
+fun ringClosed(prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()): RingClosed? {
+    val d = singleNewHourDay(prev, now, nowMs) ?: return null
     if (d.countedHours != d.goal) return null
     val count = if (d.beginner) now.beginnerDaysCompleted else d.streakAfter
     return RingClosed(d, count, d.beginner, late = !d.isToday)
@@ -434,9 +455,9 @@ fun ringClosed(prev: StreakState?, now: StreakState): RingClosed? {
  * celebrate: none of them add a single counted hour. It is keyed by day, so a save
  * for yesterday after midnight still counts.
  */
-fun streakMoment(prev: StreakState?, now: StreakState): StreakMoment? {
+fun streakMoment(prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()): StreakMoment? {
     if (prev == null) return null
-    val d = singleNewHourDay(prev, now) ?: return null
+    val d = singleNewHourDay(prev, now, nowMs) ?: return null
     if (!d.beginner && d.countedHours == SUPER_DAY_HOURS) {
         return StreakMoment.SuperDay(now.savers, d.earnedSaver, late = !d.isToday)
     }
