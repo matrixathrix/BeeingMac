@@ -61,8 +61,11 @@ fun reachableHours(
     return n
 }
 
-/** "Make it a Super day": [hoursNeeded] more counted hours; [savers] decides the cap copy. */
-data class SuperInvite(val hoursNeeded: Int, val savers: Int) {
+/**
+ * "Make it a Super day": [hoursNeeded] more counted hours; [savers] decides the cap copy.
+ * [dayStartMs] is the day it invites to, which the once-a-day flag records when it shows.
+ */
+data class SuperInvite(val hoursNeeded: Int, val savers: Int, val dayStartMs: Long) {
     val atCap: Boolean get() = savers >= SAVER_CAP
 }
 
@@ -73,7 +76,7 @@ data class SuperInvite(val hoursNeeded: Int, val savers: Int) {
 fun superInviteFor(day: DayTally, savers: Int, reachable: Int): SuperInvite? {
     if (day.beginner || day.countedHours >= SUPER_DAY_HOURS) return null
     val needed = SUPER_DAY_HOURS - day.countedHours
-    return if (reachable >= needed + SUPER_DAY_SLACK) SuperInvite(needed, savers) else null
+    return if (reachable >= needed + SUPER_DAY_SLACK) SuperInvite(needed, savers, day.dayStartMs) else null
 }
 
 /** The invite shows at most once a day: [shownDay] is the day start it last showed on. */

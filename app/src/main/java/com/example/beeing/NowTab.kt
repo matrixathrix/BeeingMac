@@ -231,7 +231,13 @@ fun NowTab(
     // The root's back handler points at the bee when there is one to catch.
     LaunchedEffect(allCaughtUp) { onCaughtUpChange(allCaughtUp) }
 
-    val streakState = remember(allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+    // Keyed on the day too: left open across midnight, yesterday must stop reading as
+    // today (the late Save hint needs it). A recompute that adds no hour is a 0 delta,
+    // so it can't trip the celebrations below.
+    val todayStart = remember(hourStart) {
+        Calendar.getInstance().apply { timeInMillis = hourStart; set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+    }
+    val streakState = remember(allRatings, viewModel.modeEvents, viewModel.refreshTrigger, todayStart) {
         computeStreakState(allRatings, viewModel.modeEvents)
     }
 
@@ -240,7 +246,8 @@ fun NowTab(
     // fire when exactly one new counted hour landed, so replays, imports, backdated
     // saves and mode toggles can never celebrate; the first composition just sets
     // the baseline. A ring close may carry the once-a-day "Make it a Super day"
-    // invite; the flag is written only when one is actually handed over.
+    // invite, gated here on the once-a-day flag; the root writes the flag the moment
+    // the invite actually shows.
     var previousState by remember { mutableStateOf<StreakState?>(null) }
     LaunchedEffect(streakState) {
         val prev = previousState
@@ -252,7 +259,6 @@ fun NowTab(
             val invite = gateInvite(
                 superInviteFor(day, streakState.savers, reachable), day.dayStartMs, superInviteShownDay(context)
             )
-            if (invite != null) markSuperInviteShown(context, day.dayStartMs)
             onRingClosed(RingCelebration(closed.count, closed.beginner, closed.late, invite))
         }
         streakMoment(prev, streakState)?.let(onStreakMoment)
@@ -712,7 +718,7 @@ fun NowTab(
                                 }
                             },
                             enabled = !isLoggedCurrent && selectedScore != null && selectedTags.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = LocalBeeExtras.current.accentFill,

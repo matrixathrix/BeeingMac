@@ -664,6 +664,9 @@ fun HourlyPulseApp(
         )
     }
     superInvite?.let { invite ->
+        // Once a day, counted from the moment it shows (not the ring close, which a
+        // kill during the takeover would otherwise burn unseen)
+        LaunchedEffect(invite) { markSuperInviteShown(context, invite.dayStartMs) }
         SuperDayInvite(invite = invite, onDone = { superInvite = null })
     }
     if (ringCelebration == null && superInvite == null) {

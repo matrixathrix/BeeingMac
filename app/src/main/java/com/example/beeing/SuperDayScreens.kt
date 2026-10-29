@@ -336,13 +336,13 @@ fun SuperDayCelebration(moment: StreakMoment.SuperDay, onDone: () -> Unit) {
 @Preview(widthDp = 360, heightDp = 760)
 @Composable
 private fun SuperDayInvitePreview() = BeeingTheme {
-    SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = 2), onDone = {})
+    SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = 0L), onDone = {})
 }
 
 @Preview(widthDp = 360, heightDp = 760)
 @Composable
 private fun SuperDayInviteCappedPreview() = BeeingTheme {
-    SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = SAVER_CAP), onDone = {})
+    SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = SAVER_CAP, dayStartMs = 0L), onDone = {})
 }
 
 @Preview(widthDp = 360, heightDp = 760)

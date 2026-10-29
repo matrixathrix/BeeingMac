@@ -90,7 +90,7 @@ class SuperDayTest {
         assertNull(superInviteFor(eight, 2, 4))
         assertNull(superInviteFor(eight, 2, 3))
         assertNotNull(superInviteFor(eight, 2, 5))
-        assertEquals(SuperInvite(hoursNeeded = 4, savers = 2), superInviteFor(eight, 2, 5))
+        assertEquals(SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = day28), superInviteFor(eight, 2, 5))
         assertNull(superInviteFor(tally(hours(28, 9, 16), beginner = true, goal = 4), 2, 10))
         assertNull(superInviteFor(tally(hours(28, 7, 18)), 2, 10)) // already 12
     }
@@ -132,7 +132,7 @@ class SuperDayTest {
     }
 
     @Test fun invite_flag_blocks_a_second_invite_the_same_day() {
-        val inv = SuperInvite(hoursNeeded = 4, savers = 2)
+        val inv = SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = day28)
         val d = day28
         assertNull(gateInvite(inv, d, shownDay = d))
         assertEquals(inv, gateInvite(inv, d, shownDay = d - 24 * 3_600_000L))
