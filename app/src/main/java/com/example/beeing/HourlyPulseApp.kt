@@ -153,9 +153,30 @@ fun HourlyPulseApp(
     // A Super day or a streak won back; waits its turn behind the ring celebration and the invite
     var streakMoment by remember { mutableStateOf<StreakMoment?>(null) }
 
+    // The current clock hour's start. Polled once a minute, but an unchanged Long writes
+    // nothing, so the root recomposes only when the hour turns: enough for "today" to
+    // roll over at midnight and for the Super day cue to drop once 12 is out of reach.
+    val hourStart by produceState(initialValue = currentHourStartMs()) {
+        while (true) {
+            delay(60_000)
+            value = currentHourStartMs()
+        }
+    }
+
     // Mode + streak, shared by the menu copy, the explainer and the nudge
-    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger, hourStart) {
         computeStreakState(viewModel.allRatings, viewModel.modeEvents)
+    }
+    // "N more for a Super day" on the Streak ring and the Now strip: today only, while 12
+    // still fits. Re-read when Settings closes too, since silent hours and pause decide
+    // which hours are reachable.
+    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, showSettings) {
+        streakState.recentDays.lastOrNull()?.takeIf { it.isToday }?.let {
+            superCueFor(
+                it,
+                reachableHours(it.dayStartMs, it.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis())
+            )
+        }
     }
 
     // ---- The warnings bell: the "Heads up" items are a filtered view of the replayed
@@ -182,7 +203,8 @@ fun HourlyPulseApp(
         onMenuClick = { showSettings = true },
         onTopRowHidden = { topRowHidden = it },
         bandUnder = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
-        nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) }
+        nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        superHoursLeft = superHoursLeft
     )
 
     // Status-bar icons follow what is under them: white over a band (Streak, Now),
@@ -770,3 +792,9 @@ private fun BottomNavBar(
         }
     }
 }
+/** Epoch ms of the start of the current clock hour. */
+private fun currentHourStartMs(): Long = Calendar.getInstance().apply {
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis

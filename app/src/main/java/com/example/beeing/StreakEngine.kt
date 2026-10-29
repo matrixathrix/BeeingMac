@@ -35,14 +35,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.SaverSlots
+import com.example.beeing.ui.drawSuperLap
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.theme.LocalBeeExtras
+import com.example.beeing.ui.theme.SuperGold
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -152,23 +155,35 @@ fun StreakMeter(
     state: StreakState,
     modifier: Modifier = Modifier,
     onStreakClick: () -> Unit = {},
-    onGoalClick: () -> Unit = {}
+    onGoalClick: () -> Unit = {},
+    /** Hours still to go to a Super day, while 12 is reachable today (Master, goal met). */
+    superHoursLeft: Int? = null
 ) {
     val context = LocalContext.current
     val goal = state.hoursRequired
     val filled = state.todayHours.coerceAtMost(goal)
-    val animatedFill by animateFloatAsState(
+    // Animated values travel as States and are read only in the ring's draw/layer lambdas
+    val animatedFill = animateFloatAsState(
         targetValue = filled.toFloat(),
         animationSpec = tween(700),
         label = "streakFill"
     )
-    // Hours beyond the goal grow the pointy overflow head past 12 o'clock
+    // Hours beyond the goal fill the Super day lap (Master) or grow the pointy
+    // overflow head past 12 o'clock (beginner)
     val extraHours = (state.todayHours - goal).coerceAtLeast(0)
-    val animatedExtra by animateFloatAsState(
+    val animatedExtra = animateFloatAsState(
         targetValue = extraHours.toFloat(),
         animationSpec = tween(700),
         label = "extraFill"
     )
+    // The Super day lap: Master mode only, there from the moment the ring closes
+    val superLap = !state.beginnerMode
+    val lapShown = animateFloatAsState(
+        targetValue = if (superLap && state.todayQualified) 1f else 0f,
+        animationSpec = tween(500),
+        label = "superLap"
+    )
+    val superToday = state.recentDays.lastOrNull()?.let { it.isToday && it.superDay } == true
     // Long double throb + a small buzz for EVERY rated hour, incl. beyond 8
     val ringScale = remember { Animatable(1f) }
     var lastHours by remember { mutableIntStateOf(state.todayHours) }
@@ -206,14 +221,18 @@ fun StreakMeter(
     val remaining = (goal - state.todayHours).coerceAtLeast(0)
     val toRecover = (RECOVERY_HOURS - state.todayHours).coerceAtLeast(0)
     // Each caption belongs to the object above it, so both stay short
+    // An open recovery window outranks the Super day copy
     val todayCaption = when {
         atRisk -> "$toRecover more wins it back"
+        superHoursLeft != null -> "$superHoursLeft more for a Super day"
+        superToday -> "Super day"
         state.todayQualified && state.beginnerMode -> "Beginner day done"
         state.todayQualified -> "Day secured"
         else -> "$remaining more to complete"
     }
     val todayCaptionColor = when {
         atRisk -> riskColor
+        superHoursLeft != null || superToday -> SuperGold
         state.todayQualified -> done
         else -> soft
     }
@@ -274,14 +293,16 @@ fun StreakMeter(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             StreakRing(
-                animatedFill = animatedFill,
-                animatedExtra = animatedExtra,
+                animatedFill = { animatedFill.value },
+                animatedExtra = { animatedExtra.value },
                 ringColor = ringColor,
                 trackColor = track,
                 hoursRequired = goal,
                 ringSize = MEDALLION_SIZE,
                 strokeWidth = 11.dp,
-                scale = ringScale.value
+                scale = { ringScale.value },
+                superLap = superLap,
+                lapShown = { lapShown.value }
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -297,10 +318,16 @@ fun StreakMeter(
             }
             Spacer(Modifier.height(CAPTION_GAP))
             Box(Modifier.height(CAPTION_HEIGHT), contentAlignment = Alignment.Center) {
-                Text(
-                    todayCaption,
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = todayCaptionColor
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!atRisk && superHoursLeft == null && superToday) {
+                        BeeIcon(Sym.Sparkle, size = 14.dp, tint = SuperGold, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        todayCaption,
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = todayCaptionColor
+                    )
+                }
             }
         }
     }
@@ -316,6 +343,20 @@ private val MEDALLION_SIZE = 112.dp
 private val COUNT_SIZE = 46.sp
 private val CAPTION_GAP = 10.dp
 private val CAPTION_HEIGHT = 28.dp
+
+// 10 of 12: the ring closed, two of the four lap segments gold, the Super day caption.
+@Preview(widthDp = 360, backgroundColor = 0xFF4A1D4F, showBackground = true)
+@Composable
+private fun StreakMeterSuperLapPreview() = com.example.beeing.ui.theme.BeeingTheme {
+    StreakMeter(
+        state = StreakState(
+            currentStreak = 6, displayStreak = 6, todayHours = 10, todayQualified = true, extraToday = 2,
+            beginnerMode = false, hoursRequired = STREAK_HOURS_REQUIRED, beginnerDaysCompleted = 0, savers = 3,
+            recoveryOpen = false, recoveryDaysLeft = 0, todayEarnedSaver = false
+        ),
+        superHoursLeft = 2
+    )
+}
 
 /**
  * The streak's own object, the same size as the hour ring beside it: a solid honey disc
@@ -396,48 +437,63 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
 /**
  * The hour ring: one continuous arc that fills toward the goal (8 hours in Master,
  * 4 in beginner mode), with a thin tick at each hour so the count is still legible
- * without chunky segments. Once closed it becomes a solid circle, and hours beyond
- * the goal grow a pointy head past 12 o'clock, its color darkening toward the tip.
+ * without chunky segments. Once closed it becomes a solid circle.
+ *
+ * Hours beyond the goal: in Master mode ([superLap]) they fill the Super day lap, four
+ * segments just outside the ring. The lap fades in over [lapShown] (0…1) as the ring
+ * closes, and the main ring shrinks by the lap's width as it does, so the lap's outer
+ * edge sits where the ring's used to and the column's footprint never changes. In
+ * beginner mode they grow a pointy head past 12 o'clock, darkening toward the tip.
+ *
+ * The animated inputs are lambdas, read only in the draw / layer phase.
  */
 @Composable
 private fun StreakRing(
-    animatedFill: Float,
-    animatedExtra: Float,
+    animatedFill: () -> Float,
+    animatedExtra: () -> Float,
     ringColor: Color,
     trackColor: Color,
     hoursRequired: Int,
     ringSize: Dp,
     strokeWidth: Dp,
-    scale: Float,
+    scale: () -> Float,
+    superLap: Boolean,
+    lapShown: () -> Float,
     centerContent: @Composable () -> Unit
 ) {
     Box(
         Modifier
             .size(ringSize)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val s = scale()
+                scaleX = s
+                scaleY = s
             },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            val fill = animatedFill()
+            val extra = animatedExtra()
             val stroke = strokeWidth.toPx()
-            val inset = stroke / 2
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            val topLeft = Offset(inset, inset)
-            val ringRadius = (size.minDimension - stroke) / 2f
+            val lapStroke = SUPER_LAP_STROKE.toPx()
+            val lapGap = SUPER_LAP_GAP.toPx()
+            val lap = if (superLap) lapShown().coerceIn(0f, 1f) else 0f
             val c = Offset(size.width / 2f, size.height / 2f)
-            val fraction = (animatedFill / hoursRequired).coerceIn(0f, 1f)
-            val complete = animatedFill >= hoursRequired - 0.001f
+            val fullRadius = (size.minDimension - stroke) / 2f
+            val ringRadius = fullRadius - lap * (lapGap + lapStroke)
+            val topLeft = Offset(c.x - ringRadius, c.y - ringRadius)
+            val arcSize = Size(ringRadius * 2f, ringRadius * 2f)
+            val fraction = (fill / hoursRequired).coerceIn(0f, 1f)
+            val complete = fill >= hoursRequired - 0.001f
 
             drawCircle(color = trackColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
             if (complete) {
                 drawCircle(color = ringColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
-                // Overflow head: each hour beyond the goal pushes a tapering point
-                // further past 12 o'clock, darkening toward the tip
-                val headSweep = (animatedExtra * 4f).coerceAtMost(32f)
+                // Overflow head (beginner only): each hour beyond the goal pushes a
+                // tapering point further past 12 o'clock, darkening toward the tip
+                val headSweep = if (superLap) 0f else (extra * 4f).coerceAtMost(32f)
                 if (headSweep > 0.1f) {
                     val tipColor = Color(0xFF1B5E20)
                     val steps = 20
@@ -472,6 +528,19 @@ private fun StreakRing(
                 )
             }
 
+            // The Super day lap, hours 9–12, faded in with the shrink (and out again if
+            // the ring reopens, so it never pops)
+            if (lap > 0.001f) {
+                drawSuperLap(
+                    center = c,
+                    radius = ringRadius + stroke / 2f + lapGap + lapStroke / 2f,
+                    stroke = lapStroke,
+                    filled = extra.coerceAtMost(4f),
+                    track = trackColor.copy(alpha = trackColor.alpha * lap),
+                    fill = SuperGold.copy(alpha = lap)
+                )
+            }
+
             // One hairline tick per hour, in the band's own dark, across the stroke
             val tickColor = Color(0xFF1C0920).copy(alpha = 0.55f)
             val half = stroke / 2f + 0.5f
@@ -490,6 +559,10 @@ private fun StreakRing(
         centerContent()
     }
 }
+
+/** The Super day lap's stroke, and its gap off the main ring: together, what the ring gives up. */
+private val SUPER_LAP_STROKE = 3.5.dp
+private val SUPER_LAP_GAP = 2.5.dp
 
 // ============================================================
 // STREAK LOG  (timestamped event history; the bell shows a filtered view)

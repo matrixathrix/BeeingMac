@@ -43,6 +43,7 @@ import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.BandTopRowSpacer
 import com.example.beeing.ui.DailyGoalDialog
+import com.example.beeing.ui.LocalBandChrome
 import com.example.beeing.ui.SaverExplainerDialog
 import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.icons.BeeIcon
@@ -129,7 +130,8 @@ fun StreaksTab(
             StreakMeter(
                 state = streakState,
                 onStreakClick = { showSavers = true },
-                onGoalClick = { showGoal = true }
+                onGoalClick = { showGoal = true },
+                superHoursLeft = LocalBandChrome.current?.superHoursLeft
             )
             Spacer(Modifier.height(4.dp))
         }
