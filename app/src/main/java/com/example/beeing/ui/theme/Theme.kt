@@ -141,8 +141,8 @@ fun BeeingTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // A brand band always sits under the status bar, in both modes.
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            // Status-bar icons are owned by HourlyPulseApp: they depend on whether
+            // the current tab has a band under them.
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
         }
     }

@@ -22,15 +22,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -60,7 +64,15 @@ class BandChrome(
     val onStreakClick: () -> Unit,
     val onBellClick: () -> Unit,
     val onMenuClick: () -> Unit,
-    val onTopRowHidden: (Boolean) -> Unit = {}
+    val onTopRowHidden: (Boolean) -> Unit = {},
+    /**
+     * How much of a band is under the row right now, 0…1, off the pager's
+     * continuous position: Streak and Now have one, Past doesn't (it opens on the
+     * plain page under a large title). The row crossfades its ink with the swipe.
+     */
+    val bandUnder: () -> Float = { 1f },
+    /** How much of the Now tab is showing, 0…1: the status strip lives there only. */
+    val nowShown: () -> Float = { 1f }
 )
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
@@ -75,13 +87,18 @@ fun BandTopRow(
     BandTopRow(
         state = chrome.state, unread = chrome.unread,
         onStreakClick = chrome.onStreakClick, onBellClick = chrome.onBellClick,
-        onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle
+        onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle,
+        bandUnder = chrome.bandUnder(), nowShown = chrome.nowShown()
     )
 }
 
 /**
  * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. The ⋮ has no
  * circle so the bell reads as the actionable one.
+ *
+ * The strip shows on Now only: the Streak tab's hero says the same thing in large
+ * type, and Past is the record. Over the plain page (Past) the wordmark fades out
+ * under the tab's own large title and the ink turns from white to onBackground.
  */
 @Composable
 fun BandTopRow(
@@ -91,43 +108,57 @@ fun BandTopRow(
     onBellClick: () -> Unit,
     onMenuClick: () -> Unit,
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall
+    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall,
+    bandUnder: Float = 1f,
+    nowShown: Float = 1f
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
-            modifier = titleModifier
-        )
-        Spacer(Modifier.weight(1f))
-        StatusStrip(state = state, onClick = onStreakClick)
-        Spacer(Modifier.width(8.dp))
-        BellButton(unread, onBellClick)
-        IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
+    val ink = lerp(MaterialTheme.colorScheme.onBackground, Color.White, bandUnder)
+    CompositionLocalProvider(LocalContentColor provides ink) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (bandUnder > 0.01f) Text(
+                "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
+                modifier = titleModifier.graphicsLayer { alpha = bandUnder }
+            )
+            Spacer(Modifier.weight(1f))
+            if (nowShown > 0.01f) {
+                StatusStrip(
+                    state = state, onClick = onStreakClick,
+                    modifier = Modifier.graphicsLayer { alpha = nowShown }
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            BellButton(unread, onBellClick, bandUnder)
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun BellButton(unread: Int, onClick: () -> Unit) {
+private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) {
     val extras = LocalBeeExtras.current
+    val ink = LocalContentColor.current
+    // On the band: translucent white. On the page: a faint ink wash.
+    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), OnBandFill, bandUnder)
+    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.bandTop, bandUnder)
     val description = if (unread > 0) "Warnings, $unread unread" else "Warnings"
     Box(
         Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(OnBandFill)
+            .background(fill)
             .clickable(onClickLabel = "Open warnings", onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = ink)
         if (unread > 0) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .size(18.dp)
-                    .border(2.dp, extras.bandTop, CircleShape)
+                    .border(2.dp, ringBehindBadge, CircleShape)
                     .padding(2.dp)
                     .background(extras.accentFill, CircleShape),
                 contentAlignment = Alignment.Center

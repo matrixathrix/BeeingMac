@@ -17,6 +17,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
@@ -49,9 +51,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.BrandBand
-import com.example.beeing.ui.BandTopRowSpacer
-import com.example.beeing.ui.OnBandFill
+import com.example.beeing.ui.PageHeader
 import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
@@ -536,6 +536,7 @@ fun PastTab(
 // JOURNAL  (the default view)
 // ============================================================
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun JournalView(
     allRatings: List<RatingEntry>,
@@ -552,70 +553,86 @@ private fun JournalView(
     var showJump by remember { mutableStateOf(false) }
 
     if (days.isEmpty()) {
-        // Still a banded tab: the band owns the status-bar area on every tab.
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            BrandBand { BandTopRowSpacer() }
+        Column(Modifier.fillMaxSize()) {
+            PageHeader("Journal", reserveTopRow = true)
             Text(
                 "Rate a few hours and your days will appear here",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 48.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 48.dp)
             )
         }
         return
     }
 
-    // The month of whatever day is at the top of the list — the header reads as
-    // a heading for what you're looking at, not a fixed "this month".
-    val monthLabel by remember(days, listState) {
-        derivedStateOf {
-            val idx = listState.firstVisibleItemIndex.coerceIn(0, days.lastIndex)
-            SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-                .format(Date(days[idx].dayStartMs))
-        }
-    }
+    // Days grouped under month headers, each month one rounded group of rows.
+    val rows = remember(days) { buildJournalRows(days) }
 
     Column(Modifier.fillMaxSize()) {
-        JournalHeader(
-            monthLabel = monthLabel,
-            onJumpClick = { showJump = true },
-            onOpenTrends = onOpenTrends
-        )
+        // The record, not a stage: no band, a large title on the plain page.
+        PageHeader("Journal", reserveTopRow = true) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable(onClick = onOpenTrends, onClickLabel = "Open Trends")
+                    .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val accent = LocalBeeExtras.current.accentText
+                Text("Trends", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accent)
+                Icon(
+                    Icons.Default.KeyboardArrowRight, contentDescription = null,
+                    tint = accent, modifier = Modifier.size(20.dp)
+                )
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 4.dp)
         ) {
-            items(days, key = { it.dayStartMs }) { day ->
-                JournalDayCard(
-                    day = day,
-                    window = window,
-                    expanded = day.dayStartMs == expandedDay,
-                    onToggle = {
-                        onExpandedDayChange(
-                            if (day.dayStartMs == expandedDay) null else day.dayStartMs
+            rows.forEach { row ->
+                when (row) {
+                    is JournalMonthRow -> stickyHeader(key = "m${row.monthStartMs}") {
+                        JournalMonthHeader(row.label, onClick = { showJump = true })
+                    }
+                    is JournalDayRow -> item(key = row.day.dayStartMs) {
+                        JournalDayItem(
+                            day = row.day,
+                            first = row.first,
+                            last = row.last,
+                            window = window,
+                            expanded = row.day.dayStartMs == expandedDay,
+                            onToggle = {
+                                onExpandedDayChange(
+                                    if (row.day.dayStartMs == expandedDay) null else row.day.dayStartMs
+                                )
+                            },
+                            onEditEntry = onEdit
                         )
-                    },
-                    onEditEntry = onEdit
-                )
+                    }
+                }
             }
             item { Spacer(Modifier.height(24.dp)) } // trailing breathing room (nav is a bottomBar)
         }
     }
 
     if (showJump) {
+        val firstVisibleDay = rows.drop(listState.firstVisibleItemIndex)
+            .firstNotNullOfOrNull { (it as? JournalDayRow)?.day?.dayStartMs }
         DateJumpDialog(
             days = days,
-            initialDayMs = days.getOrNull(listState.firstVisibleItemIndex)?.dayStartMs
-                ?: days.first().dayStartMs,
+            initialDayMs = firstVisibleDay ?: days.first().dayStartMs,
             onPick = { dayMs ->
                 showJump = false
-                val idx = days.indexOfFirst { it.dayStartMs == dayMs }
+                val idx = rows.indexOfFirst { it is JournalDayRow && it.day.dayStartMs == dayMs }
                 if (idx >= 0) {
-                    // Open the day as we land on it: the jump is tap 2 of 2.
+                    // Open the day as we land on it: the jump is tap 2 of 2. A
+                    // month's first day lands on its header instead, so the sticky
+                    // header can't cover it.
                     onExpandedDayChange(dayMs)
-                    scope.launch { listState.animateScrollToItem(idx) }
+                    val target = if ((rows[idx] as JournalDayRow).first) idx - 1 else idx
+                    scope.launch { listState.animateScrollToItem(target.coerceAtLeast(0)) }
                 }
             },
             onDismiss = { showJump = false }
@@ -623,140 +640,172 @@ private fun JournalView(
     }
 }
 
+private sealed interface JournalRow
+private data class JournalMonthRow(val monthStartMs: Long, val label: String) : JournalRow
+private data class JournalDayRow(val day: JournalDay, val first: Boolean, val last: Boolean) : JournalRow
+
+/** Newest month first; each month a header row, then its days (newest first). */
+private fun buildJournalRows(days: List<JournalDay>): List<JournalRow> {
+    val cal = Calendar.getInstance()
+    val thisYear = cal.get(Calendar.YEAR)
+    val fmtThisYear = SimpleDateFormat("MMMM", Locale.getDefault())
+    val fmtOtherYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+    val out = mutableListOf<JournalRow>()
+    days.groupBy { d ->
+        cal.timeInMillis = d.dayStartMs
+        cal.set(Calendar.DAY_OF_MONTH, 1)
+        cal.timeInMillis
+    }.forEach { (monthStart, monthDays) ->
+        cal.timeInMillis = monthStart
+        val fmt = if (cal.get(Calendar.YEAR) == thisYear) fmtThisYear else fmtOtherYear
+        out += JournalMonthRow(monthStart, fmt.format(Date(monthStart)))
+        monthDays.forEachIndexed { i, d ->
+            out += JournalDayRow(d, first = i == 0, last = i == monthDays.lastIndex)
+        }
+    }
+    return out
+}
+
+/** "OCTOBER ▾": sticks to the top while its days scroll; tap → date jump. */
 @Composable
-private fun JournalHeader(
-    monthLabel: String,
-    onJumpClick: () -> Unit,
-    onOpenTrends: () -> Unit
-) {
-    // The Past tab's brand band: its title, then the month label (tap → date
-    // jump) and the "Trends ›" pill, all white on the band.
-    BrandBand {
-        BandTopRowSpacer()
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(OnBandFill)
-                    .clickable(onClick = onJumpClick, onClickLabel = "Jump to a date")
-                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(7.dp))
-                Text(monthLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(OnBandFill)
-                    .clickable(onClick = onOpenTrends)
-                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Trends", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Icon(
-                    Icons.Default.KeyboardArrowRight,
-                    contentDescription = "Open Trends",
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+private fun JournalMonthHeader(label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(top = 14.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable(onClick = onClick, onClickLabel = "Jump to a date")
+                .padding(start = 4.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label.uppercase(Locale.getDefault()),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Icon(
+                Icons.Default.ArrowDropDown, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
 /**
- * One day, collapsed to a headline (date · hours · average) over a tick strip
- * of that day's hours, and expanded in place to every rated hour. The strip
- * uses the same active window as the Now tab's today-strip; anything outside it
- * rides in the ▲/▼ cap pills rather than widening the strip.
+ * One day inside its month group, collapsed to a headline (date · hours ·
+ * average) over a thin track of that day's active-window hours, expanded in
+ * place to every rated hour. Only rated hours are coloured; the rest of the
+ * track is one quiet bar (elapsed vs. still to come), not a row of empty boxes.
+ * Anything outside the window rides in the ▲/▼ cap pills.
  */
 @Composable
-private fun JournalDayCard(
+private fun JournalDayItem(
     day: JournalDay,
+    first: Boolean,
+    last: Boolean,
     window: IntRange,
     expanded: Boolean,
     onToggle: () -> Unit,
     onEditEntry: (RatingEntry) -> Unit
 ) {
     val now = System.currentTimeMillis()
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = BeeCardDefaults.colors(),
-        elevation = BeeCardDefaults.elevation()
+    val corner = 20.dp
+    val shape = RoundedCornerShape(
+        topStart = if (first) corner else 0.dp, topEnd = if (first) corner else 0.dp,
+        bottomStart = if (last) corner else 0.dp, bottomEnd = if (last) corner else 0.dp
+    )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(BeeCardDefaults.colors().containerColor)
     ) {
+        if (!first) HorizontalDivider(
+            Modifier.padding(horizontal = 16.dp),
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.14f)
+        )
         Column(
             Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     journalDayLabel(day.dayStartMs),
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     maxLines = 1
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "${day.entries.size} h",
-                    fontSize = 11.5.sp,
+                    "${day.entries.size} ${if (day.entries.size == 1) "hour" else "hours"}",
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Out-of-window counts ride in the headline, so every track
+                // below starts and ends at the same x.
+                if (day.early > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    TickCapPill("▲${day.early}")
+                }
+                if (day.late > 0) {
+                    Spacer(Modifier.width(4.dp))
+                    TickCapPill("▼${day.late}")
+                }
                 Spacer(Modifier.weight(1f))
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))
                         .background(getScoreColor(day.avg))
-                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                        .padding(horizontal = 9.dp, vertical = 2.dp)
                 ) {
                     Text(
                         String.format(Locale.getDefault(), "%.1f", day.avg),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
+                        color = onScoreColor(day.avg)
                     )
                 }
             }
 
             Spacer(Modifier.height(10.dp))
 
-            // Tick strip: one slot per active-window hour, positioned by hour
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (day.early > 0) {
-                    TickCapPill("▲${day.early}")
-                    Spacer(Modifier.width(5.dp))
+                val elapsedColor = emptyCellColor(future = false)
+                val futureColor = emptyCellColor(future = true)
+                val rated = remember(day, window) {
+                    day.byHour.filterKeys { it in window }.map { (h, e) -> h to scoreBandColor(e.score) }
                 }
-                Row(
-                    Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(2.5.dp)
+                val elapsedSlots = window.count { h -> day.dayStartMs + (h + 1) * 3600_000L <= now }
+                Canvas(
+                    Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(50))
                 ) {
-                    for (h in window) {
-                        val entry = day.byHour[h]
-                        val future = entry == null && day.dayStartMs + (h + 1) * 3600_000L > now
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(14.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    when {
-                                        entry != null -> scoreBandColor(entry.score)
-                                        future -> emptyCellColor(future = true)
-                                        else -> emptyCellColor(future = false)
-                                    }
-                                )
-                        )
+                    val n = window.count().coerceAtLeast(1)
+                    val slot = size.width / n
+                    val gap = 1.5.dp.toPx()
+                    drawRect(elapsedColor, size = Size(slot * elapsedSlots, size.height))
+                    drawRect(
+                        futureColor,
+                        topLeft = Offset(slot * elapsedSlots, 0f),
+                        size = Size(size.width - slot * elapsedSlots, size.height)
+                    )
+                    for ((h, color) in rated) {
+                        val x = (h - window.first) * slot
+                        drawRect(color, topLeft = Offset(x + gap / 2, 0f), size = Size(slot - gap, size.height))
                     }
-                }
-                if (day.late > 0) {
-                    Spacer(Modifier.width(5.dp))
-                    TickCapPill("▼${day.late}")
                 }
             }
 
@@ -1082,24 +1131,15 @@ private fun TrendsView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        BrandBand {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) {
-                    Icon(
-                        Icons.Default.KeyboardArrowLeft,
-                        contentDescription = "Back to the journal"
-                    )
-                }
-                Text("Trends", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.offset(x = (-12).dp))
-            }
-        }
+        // A deep-dive, not a stage: no band, a large title on the page.
+        PageHeader("Trends", onBack = onBack, backLabel = "Back to the journal")
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 14.dp)
+                .padding(top = 8.dp)
         ) {
             // ---- One card: control bar (static) + an animated region that
             // slides on period steps and flies into the tapped bar on drill ----
@@ -1247,13 +1287,15 @@ private fun TrendsView(
                             ) {
                                 StatCell(
                                     value = kStats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
-                                    valueColor = kStats.avg?.let { getScoreColor(it) } ?: Color.Unspecified,
+                                    valueColor = kStats.avg?.let { scoreTextColor(it) } ?: Color.Unspecified,
                                     label = "avg score",
                                     modifier = Modifier.weight(1f)
                                 )
                                 StatDivider()
+                                // A bare count: dividing by every hour in the
+                                // month (29/696) only measured sleep.
                                 StatCell(
-                                    value = "${kStats.ratedHours}/${kStats.possibleHours}",
+                                    value = "${kStats.ratedHours}",
                                     label = "hours rated",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1354,8 +1396,7 @@ private fun TrendsView(
                             )
                             Spacer(Modifier.height(16.dp))
 
-                            // How tags score, with trend vs the previous period —
-                            // a short inner scroll (≈5 rows) with a fading bar
+                            // How tags score, with trend vs the previous period
                             TagScoresSection(
                                 tagStats = kTagStats,
                                 sortByScore = sortByScore,
@@ -1423,30 +1464,36 @@ private fun StatDivider() {
     )
 }
 
+/** The raised segment of a view switch: white on the light page, a lifted gray in dark. */
+@Composable
+private fun segmentSelectedColor(): Color =
+    if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    else MaterialTheme.colorScheme.surface
+
 private fun Zoom.fullLabel(): String = when (this) {
     Zoom.W -> "Weeks"
     Zoom.M -> "Months"
 }
 
 /**
- * The W/M zoom selector: a stadium-shaped pill. The active level expands into
- * a filled primary stadium showing its full word (Weeks/Months); the other
- * collapses to a single bare letter. The width change is animated.
+ * The Weeks/Months zoom selector: a segmented stadium, both words always shown,
+ * the active one a raised neutral segment ([segmentSelectedColor]).
  */
 @Composable
 private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(4.dp),
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
+            .padding(3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Zoom.entries.forEach { z ->
             val selected = z == zoom
+            // A view switch, not a commit: a raised neutral segment, no honey.
             val bg by animateColorAsState(
-                if (selected) LocalBeeExtras.current.accentFill else Color.Transparent,
+                if (selected) segmentSelectedColor() else Color.Transparent,
                 animationSpec = tween(220),
                 label = "zoomBg"
             )
@@ -1459,16 +1506,16 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) { onSelect(z) }
-                    .animateContentSize(animationSpec = tween(220))
-                    .padding(horizontal = if (selected) 14.dp else 9.dp),
+                    .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
+                // Both words, always: a lone "M" read as a clipped label.
                 Text(
-                    if (selected) z.fullLabel() else z.name,
+                    z.fullLabel(),
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1,
-                    color = if (selected) LocalBeeExtras.current.onAccentFill
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1581,12 +1628,9 @@ private fun ScoreBarChart(
                             animationSpec = tween(450, easing = FastOutSlowInEasing),
                             label = "barFrac$i"
                         )
-                        val animColor by animateColorAsState(
-                            targetValue = avg?.let { getScoreColor(it) }
-                                ?: MaterialTheme.colorScheme.surfaceVariant,
-                            animationSpec = tween(450),
-                            label = "barColor$i"
-                        )
+                        // Bars are neutral; the band lives in the value above
+                        // each one. A month of solid red slabs read as an alarm.
+                        val barColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
                         val barShape = RoundedCornerShape(
                             topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp
                         )
@@ -1595,12 +1639,19 @@ private fun ScoreBarChart(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Bottom
                         ) {
-                            if (avg != null && i == maxIdx) {
+                            if (avg != null) {
                                 Text(
                                     String.format(Locale.getDefault(), "%.1f", avg),
                                     fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontWeight = if (i == maxIdx) FontWeight.ExtraBold else FontWeight.Bold,
+                                    color = scoreTextColor(avg),
                                     maxLines = 1
+                                )
+                                Spacer(Modifier.height(2.dp))
+                            } else if (!u.future) {
+                                Text(
+                                    "–", fontSize = 10.sp, maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(Modifier.height(2.dp))
                             }
@@ -1621,7 +1672,7 @@ private fun ScoreBarChart(
                                 else -> Box(
                                     barModifier
                                         .height((animFrac * plotHeight.value).dp.coerceAtLeast(6.dp))
-                                        .background(animColor)
+                                        .background(barColor)
                                 )
                             }
                         }
@@ -1765,7 +1816,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
             .padding(3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -1773,7 +1824,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
         listOf(true to "by score", false to "by count").forEach { (byScore, label) ->
             val selected = byScore == sortByScore
             val bg by animateColorAsState(
-                if (selected) LocalBeeExtras.current.accentFill else Color.Transparent,
+                if (selected) segmentSelectedColor() else Color.Transparent,
                 animationSpec = tween(220),
                 label = "sortBg"
             )
@@ -1792,9 +1843,9 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
                 Text(
                     label,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1,
-                    color = if (selected) LocalBeeExtras.current.onAccentFill
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1803,9 +1854,8 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
 }
 
 /**
- * "How tags score" folded into the big card. The rows live in a short inner
- * scroll (~5 rows tall) so the section can't push the grid off-screen; a thin
- * scrollbar fades in while scrolling and disappears when it stops.
+ * "How tags score" folded into the big card, every row shown; the Trends page
+ * scrolls, the section doesn't.
  */
 @Composable
 private fun TagScoresSection(
@@ -1826,23 +1876,10 @@ private fun TagScoresSection(
                 fontSize = 13.sp
             )
         } else {
-            val listScroll = rememberScrollState()
-            Box(Modifier.fillMaxWidth().heightIn(max = 210.dp)) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(listScroll)
-                        .padding(end = 8.dp)
-                ) {
-                    tagStats.forEach { stat -> TagStatRow(stat) }
-                }
-                FadingScrollbar(
-                    scrollState = listScroll,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .padding(vertical = 4.dp)
-                )
+            // Every tag, in the page's own scroll: a short inner viewport left
+            // dead space under the card and hid rows behind a nested scroll.
+            Column(Modifier.fillMaxWidth()) {
+                tagStats.forEach { stat -> TagStatRow(stat) }
             }
         }
     }
@@ -1908,7 +1945,7 @@ private fun TagStatRow(stat: TagStat) {
             }
             Text(
                 String.format(Locale.getDefault(), "%.1f", stat.avg),
-                color = getScoreColor(stat.avg),
+                color = scoreTextColor(stat.avg),
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.width(6.dp))
@@ -1919,20 +1956,52 @@ private fun TagStatRow(stat: TagStat) {
             )
         }
         Spacer(Modifier.height(2.dp))
-        LinearProgressIndicator(
-            progress = { (stat.avg / 10f).toFloat() },
-            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-            color = getScoreColor(stat.avg),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        // A plain track + fill: M3's LinearProgressIndicator draws a gap and a
+        // stop dot at the end, which read as a second, unexplained bar.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth((stat.avg / 10.0).toFloat().coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(getScoreColor(stat.avg))
+            )
+        }
     }
 }
 
-fun getScoreColor(score: Double): Color {
+/**
+ * Fill colour for an AVERAGE: the same three hues as [scoreBandColor], so a day's
+ * average and its hours never disagree on what "amber" is.
+ */
+fun getScoreColor(score: Double): Color = when {
+    score >= 8.0 -> scoreBandColor(8)
+    score >= 5.0 -> scoreBandColor(5)
+    score > 0.0 -> scoreBandColor(1)
+    else -> Color.Gray
+}
+
+/** Ink ON a [getScoreColor] fill: dark on green/amber, white on red. */
+fun onScoreColor(score: Double): Color =
+    if (score >= 5.0) Color(0xFF1B1B1B) else Color.White
+
+/**
+ * A score's band as TEXT on a card or the page. The fill hues are too dark (red)
+ * or too pale (amber on white) to read as type, so each mode gets its own tint.
+ */
+@Composable
+fun scoreTextColor(score: Double): Color {
+    val dark = isSystemInDarkTheme()
     return when {
-        score >= 8.0 -> Color(0xFF2E7D32)
-        score >= 5.0 -> Color(0xFFF57C00)
-        score > 0.0 -> Color(0xFFC62828)
-        else -> Color.Gray
+        score >= 8.0 -> if (dark) Color(0xFF81C784) else Color(0xFF2E7D32)
+        score >= 5.0 -> if (dark) Color(0xFFFFCA28) else Color(0xFF9A6000)
+        score > 0.0 -> if (dark) Color(0xFFFF8A80) else Color(0xFFC62828)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }

@@ -133,9 +133,11 @@ fun WarningsSheet(
 @Composable
 private fun WarningRow(w: Warning, time: String, unread: Boolean) {
     val (sym, tint) = when (w.type) {
-        StreakEventType.SAVER_USED, StreakEventType.SAVER_FADED, StreakEventType.STREAK_BROKE ->
-            Sym.Saver to StreakAtRiskRed
-        StreakEventType.LOW_SAVERS, StreakEventType.COMEBACK_GIFT -> Sym.Saver to HoneyGold
+        // Red only for a loss. A saver stepping in kept the streak: that is
+        // good news, so it wears honey like a gift does.
+        StreakEventType.SAVER_FADED, StreakEventType.STREAK_BROKE -> Sym.Saver to StreakAtRiskRed
+        StreakEventType.SAVER_USED, StreakEventType.LOW_SAVERS, StreakEventType.COMEBACK_GIFT ->
+            Sym.Saver to HoneyGold
         else -> Sym.Fire to HoneyGold
     }
     Row(verticalAlignment = Alignment.Top) {

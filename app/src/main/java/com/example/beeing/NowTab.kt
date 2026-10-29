@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -122,6 +123,7 @@ fun NowTab(
     onRatingCardYPosition: (Float) -> Unit,
     onOpenStreaks: () -> Unit = {},
     onMenuClick: () -> Unit = {},
+    onOpenTags: () -> Unit = {},
     pendingScore: Int? = null,
     pendingTags: List<String> = emptyList(),
     onPendingScoreConsumed: () -> Unit = {},
@@ -139,8 +141,6 @@ fun NowTab(
     var currentNote by remember { mutableStateOf("") }
     var availableTags by remember(viewModel.refreshTrigger) { mutableStateOf(loadTags(context)) }
     var tagsExpanded by remember { mutableStateOf(false) }
-    var showTagDialog by remember { mutableStateOf(false) }
-    var showManageTags by remember { mutableStateOf(false) }
     var showWindowInfo by remember { mutableStateOf(false) }
     var editingEntry by remember { mutableStateOf<RatingEntry?>(null) }
     val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -182,7 +182,7 @@ fun NowTab(
     val displayHourInfo = remember(targetedHourOffset, hourStart) {
         val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -targetedHourOffset) }
         val endH = cal.get(Calendar.HOUR_OF_DAY)
-        val range = "${formatHour(if (endH == 0) 23 else endH - 1)} - ${formatHour(endH)}"
+        val range = "${formatHour(if (endH == 0) 23 else endH - 1)} – ${formatHour(endH)}"
         val label = "${if(endH == 0) 24 else endH}${getOrdinalSuffix(if(endH == 0) 24 else endH)}"
         Triple(range, endH, label)
     }
@@ -330,18 +330,18 @@ fun NowTab(
     val tagsScroll = rememberScrollState()
     var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
-    // Picker range, spelled out in full: "8 PM to 9 PM". The connecting "to" is
-    // set lighter and dimmer so the two times carry the weight and the label
-    // scans as a pair of times, not a sentence.
+    // Picker range in the app's one time format: "8pm – 9pm" (same as the
+    // journal and the save button). The dash is set dimmer so the two times
+    // carry the weight.
     fun hourRange(offset: Int): AnnotatedString {
         val cal = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, -offset) }
         val endH = cal.get(Calendar.HOUR_OF_DAY)
         val startH = if (endH == 0) 23 else endH - 1
-        fun clock(h: Int) = "${if (h % 12 == 0) 12 else h % 12} ${if (h < 12) "AM" else "PM"}"
+        fun clock(h: Int) = formatHour(h)
         return buildAnnotatedString {
             append(clock(startH))
-            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))) {
-                append(" to ")
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.6f))) {
+                append(" – ")
             }
             append(clock(endH))
         }
@@ -365,8 +365,12 @@ fun NowTab(
         // empty gap — see BandFillLayout.
         BandFillLayout(
             modifier = Modifier.fillMaxSize(),
-            // Expanded tags want the room: the band slides to its compact size.
-            compact = !allCaughtUp && tagsExpanded,
+            // Rating: the band stays at rest and the card takes every pixel
+            // between it and Save, which is pinned just above the nav bar; the
+            // tags spend that height (see TagPickerSection). Caught-up keeps
+            // the growing band over the bee field.
+            compact = !allCaughtUp,
+            maxBandGrow = if (allCaughtUp) 160.dp else 0.dp,
             band = { target ->
                 // Animated, so expanding or collapsing the tags slides the band
                 // up/down (and the tags into the freed room) instead of snapping.
@@ -382,13 +386,13 @@ fun NowTab(
                 // room, so a taller band reads as bigger, not emptier. Laid out once
                 // at 32sp and scaled (scaledLayout), so the text is never reshaped.
                 val heroStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 32.sp, lineHeight = 38.sp)
-                val heroScale = { (22f + 10f * grow()) / 32f }
+                val heroScale = { (24f + 6f * grow()) / 32f }
             // ---- The brand band: who you are (title, streak) and what this
             // screen is asking — the question + hour picker while an hour is
             // pending, "All caught up" + the countdown once none is.
             BrandBand {
                 BandTopRowSpacer() // the fixed top row is drawn over this, above the pager
-                Spacer(Modifier.animatedHeight { 18.dp + 56.dp * grow() })
+                Spacer(Modifier.animatedHeight { 14.dp + (if (allCaughtUp) 56.dp else 24.dp) * grow() })
                 // Rounding slack only: keeps the question on the band's bottom edge.
                 Spacer(Modifier.weight(1f))
                 if (allCaughtUp) {
@@ -402,7 +406,7 @@ fun NowTab(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Next hour opens in $minutesToNextHour m",
+                        "Next hour opens in ${minutesToNextHour}m",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.75f)
                     )
@@ -430,7 +434,12 @@ fun NowTab(
                         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                             BeeIcon(Sym.Hourglass, size = 16.dp, tint = countdownColor, contentDescription = null)
                             Text(
-                                "${mins}m left",
+                                // "2h left" / "1h 5m left" / "40m left", never "120m left"
+                                when {
+                                    mins < 60 -> "${mins}m left"
+                                    mins % 60 == 0 -> "${mins / 60}h left"
+                                    else -> "${mins / 60}h ${mins % 60}m left"
+                                },
                                 fontSize = NowBodySize,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -496,12 +505,12 @@ fun NowTab(
             } else {
                 // ---- RATING: one card, ordered the way you act ----
                 Spacer(Modifier.height(12.dp))
-                // BandFillLayout caps this slot at the height left over, so on a short
-                // screen the card shrinks and only its tags scroll.
-                Box(contentAlignment = Alignment.TopCenter) {
+                // BandFillLayout hands this slot exactly the height between the
+                // band and Save; the card fills it (less a 12dp gap above Save).
+                Box(Modifier.weight(1f).padding(bottom = 12.dp), contentAlignment = Alignment.TopCenter) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) },
                     shape = BeeCardDefaults.Shape,
                     colors = BeeCardDefaults.colors(),
@@ -509,10 +518,10 @@ fun NowTab(
                 ) {
                     // The card is a fixed frame now — only the activity tags
                     // scroll (see the TagPickerSection wrapper below).
-                    Box(Modifier.fillMaxWidth()) {
+                    Box(Modifier.fillMaxSize()) {
                     Column(
                         Modifier
-                            .fillMaxWidth()
+                            .fillMaxSize()
                             .padding(16.dp)
                     ) {
                         DecagonCombDial(
@@ -533,23 +542,20 @@ fun NowTab(
                             }
                         )
 
-                        // The tags are the ONLY scrollable content in the card.
-                        // weight(1f, fill = false) caps them at the space the
-                        // fixed sections above and below leave over but lets
-                        // them wrap when they fit — so a collapsed picker on a
-                        // roomy screen never scrolls, and an expanded editor
-                        // (or a screen too short for even the collapsed chips)
-                        // gets a viewport with the hairline fading thumb.
+                        // The tags own all the height the dial and the note leave.
+                        // Collapsed, they show as many chips as fit it and fold
+                        // the rest into "+N more"; expanded, they scroll here
+                        // with the hairline fading thumb.
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .weight(1f, fill = false)
+                                .weight(1f)
                                 .onSizeChanged { tagsViewportHeightPx = it.height }
                         ) {
                             Column(
                                 Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(tagsScroll),
+                                    .fillMaxSize()
+                                    .then(if (tagsExpanded) Modifier.verticalScroll(tagsScroll) else Modifier),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 TagPickerSection(
@@ -562,7 +568,7 @@ fun NowTab(
                                         availableTags = it
                                         viewModel.triggerRefresh()
                                     },
-                                    onManageTags = { showManageTags = true }
+                                    onManageTags = onOpenTags
                                 )
                             }
                             FadingScrollbar(
@@ -647,8 +653,9 @@ fun NowTab(
                     // The save button IS the state machine — its label
                     // explains what's missing instead of a dead checkmark
                     val saveLabel = when {
-                        selectedScore == null -> "Pick a rating"
-                        selectedTags.isEmpty() -> "Tag it to save"
+                        // Not "Pick a rating": the dial's core already says that
+                        selectedScore == null -> "Rate and tag to save"
+                        selectedTags.isEmpty() -> "Add a tag to save"
                         else -> "Save ${displayHourInfo.first}"
                     }
                     Button(
@@ -747,88 +754,6 @@ fun NowTab(
                 confirmButton = {
                     TextButton(onClick = { showWindowInfo = false }) { Text("Got it") }
                 }
-            )
-        }
-
-        // Tag Dialog
-        if (showTagDialog) {
-            var newTag by remember { mutableStateOf("") }
-            AlertDialog(
-                onDismissRequest = { showTagDialog = false },
-                title = { Text("Add new tag") },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            newTag,
-                            onValueChange = { if (it.length <= 20) newTag = it },
-                            label = { Text("Tag name") },
-                            supportingText = { Text("${newTag.length}/20") },
-                            singleLine = true
-                        )
-                        if (availableTags.size >= 30) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Maximum of 30 tags reached",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        } else {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "${availableTags.size}/30 tags",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        colors = BeeButtonDefaults.colors(),
-                        onClick = {
-                            if (newTag.isNotBlank() && availableTags.size < 30) {
-                                availableTags = (availableTags + newTag.trim()).distinct()
-                                saveTags(context, availableTags)
-                                selectedTags.add(newTag.trim())
-                            }
-                            showTagDialog = false
-                        },
-                        enabled = newTag.isNotBlank() && availableTags.size < 30
-                    ) {
-                        Text("Add")
-                    }
-                }
-            )
-        }
-
-        // Manage tags: reorder (long-press drag) / rename / delete / add
-        if (showManageTags) {
-            ManageTagsDialog(
-                tags = availableTags,
-                onReorder = { newOrder ->
-                    saveTags(context, newOrder)
-                    availableTags = newOrder
-                    viewModel.triggerRefresh()
-                },
-                onRename = { old, new ->
-                    // Past entries keep the old name on purpose — a rename
-                    // only changes the picker going forward.
-                    val newTags = availableTags.map { if (it == old) new else it }
-                    saveTags(context, newTags)
-                    availableTags = newTags
-                    val i = selectedTags.indexOf(old)
-                    if (i >= 0) selectedTags[i] = new
-                    viewModel.triggerRefresh()
-                },
-                onDelete = { tag ->
-                    val newTags = availableTags.filter { it != tag }
-                    saveTags(context, newTags)
-                    availableTags = newTags
-                    selectedTags.remove(tag)
-                    viewModel.triggerRefresh()
-                },
-                onAddNew = { showTagDialog = true },
-                onDismiss = { showManageTags = false }
             )
         }
 
@@ -939,11 +864,20 @@ private fun TodayStripCard(
 }
 
 // ============================================================
-// TAG PICKER  (capped at ~2 rows; expands to the full editor)
+// TAG PICKER  (fills its height; the overflow folds into "+N more")
 // ============================================================
 
-private const val COLLAPSED_TAG_COUNT = 9
-
+/**
+ * Collapsed, the chips fill whatever height the card gives them, in the user's
+ * order, and only the ones that don't fit fold into a "+N more" button, a
+ * rounded RECTANGLE so it never reads as one more tag pill. The FlowRow decides
+ * what fits (ContextualFlowRow's overflow indicator), so the count is always true for this
+ * screen, font scale and tag names. The last item is "Edit tags", which opens
+ * the Tags page; when only it would spill, the indicator itself becomes
+ * "Edit tags". A selected tag that sits in the fold is counted on the button,
+ * so a choice is never invisible.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagPickerSection(
     allRatings: List<RatingEntry>,
@@ -966,408 +900,83 @@ private fun TagPickerSection(
                 onCollapse = { onExpandedChange(false) }
             )
         }
-    } else {
-        // Keep the original order, but never hide a tag that's selected
-        val visibleTags = availableTags.filterIndexed { index, tag ->
-            index < COLLAPSED_TAG_COUNT || tag in selectedTags
-        }
-        val hiddenCount = availableTags.size - visibleTags.size
-        @OptIn(ExperimentalLayoutApi::class)
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy((-8).dp, Alignment.CenterVertically)
-        ) {
-            visibleTags.forEach { tag ->
-                InputChip(
-                    selected = tag in selectedTags,
-                    onClick = {
-                        if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
-                    },
-                    label = { TagChipContent(tag) },
-                    shape = TagChipShape,
-                    colors = tagChipColors(),
-                    border = null
+        return
+    }
+    // ContextualFlowRow, not FlowRow: its indicator learns shownItemCount during
+    // composition (FlowRow's only knows it at draw time and throws if read here).
+    // Items are the tags, then "Edit tags" last.
+    ContextualFlowRow(
+        itemCount = availableTags.size + 1,
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy((-8).dp, Alignment.Top),
+        overflow = ContextualFlowRowOverflow.expandIndicator {
+            // Items are the tags in order, then "Edit tags": everything from
+            // shownItemCount on is in the fold.
+            val shownTags = shownItemCount.coerceAtMost(availableTags.size)
+            val hidden = availableTags.size - shownTags
+            if (hidden > 0) {
+                val selectedHidden = availableTags.drop(shownTags).count { it in selectedTags }
+                TagFoldButton(
+                    text = if (selectedHidden > 0) "+$hidden more · $selectedHidden selected" else "+$hidden more",
+                    onClick = { onExpandedChange(true) }
                 )
+            } else {
+                TagFoldButton(text = "Edit tags", onClick = onManageTags)
             }
-            AssistChip(
+        }
+    ) { index ->
+        if (index < availableTags.size) {
+            val tag = availableTags[index]
+            InputChip(
+                selected = tag in selectedTags,
                 onClick = {
-                    // "+N more" just reveals the hidden tags; "edit tags" means
-                    // the user wants to reorder/rename/delete/add, so open the
-                    // manage popup directly.
-                    if (hiddenCount > 0) onExpandedChange(true) else onManageTags()
+                    if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                 },
-                label = {
-                    Text(if (hiddenCount > 0) "+ $hiddenCount more" else "edit tags")
-                },
+                label = { TagChipContent(tag) },
                 shape = TagChipShape,
-                border = null,
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                colors = tagChipColors(),
+                border = null
             )
+        } else {
+            TagFoldButton(text = "Edit tags", onClick = onManageTags)
         }
     }
 }
 
-/**
- * Manage-tags popup: one card per tag — long-press-drag anywhere on the row to
- * reorder (the ⠿ dot grid is the affordance), pencil renames inline, trash
- * deletes behind a confirm. A dashed footer adds a new tag via the existing
- * add-tag dialog.
- */
+/** "+N more" / "Edit tags": an outlined rounded rectangle, not a pill, so it
+ *  reads as a control beside the tags rather than one of them. */
 @Composable
-internal fun ManageTagsDialog(
-    tags: List<String>,
-    onReorder: (List<String>) -> Unit,
-    onRename: (String, String) -> Unit,
-    onDelete: (String) -> Unit,
-    onAddNew: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    val hint = MaterialTheme.colorScheme.onSurfaceVariant
-    val localTags = remember(tags) { tags.toMutableStateList() }
-    var draggingTag by remember { mutableStateOf<String?>(null) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var renamingTag by remember { mutableStateOf<String?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    var confirmDeleteTag by remember { mutableStateOf<String?>(null) }
-    // The row's visual height and the gap under it are separate, but the drag
-    // index math steps by their SUM — a step of just the row height would drift
-    // by one gap per position moved.
-    val rowHeight = 60.dp
-    val rowGap = 8.dp
-    val rowStepPx = with(LocalDensity.current) { (rowHeight + rowGap).toPx() }
-    val focusRequester = remember { FocusRequester() }
-    val rowFill = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        // The platform default caps dialogs well short of the screen; these rows
-        // need the width to hold a tile, a name and two actions without wrapping.
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+private fun TagFoldButton(text: String, onClick: () -> Unit) {
+    // Laid out at the InputChips' 48dp (8dp touch padding + 32dp body) and
+    // pinned to the TOP of its slot, so it lines up with the chips beside it.
+    // The flow row hands its trailing items a squeezed height: honouring it
+    // crushed the button to a sliver, and centring in it floated it 8dp high.
+    Box(
+        Modifier.layout { m, c ->
+            val p = m.measure(c.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+            layout(p.width, p.height.coerceAtMost(c.maxHeight)) { p.place(0, 0) }
+        }
     ) {
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+        Box(
+            Modifier
+                .padding(vertical = 8.dp)
+                .height(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
-                // Sheet grabber — purely a visual cue that this is a panel
-                Box(
-                    Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .size(38.dp, 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(hint.copy(alpha = 0.35f))
-                )
-                Spacer(Modifier.height(14.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Manage tags",
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = JakartaFontFamily,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text("Hold and drag to reorder", fontSize = 13.sp, color = hint)
-                    }
-                    Box(
-                        Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                            .clickable(onClick = onDismiss),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Close, "Close", Modifier.size(20.dp), tint = hint)
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-
-                Column(
-                    Modifier
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    localTags.forEach { tag ->
-                        key(tag) {
-                            val isDragging = draggingTag == tag
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(rowHeight + rowGap)
-                                    .zIndex(if (isDragging) 1f else 0f)
-                                    .graphicsLayer {
-                                        if (isDragging) {
-                                            translationY = dragOffset
-                                            scaleX = 1.02f; scaleY = 1.02f
-                                            shadowElevation = 12f
-                                        }
-                                    }
-                                    .padding(bottom = rowGap)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(
-                                        if (isDragging) MaterialTheme.colorScheme.surfaceVariant
-                                        else rowFill
-                                    )
-                                    .padding(horizontal = 12.dp)
-                                    .pointerInput(tag) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                renamingTag = null
-                                                draggingTag = tag
-                                                dragOffset = 0f
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                dragOffset += amount.y
-                                                val from = localTags.indexOf(tag)
-                                                val shift = (dragOffset / rowStepPx).roundToInt()
-                                                val to = (from + shift).coerceIn(0, localTags.lastIndex)
-                                                if (to != from) {
-                                                    localTags.removeAt(from)
-                                                    localTags.add(to, tag)
-                                                    dragOffset -= (to - from) * rowStepPx
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                draggingTag = null
-                                                dragOffset = 0f
-                                                onReorder(localTags.toList())
-                                            },
-                                            onDragCancel = {
-                                                draggingTag = null
-                                                dragOffset = 0f
-                                            }
-                                        )
-                                    }
-                            ) {
-                                DragDots(hint.copy(alpha = 0.5f))
-                                Spacer(Modifier.width(10.dp))
-                                TagGlyphTile(tag)
-                                Spacer(Modifier.width(12.dp))
-                                if (renamingTag == tag) {
-                                    val sanitized = renameText.replace(Regex("[,;|]"), " ").trim()
-                                    val valid = sanitized.isNotBlank() &&
-                                            (sanitized == tag || sanitized !in localTags)
-                                    BasicTextField(
-                                        value = renameText,
-                                        onValueChange = { if (it.length <= 20) renameText = it },
-                                        singleLine = true,
-                                        textStyle = LocalTextStyle.current.copy(
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        ),
-                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .focusRequester(focusRequester)
-                                            .border(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                                                RoundedCornerShape(8.dp)
-                                            )
-                                            .padding(horizontal = 10.dp, vertical = 7.dp)
-                                    )
-                                    LaunchedEffect(Unit) { focusRequester.requestFocus() }
-                                    IconButton(
-                                        onClick = {
-                                            if (sanitized != tag) onRename(tag, sanitized)
-                                            renamingTag = null
-                                        },
-                                        enabled = valid,
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Check, "Save name",
-                                            Modifier.size(18.dp),
-                                            tint = if (valid) Color(0xFF4CAF50)
-                                            else hint.copy(alpha = 0.3f)
-                                        )
-                                    }
-                                } else {
-                                    Text(
-                                        tagLabelOf(tag),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    RowActionButton(
-                                        icon = Icons.Default.Edit,
-                                        description = "Rename $tag",
-                                        tint = hint,
-                                        fill = hint.copy(alpha = 0.12f),
-                                        onClick = { renamingTag = tag; renameText = tag }
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    RowActionButton(
-                                        icon = Icons.Default.Delete,
-                                        description = "Delete $tag",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        fill = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
-                                        onClick = { confirmDeleteTag = tag }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(6.dp))
-                // Dashed outline: the one row that isn't a tag reads as a slot
-                // to fill rather than an item in the list.
-                val canAdd = localTags.size < 30
-                val addAccent =
-                    if (canAdd) MaterialTheme.colorScheme.primary else hint.copy(alpha = 0.6f)
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .drawBehind {
-                            drawRoundRect(
-                                color = addAccent.copy(alpha = 0.55f),
-                                style = Stroke(
-                                    width = 1.5.dp.toPx(),
-                                    pathEffect = PathEffect.dashPathEffect(
-                                        floatArrayOf(10.dp.toPx(), 8.dp.toPx())
-                                    )
-                                ),
-                                cornerRadius = CornerRadius(16.dp.toPx())
-                            )
-                        }
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable(enabled = canAdd) { onAddNew() }
-                ) {
-                    if (canAdd) {
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(addAccent),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Add, null, Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
-                    }
-                    Text(
-                        if (canAdd) "Add new tag" else "Tag limit reached (30)",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = addAccent
-                    )
-                }
-            }
-        }
-    }
-
-    // Confirm before deleting — deletion can't be undone from the picker.
-    confirmDeleteTag?.let { tag ->
-        AlertDialog(
-            onDismissRequest = { confirmDeleteTag = null },
-            title = { Text("Delete \"$tag\"?") },
-            text = {
-                Text(
-                    "Removed from the picker. Past hours keep it.",
-                    fontSize = 14.sp, lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(tag)
-                    confirmDeleteTag = null
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDeleteTag = null }) { Text("Cancel") }
-            }
-        )
-    }
-}
-
-// Tile tints, picked by a stable hash of the tag so a given tag always wears
-// the same color. Decorative only — nothing is encoded in the hue, so it never
-// collides with the score bands.
-private val TagTileTints = listOf(
-    Color(0xFFE0A400), Color(0xFFE05252), Color(0xFF8D6E63), Color(0xFF9CCC65),
-    Color(0xFF42A5F5), Color(0xFF7E57C2), Color(0xFF5C6BC0), Color(0xFF26A69A)
-)
-
-@Composable
-private fun TagGlyphTile(tag: String) {
-    val tint = TagTileTints[tag.hashCode().mod(TagTileTints.size)]
-    val sym = tagSym(tag)
-    val glyph = tagGlyphOf(tag)
-    Box(
-        Modifier
-            .size(42.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(tint.copy(alpha = 0.30f)),
-        contentAlignment = Alignment.Center
-    ) {
-        when {
-            // Built-in tag: its Material Symbol, tinted to the tile
-            sym != null -> BeeIcon(sym, size = 22.dp, tint = tint, contentDescription = null)
-            // A tag the user wrote with their own emoji: keep their glyph
-            glyph != null -> Text(glyph, fontSize = 20.sp)
-            // Neither: a monogram keeps every row the same shape
-            else -> Text(
-                tagLabelOf(tag).take(1).uppercase(),
-                fontSize = 17.sp, fontWeight = FontWeight.Bold, color = tint
+            Text(
+                text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-/** The ⠿ reorder affordance — drawn, since the 6-dot glyph isn't in the icon set. */
-@Composable
-private fun DragDots(color: Color) {
-    Canvas(Modifier.size(14.dp, 20.dp)) {
-        val r = 1.6.dp.toPx()
-        for (x in listOf(size.width * 0.28f, size.width * 0.72f)) {
-            for (y in listOf(size.height * 0.22f, size.height * 0.5f, size.height * 0.78f)) {
-                drawCircle(color, r, Offset(x, y))
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowActionButton(
-    icon: ImageVector,
-    description: String,
-    tint: Color,
-    fill: Color,
-    onClick: () -> Unit
-) {
-    Box(
-        Modifier
-            .size(38.dp)
-            .clip(CircleShape)
-            .background(fill)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, description, Modifier.size(18.dp), tint = tint)
     }
 }
 

@@ -166,7 +166,8 @@ case verify by static review and say so explicitly — the user compiles locally
 | `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
 | `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
 | `SaverCelebration.kt` | `StreakMomentCelebration` — full-screen saver-earned / streak-recovered |
-| `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone) + `SettingsManageTags` |
+| `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
+| `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
 | `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
 
@@ -201,9 +202,13 @@ case verify by static review and say so explicitly — the user compiles locally
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
   You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. Every tab opens with a
-  **`BrandBand`** (aubergine gradient, 26dp bottom corners, white content,
-  owns the status-bar inset — there is no Scaffold topBar) over a calm page
+  all 15 M3 type roles), so plain `Text()` inherits it. **A `BrandBand` is a
+  stage for one thing about you, right now** — only **Now** (the hour to rate)
+  and **Streak** (the streak) have one (aubergine gradient, 26dp bottom corners,
+  white content, owns the status-bar inset — there is no Scaffold topBar).
+  Records and utilities — **Past (Journal), Trends, Settings** — open on the
+  plain page under a **`PageHeader`** (large title, optional back arrow /
+  trailing slot), all over a calm page
   (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
   20dp, shadow in light mode only). Swiggy-style nav bar: outline icons, the
   active tab filled + bold in `accentText`, no pill. `PaletteContrastTest`
@@ -882,3 +887,73 @@ case verify by static review and say so explicitly — the user compiles locally
   "Pick a time" in the pause sheet is a day-chip + hour list, not a drum wheel.
   Not device-verified from this session: the 360dp top row with a 3-digit at-risk
   streak, the celebration screens, silent-channel behaviour and the 00:01 alert.
+- 2026-10-29 (**band only where it earns it — UI refinement pass**): owner asked
+  for a UI-expert review ("where does the purple make sense?"), approved
+  previews, then "go all in". (1) **Band on Now and Streak only.** Past, Trends
+  and Settings lost their `BrandBand` for the new `PageHeader` (`ui/BeeSurfaces.kt`);
+  Past's title is "Journal" with an accent-text "Trends ›". The fixed top row
+  (`BandTopRow`) now reads `BandChrome.bandUnder()` / `nowShown()` (off the
+  pager's continuous position): its ink lerps white → `onBackground` and the
+  "Beeing" wordmark fades out over Past, and the **`StatusStrip` shows on Now
+  only** (it duplicated the Streak hero). Status-bar icon colour moved out of
+  `BeeingTheme` into `HourlyPulseApp` (dark icons over the plain light page),
+  read through `derivedStateOf` so swipes don't recompose the root. Dark band
+  lifted (`BandTopDark` #3F1947 / `BandBottomDark` #2A0F31) — the old one was a
+  muddy blob on near-black. (2) **Journal**: day cards became rows grouped per
+  month under sticky `JournalMonthHeader`s ("OCTOBER ▾" opens `DateJumpDialog`);
+  the 24 tick boxes became one 6dp Canvas track where only rated hours are
+  coloured (elapsed vs future in the two `emptyCellColor`s). (3) **One score
+  palette**: `getScoreColor` now returns `scoreBandColor`'s hues (the old
+  #F57C00 orange is gone); `onScoreColor` = ink on those fills;
+  `@Composable scoreTextColor` = the band as readable text per mode (use it for
+  coloured numbers, never the fill colours). (4) **Trends**: bars are neutral
+  (`onSurface` 16%) with every value printed above in `scoreTextColor` (a month
+  of red slabs read as an alarm); "hours rated" is a bare count (29/696
+  divided by every hour of the month); Weeks/Months and by score/by count are
+  neutral segmented controls with both words always shown (the lone "M"
+  looked clipped); tag bars are plain Box tracks (M3's progress indicator drew
+  a gap + stop dot that read as a second bar). (5) **Streak calendar** is a
+  heat-map: complete days are filled honey tiles (a red "complete" tile read as an alarm), saved =
+  honey wash + saver glyph, beginner = leaf, missed = hollow red tile, other
+  past days faint; ~40% shorter. Legend keys are squares. (6) **Settings**:
+  neutral icon tiles (honey stays on the switches), meaning-matched icons
+  (moon for silent hours, bell-off, backup, folder, export, import — five new
+  24dp `ic_sym_*` drawables + `Sym` entries), nav-bar inset under the footer.
+  The bell's "saver kept your streak" item is honey, not red. (7) **Now**:
+  `BandFillLayout` gained `footerFollowsMiddle` — in the rating state Save sits
+  right under the card and band growth is capped at 48dp (it was turning
+  ~170dp of spare height into empty purple + a hole above Save); caught-up
+  keeps the bottom-anchored bee. Copy: one time format "1pm – 2pm" (picker and
+  Save), "2h left" not "120m left", disabled Save says "Rate and tag to save"
+  (the dial core already says "Pick a rating").
+- 2026-10-29 (follow-ups): (1) **Now lost its top row after Trends** — `TrendsView`
+  hides the shared `BandTopRow` while composed, and the pager keeps Past
+  composed after a jump to Now; the hide is now also gated on `overPlainPage`.
+  (2) Trends' "How tags score" lost its 210dp inner scroll: every row shows and
+  the page scrolls. (3) Settings and the new Tags page slide in from the right
+  (`AnimatedVisibility`, 300ms in / 260ms out; their BackHandlers sit outside
+  it, registered in stacking order). (4) Manage tags became the **Tags** page
+  (`TagsScreen.kt`, see the file map). (5) Streak calendar: complete days are
+  honey tiles (a red "complete" tile read as an alarm), and the journal's ▲/▼
+  cap pills moved into the day headline so every track spans the same width.
+- 2026-10-29 (tags fill the card · one tag editor): (1) **Now's rating state is
+  a fixed frame again**: `BandFillLayout(compact = !allCaughtUp,
+  maxBandGrow = 0 while rating)`, so the band stays at rest, Save is pinned just
+  above the nav bar, and the card fills everything between. (2) **The tags own
+  the card's spare height**: collapsed, `TagPickerSection` is a **`ContextualFlowRow`** with
+  `ContextualFlowRowOverflow.expandIndicator` (Compose 1.7; plain `FlowRow`'s
+  indicator throws if `shownItemCount` is read in composition — that crashed
+  the app on launch) — as many chips as fit show,
+  in the user's order, and only the spill folds into **"+N more"** (an outlined
+  8dp rounded RECTANGLE, `TagFoldButton`, laid out at 48dp and pinned to the
+  top of its slot because the row squeezes trailing items, so it never reads as a tag pill; it
+  adds "· N selected" when a chosen tag is in the fold). `COLLAPSED_TAG_COUNT`
+  is gone. The last item is "Edit tags"; when only it would spill, the indicator
+  itself says "Edit tags". Expanded still scrolls inside the card.
+  (3) **One tag editor**: the Now pencil / "Edit tags" open the Tags page
+  (`NowTab(onOpenTags)` → `showManageTags`); `ManageTagsDialog`, its helpers
+  and Now's add-tag dialog are deleted. (4) Tags page: **edge auto-scroll while
+  dragging** (within 72dp of the list's top/bottom, up to 14dp/frame, the held
+  row rides along via `dragOffset += scroll.scrollBy(v)`), and the rename/add
+  dialog is a custom `Dialog`: title · full-width field · hint and counter on one
+  line · ONE action row (Delete at the start, Cancel + Save at the end).

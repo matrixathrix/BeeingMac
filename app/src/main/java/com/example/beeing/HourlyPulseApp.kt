@@ -6,8 +6,13 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -45,6 +50,9 @@ import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -69,6 +77,8 @@ fun HourlyPulseApp(
         openTab?.let { selectedTab = it; onOpenTabConsumed() }
     }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
+    // Continuous position: whole part = page, fraction = swipe progress
+    val pagerPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction }
     LaunchedEffect(selectedTab) {
         if (pagerState.currentPage != selectedTab) {
             pagerState.animateScrollToPage(
@@ -168,8 +178,24 @@ fun HourlyPulseApp(
         onStreakClick = { selectedTab = 0 },
         onBellClick = { showWarnings = true },
         onMenuClick = { showSettings = true },
-        onTopRowHidden = { topRowHidden = it }
+        onTopRowHidden = { topRowHidden = it },
+        bandUnder = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) }
     )
+
+    // Status-bar icons follow what is under them: white over a band (Streak, Now),
+    // dark over the plain light page (Past, Trends, Settings). Dark mode is always
+    // white. BeeingTheme no longer sets this — it can't see the pager.
+    val view = LocalView.current
+    val darkTheme = isSystemInDarkTheme()
+    // derivedStateOf: the root must not recompose on every swipe frame
+    val overPlainPage by remember { derivedStateOf { pagerPosition() > 1.5f } }
+    val lightStatusIcons = !darkTheme && (showSettings || showManageTags || overPlainPage)
+    SideEffect {
+        (view.context as? Activity)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightStatusIcons
+        }
+    }
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
     // as shown the moment it appears, so declining is not re-asked.
@@ -325,6 +351,7 @@ fun HourlyPulseApp(
                     onRatingCardYPosition = { ratingCardYPosition = it },
                     onOpenStreaks = { selectedTab = 0 },
                     onMenuClick = { showSettings = true },
+                    onOpenTags = { showManageTags = true },
                     pendingScore = pendingScore,
                     pendingTags = pendingTags,
                     onPendingScoreConsumed = { pendingScore = null },
@@ -523,8 +550,10 @@ fun HourlyPulseApp(
 
     // ---- The top row is drawn ONCE, above the pager, so it stays put while tabs
     // slide underneath. Each tab's band reserves its height with BandTopRowSpacer.
-    // Hidden while Trends is open (it has its own back row). ----
-    if (!topRowHidden) {
+    // Hidden while Trends is open (it has its own back row) AND the pager is on
+    // Past: the pager keeps Past composed after a jump to Now, so Trends' flag
+    // alone would leave Now without its top row. ----
+    if (!(topRowHidden && overPlainPage)) {
         Box(
             Modifier
                 .align(Alignment.TopCenter)
@@ -537,9 +566,16 @@ fun HourlyPulseApp(
     }
 
     // ---- Settings: a full-screen page above the Scaffold (covers the nav bar).
-    // Registered after the root BackHandler, so system back closes it first. ----
-    if (showSettings) {
-        BackHandler { showSettings = false }
+    // Registered after the root BackHandler, so system back closes it first.
+    // Slides in from the right and back out, like Trends over the journal. ----
+    BackHandler(enabled = showSettings) { showSettings = false }
+    AnimatedVisibility(
+        visible = showSettings,
+        enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } +
+                fadeIn(tween(300, easing = FastOutSlowInEasing)),
+        exit = slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it } +
+                fadeOut(tween(260, easing = FastOutSlowInEasing))
+    ) {
         SettingsScreen(
             callbacks = SettingsCallbacks(
                 beginnerMode = streakState.beginnerMode,
@@ -583,11 +619,19 @@ fun HourlyPulseApp(
         )
     }
     if (showSaverInfo) SaverExplainerDialog(streakState.savers) { showSaverInfo = false }
-    if (showManageTags) {
-        SettingsManageTags(
+    // Tags: a page pushed over Settings, sliding the same way. ----
+    BackHandler(enabled = showManageTags) { showManageTags = false }
+    AnimatedVisibility(
+        visible = showManageTags,
+        enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } +
+                fadeIn(tween(300, easing = FastOutSlowInEasing)),
+        exit = slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it } +
+                fadeOut(tween(260, easing = FastOutSlowInEasing))
+    ) {
+        TagsScreen(
             context = context,
             onChanged = { viewModel.triggerRefresh() },
-            onDismiss = { showManageTags = false }
+            onBack = { showManageTags = false }
         )
     }
 

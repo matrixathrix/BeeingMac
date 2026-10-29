@@ -45,8 +45,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Draw under the system bars on every API level (35+ forces it anyway), so
-        // each tab's BrandBand really sits under the status bar. Light icons:
-        // a band is always behind them.
+        // the Streak/Now bands really sit under the status bar. Starts with light
+        // icons; HourlyPulseApp flips them dark over the plain light page.
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         createNotificationChannel(this)
         scheduleWeeklyReport(this)

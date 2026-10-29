@@ -267,10 +267,10 @@ fun StreaksTab(
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
-                    LegendDot(color = getScoreColor(6.0), hollow = false, label = "complete")
+                    LegendDot(color = LocalBeeExtras.current.accentFill, hollow = false, label = "complete")
                     LegendItem(Sym.Beginner, "beginner day")
                     LegendItem(Sym.Saver, "saver used")
-                    LegendDot(color = Color(0xFFC62828), hollow = true, label = "missed")
+                    LegendDot(color = Color(0xFFE57373), hollow = true, label = "missed")
                     IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Info,
@@ -498,14 +498,14 @@ private fun MonthGrid(
     val today = Calendar.getInstance()
     val todayKey = today.get(Calendar.YEAR) * 1000L + today.get(Calendar.DAY_OF_YEAR)
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth()) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
             listOf("S", "M", "T", "W", "T", "F", "S").forEach { d ->
                 Text(
                     d,
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -518,7 +518,7 @@ private fun MonthGrid(
                     // leading blanks only apply on the first row
                     val inLead = day == 1 && col < leadingBlanks
                     if (inLead || day > daysInMonth) {
-                        Box(Modifier.weight(1f).height(58.dp))
+                        Box(Modifier.weight(1f).height(44.dp))
                     } else {
                         val cellCal = (monthStart.clone() as Calendar).apply {
                             set(Calendar.DAY_OF_MONTH, day)
@@ -543,12 +543,14 @@ private fun MonthGrid(
 }
 
 /**
- * A calendar day. Repeated identical emoji carry no information, so a hive
- * day shows a dot tinted by that day's average score, a saved day shows the
- * small moon, and a missed day is a hollow red ring. A completed beginner day
- * gets the beginner icon — not a hollow tinted dot, which would read as the missed
- * ring at 9dp. Today gets the primary-color outline. Color never travels alone
- * here — tapping any day opens the stats dialog with the digits.
+ * A calendar day as a tile. A complete day is a FILLED honey tile (the streak's
+ * colour, never the score bands: a complete 4.5 day must not read as a red
+ * alarm next to the hollow red missed tile), so a run reads as one block. A
+ * saved day is a honey-washed tile with the
+ * saver glyph, a beginner day carries the leaf, a missed day is a hollow red
+ * tile, and any other past day a faint one, so the grid has structure even when
+ * empty. Today gets an ink outline. Colour never travels alone: fill vs. outline
+ * vs. glyph carry the outcome, and tapping opens the stats dialog with digits.
  */
 @Composable
 private fun DayCell(
@@ -560,43 +562,54 @@ private fun DayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    val shape = RoundedCornerShape(9.dp)
+    val complete = outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED
+    val missed = outcome == DayOutcome.MISSED || outcome == DayOutcome.BROKEN
+    val missedRed = Color(0xFFE57373)
+    val fill = when {
+        complete -> LocalBeeExtras.current.accentFill
+        outcome == DayOutcome.SAVED -> LocalBeeExtras.current.accentFill.copy(alpha = 0.18f)
+        missed || !enabled -> Color.Transparent
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    }
+    val ink = when {
+        complete -> LocalBeeExtras.current.onAccentFill
+        missed -> missedRed
+        enabled -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
+    Box(
         modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .padding(2.dp)
+            .height(40.dp)
+            .clip(shape)
+            .background(fill)
             .then(
-                if (isToday) Modifier
-                    .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
-                else Modifier
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+                when {
+                    isToday -> Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurface, shape)
+                    missed -> Modifier.border(1.dp, missedRed.copy(alpha = 0.7f), shape)
+                    else -> Modifier
+                }
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             "$dayNumber",
             fontSize = 12.sp,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+            color = ink,
+            fontWeight = if (isToday || complete) FontWeight.Bold else FontWeight.Normal
         )
-        Spacer(Modifier.height(4.dp))
         when (outcome) {
-            DayOutcome.QUALIFIED, DayOutcome.RECOVERED -> Box(
-                Modifier
-                    .size(9.dp)
-                    .clip(CircleShape)
-                    .background(getScoreColor(avgScore ?: 0.0))
+            DayOutcome.BEGINNER_COMPLETE -> BeeIcon(
+                Sym.Beginner, size = 9.dp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
             )
-            DayOutcome.BEGINNER_COMPLETE -> BeeIcon(Sym.Beginner, size = 11.dp)
-            DayOutcome.SAVED -> BeeIcon(Sym.Saver, size = 12.dp, tint = LocalBeeExtras.current.accentText)
-            DayOutcome.MISSED, DayOutcome.BROKEN -> Box(
-                Modifier
-                    .size(9.dp)
-                    .border(1.5.dp, Color(0xFFC62828), CircleShape)
+            DayOutcome.SAVED -> BeeIcon(
+                Sym.Saver, size = 9.dp, tint = LocalBeeExtras.current.accentText,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
             )
-            DayOutcome.FADED, null -> Spacer(Modifier.size(9.dp))
+            else -> Unit
         }
     }
 }
@@ -675,7 +688,7 @@ private fun DayStatsDialog(
                     )
                 } else {
                     StatRow("Hours rated", "$distinctHours / 24")
-                    StatRow("Average score", String.format("%.1f", avg), valueColor = getScoreColor(avg))
+                    StatRow("Average score", String.format("%.1f", avg), valueColor = scoreTextColor(avg))
                     best?.let {
                         val h = Calendar.getInstance().apply { timeInMillis = it.timestamp }
                             .get(Calendar.HOUR_OF_DAY)
@@ -726,10 +739,11 @@ private fun LegendDot(color: Color, hollow: Boolean, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
-                .size(9.dp)
+                .size(10.dp)
                 .then(
-                    if (hollow) Modifier.border(1.5.dp, color, CircleShape)
-                    else Modifier.clip(CircleShape).background(color)
+                    // Squares, to match the calendar tiles they explain
+                    if (hollow) Modifier.border(1.dp, color, RoundedCornerShape(3.dp))
+                    else Modifier.clip(RoundedCornerShape(3.dp)).background(color)
                 )
         )
         Spacer(Modifier.width(4.dp))
