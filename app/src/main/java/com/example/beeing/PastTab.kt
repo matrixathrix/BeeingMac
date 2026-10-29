@@ -25,7 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -40,6 +40,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -129,9 +130,7 @@ private data class JournalDay(
     val dayStartMs: Long,
     val entries: List<RatingEntry>,      // oldest → newest
     val avg: Double,
-    val byHour: Map<Int, RatingEntry>,
-    val early: Int,                      // ratings before the active window
-    val late: Int                        // ratings after it
+    val byHour: Map<Int, RatingEntry>
 )
 
 // ---------- calendar helpers ----------
@@ -366,7 +365,7 @@ private fun buildInsight(entries: List<RatingEntry>, ratedHours: Int): String? {
 /** Groups every rating into its calendar day, newest day first. Days without a
  *  single rating are not rows — the journal lists what was written, not what
  *  wasn't (the Streak tab's calendar is where absences read). */
-private fun buildJournalDays(ratings: List<RatingEntry>, window: IntRange): List<JournalDay> {
+private fun buildJournalDays(ratings: List<RatingEntry>): List<JournalDay> {
     if (ratings.isEmpty()) return emptyList()
     val cal = Calendar.getInstance()
     val groups = HashMap<Long, MutableList<RatingEntry>>()
@@ -380,21 +379,15 @@ private fun buildJournalDays(ratings: List<RatingEntry>, window: IntRange): List
         .map { (dayStart, list) ->
             val sorted = list.sortedBy { it.timestamp }
             val byHour = HashMap<Int, RatingEntry>()
-            var early = 0
-            var late = 0
             for (e in sorted) {
                 cal.timeInMillis = e.timestamp
-                val h = cal.get(Calendar.HOUR_OF_DAY)
-                byHour[h] = e
-                if (h < window.first) early++ else if (h > window.last) late++
+                byHour[cal.get(Calendar.HOUR_OF_DAY)] = e
             }
             JournalDay(
                 dayStartMs = dayStart,
                 entries = sorted,
                 avg = sorted.map { it.score }.average(),
-                byHour = byHour,
-                early = early,
-                late = late
+                byHour = byHour
             )
         }
 }
@@ -445,6 +438,9 @@ fun PastTab(
     // same scroll position and the same open day.
     val journalListState = rememberLazyListState()
     var expandedDay by remember { mutableStateOf<Long?>(null) }
+    // Months the user opened or closed by hand; the rest follow the default
+    // (this month and last open, older ones collapsed).
+    var monthOverrides by remember { mutableStateOf(mapOf<Long, Boolean>()) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -481,10 +477,11 @@ fun PastTab(
                 JournalView(
                     allRatings = allRatings,
                     refresh = refresh,
-                    window = window,
                     listState = journalListState,
                     expandedDay = expandedDay,
                     onExpandedDayChange = { expandedDay = it },
+                    monthOverrides = monthOverrides,
+                    onMonthOverridesChange = { monthOverrides = it },
                     onOpenTrends = { showTrends = true },
                     onEdit = { editingEntry = it }
                 )
@@ -541,16 +538,30 @@ fun PastTab(
 private fun JournalView(
     allRatings: List<RatingEntry>,
     refresh: Int,
-    window: IntRange,
     listState: androidx.compose.foundation.lazy.LazyListState,
     expandedDay: Long?,
     onExpandedDayChange: (Long?) -> Unit,
+    monthOverrides: Map<Long, Boolean>,
+    onMonthOverridesChange: (Map<Long, Boolean>) -> Unit,
     onOpenTrends: () -> Unit,
     onEdit: (RatingEntry) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    val days = remember(allRatings, window, refresh) { buildJournalDays(allRatings, window) }
+    val days = remember(allRatings, refresh) { buildJournalDays(allRatings) }
     var showJump by remember { mutableStateOf(false) }
+    // A date-jump target waits here until its month is open and its row exists.
+    var pendingJumpDay by remember { mutableStateOf<Long?>(null) }
+    // The two newest months WITH entries start open (a month with no ratings
+    // is no row, so "this month and last" would skip over a gap); anything
+    // older starts as one header line.
+    val openByDefault = remember(days) {
+        val cal = Calendar.getInstance()
+        days.map { d ->
+            cal.timeInMillis = d.dayStartMs
+            cal.set(Calendar.DAY_OF_MONTH, 1)
+            cal.timeInMillis
+        }.distinct().take(2).toSet()
+    }
+    fun isOpen(monthStart: Long) = monthOverrides[monthStart] ?: (monthStart in openByDefault)
 
     if (days.isEmpty()) {
         Column(Modifier.fillMaxSize()) {
@@ -565,12 +576,33 @@ private fun JournalView(
         return
     }
 
-    // Days grouped under month headers, each month one rounded group of rows.
-    val rows = remember(days) { buildJournalRows(days) }
+    // Days grouped under month headers, each month one rounded group of rows;
+    // a collapsed month contributes only its header.
+    val rows = remember(days, monthOverrides) { buildJournalRows(days, ::isOpen) }
+
+    LaunchedEffect(rows, pendingJumpDay) {
+        val dayMs = pendingJumpDay ?: return@LaunchedEffect
+        val idx = rows.indexOfFirst { it is JournalDayRow && it.day.dayStartMs == dayMs }
+        if (idx >= 0) {
+            pendingJumpDay = null
+            // A month's first day lands on its header, so the sticky header
+            // can't cover it.
+            val target = if ((rows[idx] as JournalDayRow).first) idx - 1 else idx
+            listState.animateScrollToItem(target.coerceAtLeast(0))
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         // The record, not a stage: no band, a large title on the plain page.
         PageHeader("Journal", reserveTopRow = true) {
+            // Month names now fold their month, so the date jump lives here.
+            IconButton(onClick = { showJump = true }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.DateRange, contentDescription = "Jump to a date",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
             Row(
                 Modifier
                     .clip(RoundedCornerShape(50))
@@ -594,14 +626,18 @@ private fun JournalView(
             rows.forEach { row ->
                 when (row) {
                     is JournalMonthRow -> stickyHeader(key = "m${row.monthStartMs}") {
-                        JournalMonthHeader(row.label, onClick = { showJump = true })
+                        JournalMonthHeader(
+                            label = row.label,
+                            dayCount = row.dayCount,
+                            open = row.open,
+                            onClick = { onMonthOverridesChange(monthOverrides + (row.monthStartMs to !row.open)) }
+                        )
                     }
                     is JournalDayRow -> item(key = row.day.dayStartMs) {
                         JournalDayItem(
                             day = row.day,
                             first = row.first,
                             last = row.last,
-                            window = window,
                             expanded = row.day.dayStartMs == expandedDay,
                             onToggle = {
                                 onExpandedDayChange(
@@ -625,15 +661,15 @@ private fun JournalView(
             initialDayMs = firstVisibleDay ?: days.first().dayStartMs,
             onPick = { dayMs ->
                 showJump = false
-                val idx = rows.indexOfFirst { it is JournalDayRow && it.day.dayStartMs == dayMs }
-                if (idx >= 0) {
-                    // Open the day as we land on it: the jump is tap 2 of 2. A
-                    // month's first day lands on its header instead, so the sticky
-                    // header can't cover it.
-                    onExpandedDayChange(dayMs)
-                    val target = if ((rows[idx] as JournalDayRow).first) idx - 1 else idx
-                    scope.launch { listState.animateScrollToItem(target.coerceAtLeast(0)) }
-                }
+                // Open the day's month and the day itself (the jump is tap 2 of
+                // 2); the effect above scrolls once the row is in the list.
+                val monthStart = Calendar.getInstance().apply {
+                    timeInMillis = dayMs
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }.timeInMillis
+                if (!isOpen(monthStart)) onMonthOverridesChange(monthOverrides + (monthStart to true))
+                onExpandedDayChange(dayMs)
+                pendingJumpDay = dayMs
             },
             onDismiss = { showJump = false }
         )
@@ -641,11 +677,16 @@ private fun JournalView(
 }
 
 private sealed interface JournalRow
-private data class JournalMonthRow(val monthStartMs: Long, val label: String) : JournalRow
+private data class JournalMonthRow(
+    val monthStartMs: Long,
+    val label: String,
+    val dayCount: Int,
+    val open: Boolean
+) : JournalRow
 private data class JournalDayRow(val day: JournalDay, val first: Boolean, val last: Boolean) : JournalRow
 
-/** Newest month first; each month a header row, then its days (newest first). */
-private fun buildJournalRows(days: List<JournalDay>): List<JournalRow> {
+/** Newest month first; each month a header row, then (if open) its days, newest first. */
+private fun buildJournalRows(days: List<JournalDay>, isOpen: (Long) -> Boolean): List<JournalRow> {
     val cal = Calendar.getInstance()
     val thisYear = cal.get(Calendar.YEAR)
     val fmtThisYear = SimpleDateFormat("MMMM", Locale.getDefault())
@@ -658,44 +699,49 @@ private fun buildJournalRows(days: List<JournalDay>): List<JournalRow> {
     }.forEach { (monthStart, monthDays) ->
         cal.timeInMillis = monthStart
         val fmt = if (cal.get(Calendar.YEAR) == thisYear) fmtThisYear else fmtOtherYear
-        out += JournalMonthRow(monthStart, fmt.format(Date(monthStart)))
-        monthDays.forEachIndexed { i, d ->
+        val open = isOpen(monthStart)
+        out += JournalMonthRow(monthStart, fmt.format(Date(monthStart)), monthDays.size, open)
+        if (open) monthDays.forEachIndexed { i, d ->
             out += JournalDayRow(d, first = i == 0, last = i == monthDays.lastIndex)
         }
     }
     return out
 }
 
-/** "OCTOBER ▾": sticks to the top while its days scroll; tap → date jump. */
+/** "OCTOBER · 12 days ˅": sticks to the top while its days scroll; the whole
+ *  line folds and unfolds the month (the chevron turns to show which). */
 @Composable
-private fun JournalMonthHeader(label: String, onClick: () -> Unit) {
+private fun JournalMonthHeader(label: String, dayCount: Int, open: Boolean, onClick: () -> Unit) {
+    val turn by animateFloatAsState(if (open) 0f else -90f, label = "monthChevron")
     Row(
         Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .padding(top = 14.dp, bottom = 8.dp),
+            .clickable(
+                onClick = onClick,
+                onClickLabel = if (open) "Collapse $label" else "Expand $label"
+            )
+            .padding(start = 4.dp, end = 4.dp, top = 14.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(50))
-                .clickable(onClick = onClick, onClickLabel = "Jump to a date")
-                .padding(start = 4.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                label.uppercase(Locale.getDefault()),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Icon(
-                Icons.Default.ArrowDropDown, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        Text(
+            label.uppercase(Locale.getDefault()),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            "$dayCount ${if (dayCount == 1) "day" else "days"}",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Icon(
+            Icons.Default.KeyboardArrowDown, contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = turn }
+        )
     }
 }
 
@@ -711,7 +757,6 @@ private fun JournalDayItem(
     day: JournalDay,
     first: Boolean,
     last: Boolean,
-    window: IntRange,
     expanded: Boolean,
     onToggle: () -> Unit,
     onEditEntry: (RatingEntry) -> Unit
@@ -733,12 +778,16 @@ private fun JournalDayItem(
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.14f)
         )
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) {
+        Column(Modifier.fillMaxWidth()) {
+            // Only the title block (headline + track) folds the day: taps on the
+            // hour rows or the "unrated" line below never collapse it.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 14.dp, bottom = if (expanded) 0.dp else 14.dp)
+            ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     journalDayLabel(day.dayStartMs),
@@ -752,16 +801,6 @@ private fun JournalDayItem(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Out-of-window counts ride in the headline, so every track
-                // below starts and ends at the same x.
-                if (day.early > 0) {
-                    Spacer(Modifier.width(6.dp))
-                    TickCapPill("▲${day.early}")
-                }
-                if (day.late > 0) {
-                    Spacer(Modifier.width(4.dp))
-                    TickCapPill("▼${day.late}")
-                }
                 Spacer(Modifier.weight(1f))
                 Box(
                     Modifier
@@ -780,37 +819,49 @@ private fun JournalDayItem(
 
             Spacer(Modifier.height(10.dp))
 
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val elapsedColor = emptyCellColor(future = false)
-                val futureColor = emptyCellColor(future = true)
-                val rated = remember(day, window) {
-                    day.byHour.filterKeys { it in window }.map { (h, e) -> h to scoreBandColor(e.score) }
+            val elapsedColor = emptyCellColor(future = false)
+            val futureColor = emptyCellColor(future = true)
+            val rated = remember(day) { day.byHour.map { (h, e) -> h to scoreBandColor(e.score) } }
+            val elapsedSlots = (0 until 24).count { h -> day.dayStartMs + (h + 1) * 3600_000L <= now }
+            // The whole day, midnight to midnight: every rated hour has its own
+            // slot, so the marks always add up to the hour count beside the date.
+            // A 2dp gap keeps neighbouring hours apart. Collapsed rows are for
+            // scanning, so the line stands alone; an open day gets time labels.
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+            ) {
+                val slot = size.width / 24f
+                val gap = 2.dp.toPx()
+                val bar = 6.dp.toPx()
+                val r = androidx.compose.ui.geometry.CornerRadius(bar / 2)
+                drawRoundRect(elapsedColor, size = Size(size.width, bar), cornerRadius = r)
+                if (elapsedSlots < 24) drawRect(
+                    futureColor,
+                    topLeft = Offset(slot * elapsedSlots, 0f),
+                    size = Size(size.width - slot * elapsedSlots, bar)
+                )
+                for ((h, color) in rated) {
+                    drawRect(color, topLeft = Offset(h * slot + gap / 2, 0f), size = Size(slot - gap, bar))
                 }
-                val elapsedSlots = window.count { h -> day.dayStartMs + (h + 1) * 3600_000L <= now }
-                Canvas(
-                    Modifier
-                        .weight(1f)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(50))
-                ) {
-                    val n = window.count().coerceAtLeast(1)
-                    val slot = size.width / n
-                    val gap = 1.5.dp.toPx()
-                    drawRect(elapsedColor, size = Size(slot * elapsedSlots, size.height))
-                    drawRect(
-                        futureColor,
-                        topLeft = Offset(slot * elapsedSlots, 0f),
-                        size = Size(size.width - slot * elapsedSlots, size.height)
-                    )
-                    for ((h, color) in rated) {
-                        val x = (h - window.first) * slot
-                        drawRect(color, topLeft = Offset(x + gap / 2, 0f), size = Size(slot - gap, size.height))
+            }
+            if (expanded) {
+                // Midnight · noon · midnight, in the Now strip's micro type. Equal-
+                // width end labels keep "12pm" centred under noon.
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    listOf("12am", "12pm", "12am").forEach {
+                        Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
+            }
 
-            if (expanded) {
+            if (expanded) Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 14.dp)) {
                 Spacer(Modifier.height(12.dp))
+                // Earliest hour first: a day reads as a story, morning to night,
+                // the same way its line runs and the edit sheet's ‹ › step.
                 day.entries.forEach { entry ->
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
@@ -841,24 +892,6 @@ private fun JournalDayItem(
                 )
             }
         }
-    }
-}
-
-/** The ▲/▼ badge carrying the ratings that fall outside the active window. */
-@Composable
-private fun TickCapPill(text: String) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 4.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 

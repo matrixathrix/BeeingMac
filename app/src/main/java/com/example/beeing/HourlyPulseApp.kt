@@ -209,15 +209,29 @@ fun HourlyPulseApp(
         }
     }
 
-    // Back press handling (double tap to exit)
+    // Back: Streak and Past step home to Now first, so leaving the app always
+    // passes the Now tab, where (once caught up) the bee is the way out. On Now,
+    // a double press exits; the first one points at the bee when it is there.
+    // (Trends' and Settings' own handlers are registered later and win first.)
     var lastBackPress by remember { mutableLongStateOf(0L) }
+    var nowCaughtUp by remember { mutableStateOf(false) }
     BackHandler {
+        if (selectedTab != 1) {
+            selectedTab = 1
+            lastBackPress = 0L
+            return@BackHandler
+        }
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPress < 2000) {
             (context as? Activity)?.finish()
         } else {
             lastBackPress = currentTime
-            android.widget.Toast.makeText(context, "Press back again to exit the app", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                context,
+                if (nowCaughtUp) "Catch the bee to lock your phone, or press back again to exit"
+                else "Press back again to exit the app",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -352,6 +366,7 @@ fun HourlyPulseApp(
                     onOpenStreaks = { selectedTab = 0 },
                     onMenuClick = { showSettings = true },
                     onOpenTags = { showManageTags = true },
+                    onCaughtUpChange = { nowCaughtUp = it },
                     pendingScore = pendingScore,
                     pendingTags = pendingTags,
                     onPendingScoreConsumed = { pendingScore = null },

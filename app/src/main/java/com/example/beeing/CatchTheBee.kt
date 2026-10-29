@@ -124,7 +124,7 @@ fun CatchTheBee(onCatch: () -> Unit, modifier: Modifier = Modifier) {
 
         Text(
             "Catch the bee to lock the phone",
-            fontSize = 15.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = JakartaFontFamily,
             color = LocalBeeExtras.current.accentText,

@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -124,6 +126,7 @@ fun NowTab(
     onOpenStreaks: () -> Unit = {},
     onMenuClick: () -> Unit = {},
     onOpenTags: () -> Unit = {},
+    onCaughtUpChange: (Boolean) -> Unit = {},
     pendingScore: Int? = null,
     pendingTags: List<String> = emptyList(),
     onPendingScoreConsumed: () -> Unit = {},
@@ -222,6 +225,8 @@ fun NowTab(
     val isPreviousHourLogged = remember(allRatings, viewModel.refreshTrigger, hourStart) { isHourLogged(1) }
 
     val allCaughtUp = isLatestHourLogged && isPreviousHourLogged
+    // The root's back handler points at the bee when there is one to catch.
+    LaunchedEffect(allCaughtUp) { onCaughtUpChange(allCaughtUp) }
 
     val streakState = remember(allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
         computeStreakState(allRatings, viewModel.modeEvents)
@@ -396,20 +401,38 @@ fun NowTab(
                 // Rounding slack only: keeps the question on the band's bottom edge.
                 Spacer(Modifier.weight(1f))
                 if (allCaughtUp) {
-                    Row(Modifier.scaledLayout(heroScale), verticalAlignment = Alignment.CenterVertically) {
-                        BeeIcon(
-                            Sym.CaughtUp, size = 30.dp, contentDescription = null,
+                    // The tick spans BOTH lines: the text column is measured first
+                    // and the tick is drawn as a square exactly that tall, so the
+                    // pair reads as one block with one shared left edge. Measured in
+                    // layout, so it tracks the title's scale as the band grows.
+                    Layout(content = {
+                        Icon(
+                            painterResource(Sym.CaughtUp.res),
+                            contentDescription = null,
                             tint = RingQualifiedGreen
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text("All caught up", style = heroStyle)
+                        Column {
+                            Text("All caught up", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Next hour opens in ${minutesToNextHour}m",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.75f)
+                            )
+                        }
+                    }) { m, c ->
+                        val gap = 12.dp.roundToPx()
+                        val reserve = 72.dp.roundToPx() // room kept for the tick
+                        val text = m[1].measure(
+                            c.copy(minWidth = 0, minHeight = 0, maxWidth = (c.maxWidth - reserve - gap).coerceAtLeast(0))
+                        )
+                        val side = text.height
+                        val tick = m[0].measure(Constraints.fixed(side, side))
+                        layout(side + gap + text.width, side) {
+                            tick.place(0, 0)
+                            text.place(side + gap, 0)
+                        }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Next hour opens in ${minutesToNextHour}m",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
                 } else {
                     val mins = minutesFor(targetedHourOffset)
                     Text("How was your hour?", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))

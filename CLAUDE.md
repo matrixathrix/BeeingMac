@@ -957,3 +957,39 @@ case verify by static review and say so explicitly — the user compiles locally
   row rides along via `dragOffset += scroll.scrollBy(v)`), and the rename/add
   dialog is a custom `Dialog`: title · full-width field · hint and counter on one
   line · ONE action row (Delete at the start, Cancel + Save at the end).
+- 2026-10-29 (back goes home first): the root `BackHandler` sends Streak and
+  Past back to **Now** (`selectedTab = 1`) before the double-press exit, so
+  leaving the app always passes the Now tab. There, the first press's toast
+  points at the bee when one is showing ("Catch the bee to lock your phone, or
+  press back again to exit"); `NowTab(onCaughtUpChange)` reports `allCaughtUp`
+  for that. Trends, Settings and Tags register their own handlers later, so
+  they still close first.
+- 2026-10-29 (caught-up hero): the green tick spans **both** lines ("All caught
+  up" + "Next hour opens in Nm"): a small `Layout` measures the text column
+  first and draws the tick as a square of exactly that height, in the layout
+  phase, so it follows the title's `scaledLayout` as the band grows. The bee
+  prompt went 15sp → 20sp.
+- 2026-10-29 (journal months fold): month headers ("OCTOBER · 5 days ˅") fold
+  and unfold their month; the **two newest months that have entries** start
+  open, older ones start as one header line (a collapsed month contributes no
+  day rows). Hand toggles live in `PastTab`'s `monthOverrides` so a Trends
+  round-trip keeps them. The date jump moved to a calendar icon beside
+  "Trends" (the month name used to open it); picking a day in a collapsed
+  month opens that month first and scrolls via `pendingJumpDay` once its row
+  exists. Inside an open day the hours run **newest first** (same direction as
+  the days; `day.entries` stays ascending for `EditEntrySheet`'s carets), and
+  only the title block (headline + track) folds the day, so taps on the hour
+  rows or the "N hours unrated" line never collapse it.
+- 2026-10-29 (journal line = the whole day): each day's line now spans
+  **midnight to midnight** (24 slots), not the active window, so the marks
+  always add up to the hour count beside the date; the ▲N/▼N cap pills
+  (`TickCapPill`) and `JournalDay.early/late` are gone from the journal, and
+  `buildJournalDays`/`JournalView`/`JournalDayItem` no longer take `window`.
+  Neighbouring hours keep a 2dp gap (was 1.5dp, which merged them), and short
+  ticks under the line mark 6am / 12pm / 6pm. The Now strip and the Trends
+  pattern grid still use the active window and its cap pills.
+- 2026-10-29 (journal, second thoughts): hours inside an open day are back to
+  **earliest first** (a day reads morning → night, like its line and the edit
+  sheet's ‹ ›; days stay newest first). The 6am/12pm/6pm ticks are gone:
+  collapsed rows show the bare line (for scanning), and only an **expanded** day
+  gets "12am · 12pm · 12am" labels under it, in the Now strip's 10sp type.
