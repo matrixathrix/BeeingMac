@@ -439,7 +439,7 @@ fun HourlyPulseApp(
                         InfoSection(Sym.Fire, "Build Your Streak")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SAVER_EARN_HOURS to earn a streak saver (up to $SAVER_CAP): miss a day and one steps in, so your streak still grows. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SUPER_DAY_HOURS hours and it's a Super day, which earns a streak saver (up to $SAVER_CAP). Miss a day and one steps in, so your streak still grows. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )

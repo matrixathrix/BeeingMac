@@ -32,6 +32,12 @@ notification → rate → tag → save → lock phone → back to life.
   the streak grows by one — 2026-10-29); with none it is `FADED` (saver burns for
   nothing — a rule, not a bug).
   No savers + a running streak = `BROKEN`; no streak and no savers = `MISSED`.
+- **Super day** (2026-10-29). A Master day (mode at day end) with ≥ `SUPER_DAY_HOURS`
+  (12) counted hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, so it earns a saver when
+  under `SAVER_CAP`. It is a *label and a ceremony over the existing rule* — no
+  `DayOutcome`, saver or streak number changed. Backdated hours never count and
+  beginner days never qualify. Anchored on the same "exactly one new counted hour"
+  idea as the old saver moment, now keyed by day (see the history entry).
 - **Comeback gift**: every `COMEBACK_IDLE_DAYS` (7) days in a row with no
   complete day (Master 8+ or beginner 4+) gifts `COMEBACK_GIFT` (2) savers
   (capped), credited at that day's end.
@@ -93,17 +99,17 @@ a qualifying day is a **complete day** ("Day complete", "⬢ Day complete",
 calendar legend "complete"), and the count reads "**N-day streak**" /
 "Day N of your streak", never a cell count · **History** = the event log on
 the Streak tab · **Streak saver** (`Sym.Saver`, a shield with the flame) =
-earned at 12 hours, steps in on a missed day ("A streak saver kept your streak
+earned on a **Super day**, steps in on a missed day ("A streak saver kept your streak
 alive"), fades if no streak is running · **Streak at risk** = the red count with
 a "!" while the 3-day **recovery** window is open ("N days left to win it back")
-· **Heads up** = the warnings bell sheet · 🕐 **Added later** = an hour added via
+· **Super day** = a Master day with 12 counted hours (`Sym.Sparkle`, `SuperGold`; "Make it a Super day", "N more for a Super day", "Yesterday was a Super day"), earns a saver when under the cap · **Heads up** = the warnings bell sheet · 🕐 **Added later** = an hour added via
 "Add a past hour" (rest days are gone) · 🌱 **Beginner day** = a completed 4-hour day in
 **beginner mode** ("Beginner day complete", calendar legend "beginner day");
 the opposite mode is **Master mode** (8 hours) and a streak inside beginner
 mode is **paused**, never lost ("Streak paused at N", "Resumes in Master
 mode") · celebration is reserved for rare milestones — never per-save; the
 daily celebration is the ring closing, plus the two full-screen "streak moments"
-(saver earned, streak recovered).
+(Super day, streak recovered).
 Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics — honey gold
 survives only as an accent color.
 
@@ -166,7 +172,10 @@ case verify by static review and say so explicitly — the user compiles locally
 | `Warnings.kt` / `WarningsBell.kt` | Bell items are a filtered view of the streak events: `warningsFrom`/`unreadCount` + the spec copy (pure, `Warnings.kt`); read ids / baseline / on-off in prefs and the "Heads up" `WarningsSheet` (`WarningsBell.kt`). Events before the baseline (first launch, last import) count as read |
 | `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
 | `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
-| `SaverCelebration.kt` | `StreakMomentCelebration` — full-screen saver-earned / streak-recovered |
+| `SaverCelebration.kt` | `StreakMomentCelebration` — the full-screen streak-recovered moment (the saver-earned screen became `SuperDayCelebration`) |
+| `SuperDay.kt` | **Pure Super day logic (2026-10-29), no Context/Compose.** `reachableHours` (today's uncounted hours still ratable *in the moment*: the two ratable hours always; future hours unless their reminder moment — the hour's end — falls in silent hours or an OFF pause; reminders-off does not drop hours), `SuperInvite(hoursNeeded, savers, dayStartMs)`, `superInviteFor` (shows only when `reachable >= needed + SUPER_DAY_SLACK`), `superCueFor` (the status cue: exact fit, no slack), `lateHourHint` (the Save-label suffix) and `gateInvite` (the once-a-day gate) |
+| `SuperDayScreens.kt` | `SuperDayInvite` ("Make it a Super day", ONE "Let's go" button, no haptic) and `SuperDayCelebration` (overline "SUPER DAY", "Super day", "Keep going"; replaces the saver-earned screen and fires at the cap too). Both sit on the full-screen aubergine `SuperField`, draw the inner ring + `drawSuperRings` outer lap, and show end states when system animations are off |
+| `ui/SuperLap.kt` | `drawSuperLap` — the 4-segment outer lap (`SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED` arcs, 4° gaps, butt caps, fractional `filled` so it can draw itself in) in `SuperGold`. Used by `StreakRing` (Master, once complete) and the Super day screens |
 | `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
 | `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
@@ -1026,3 +1035,47 @@ case verify by static review and say so explicitly — the user compiles locally
   holding it; history replays under it, so counts across saved days rise. Tests
   updated (`brokenThree` → `brokenAtFive`), and the "holds" copy swept (bell,
   day stats, both explainers).
+- 2026-10-29 (**Super days**): the 12-hour saver moment became a named, visible
+  achievement. Spec `docs/superpowers/specs/2026-10-29-super-day-design.md`, plan
+  `docs/superpowers/plans/2026-10-29-super-day.md`. **No outcome, saver or streak
+  number changed** — `StreakRulesTest`'s outcome assertions pass untouched.
+  (1) **Rule**: Master day (mode at day end) with ≥ `SUPER_DAY_HOURS` (12) counted
+  hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, `SUPER_DAY_SLACK` = 1. Backdated
+  (`RECLAIM_TAG`) hours never count; beginner days never qualify.
+  (2) **Engine** (`StreakRules.kt`): `DayTally` + `StreakState.recentDays`
+  (yesterday + today), `StreakEventType.SUPER_DAY` (out of `WARNING_TYPES` /
+  `ALERT_TYPES`; History's `logRows` merges the old SAVER_EARNED into one "Super
+  day" row per day), `computeSuperDays`. **The triggers are day-keyed**:
+  `singleNewHourDay` / `ringClosed` / `streakMoment` compare counted hours *keyed by
+  the day's start*, not "today's count", so an 11pm hour rated after midnight still
+  celebrates yesterday ("Yesterday was a Super day") while replay, import, backdated
+  saves and mode toggles — none of which add exactly one new counted hour to one
+  day — still can't. `StreakMoment.SuperDay(savers, earnedSaver, late)` replaced
+  `SaverEarned`.
+  (3) **Flow**: ring closes (8) → `RingClosedCelebration` → if
+  `superInviteFor` says it's realistic *and* not yet shown today → `SuperDayInvite`
+  (one "Let's go") → at 12 → `SuperDayCelebration`. The only new stored value is
+  **`"super_invite_shown_day"`** (Long, the day's start millis, prefs `"b"`, not in
+  the CSV), written the moment the invite first shows, so declining or backgrounding
+  never re-asks and the next day starts fresh; it lives in `StreakEngine.kt` beside
+  the other prefs helpers. A late (after-midnight) ring close gets no invite by the
+  normal rule ("Yesterday's ring closed"). The Save label gains " · finishes your
+  Super day" / " · closes yesterday's ring" for yesterday's late hours
+  (`lateHourHint`).
+  (4) **Realism** (`reachableHours`): the invite and the status cue only promise
+  hours you can actually rate on time. Silent hours and an OFF pause remove a future
+  hour *only if its reminder moment (the hour's end) falls inside them*; reminders-off
+  drops nothing, since you can still open the app. Invite needs a spare hour
+  (`SUPER_DAY_SLACK`); the cue needs an exact fit.
+  (5) **UI**: `SuperGold` (#FFD54F, `ui/theme/Color.kt`) is the outer lap and Super
+  accents; the inner ring stays `HoneyGold`. `StreakRing` draws the lap in Master once
+  complete (beginner keeps the overflow head); `MiniHourRing` uses a single 1.5dp
+  SuperGold arc instead; StatusStrip reads "H/12" and "N more for a Super day" while
+  the cue is live (hidden during recovery); the Streak hero caption is "N more for a
+  Super day" → sparkle + "Super day"; the calendar tile is honey + `Sym.Sparkle` (no
+  halo — owner decision) with a legend key; the journal headline gets the sparkle and
+  "Super day". Copy swept: every "Rate 12 hours to earn a saver" line now reads "Rate
+  12 hours and it's a Super day, which earns a streak saver (up to 5)", built from
+  `SUPER_DAY_HOURS`/`SAVER_CAP`.
+  Not device-verified from this session: the celebration screens, the invite timing
+  around silent hours, the after-midnight "Yesterday" variants.

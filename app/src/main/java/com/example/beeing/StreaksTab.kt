@@ -439,7 +439,7 @@ fun StreaksTab(
                     } else {
                         Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("• Rate $SAVER_EARN_HOURS hours in a day to earn a streak saver (up to $SAVER_CAP). Miss a day and a saver steps in, so your streak still grows.", fontSize = 14.sp)
+                        Text("• Rate $SUPER_DAY_HOURS hours and it's a Super day, which earns a streak saver (up to $SAVER_CAP). Miss a day and a saver steps in, so your streak still grows.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
                         Text("• With no streak running, a missed day makes a saver fade — so start one. $COMEBACK_IDLE_DAYS days in a row without a complete day earns $COMEBACK_GIFT savers on the house.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))

@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.SAVER_CAP
-import com.example.beeing.SAVER_EARN_HOURS
 import com.example.beeing.STREAK_HOURS_REQUIRED
+import com.example.beeing.SUPER_DAY_HOURS
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -79,7 +79,7 @@ fun SaverExplainerDialog(savers: Int, beginner: Boolean = false, onDismiss: () -
             "Savers make sure you don't lose your streak on a day you rate fewer than $STREAK_HOURS_REQUIRED hours.",
             if (beginner) "Streaks grow in Master mode: rate $STREAK_HOURS_REQUIRED hours a day."
             else "Rate $STREAK_HOURS_REQUIRED hours a day to grow your streak.",
-            "Rate $SAVER_EARN_HOURS hours in a day to earn a saver, up to $SAVER_CAP."
+            "Rate $SUPER_DAY_HOURS hours and it's a Super day, which earns a streak saver (up to $SAVER_CAP)."
         ),
         onDismiss = onDismiss
     )
@@ -104,7 +104,7 @@ fun DailyGoalDialog(todayHours: Int, hoursRequired: Int, beginner: Boolean, onDi
             "Only hours you rate on time count. Hours added later don't.",
             // Beginner days never earn savers, so don't promise one
             if (beginner) null
-            else "Rating $SAVER_EARN_HOURS hours in a day earns a streak saver, up to $SAVER_CAP."
+            else "Rate $SUPER_DAY_HOURS hours and it's a Super day, which earns a streak saver (up to $SAVER_CAP)."
         ),
         onDismiss = onDismiss
     )
