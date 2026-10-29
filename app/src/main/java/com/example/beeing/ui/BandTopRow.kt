@@ -206,8 +206,11 @@ internal fun StatusStrip(
         else -> "No streak yet"
     }
     // While a Super day is still reachable the count aims at 12, not the goal already
-    // met, and the description names the same target the screen shows
-    val countTarget = if (superHoursLeft != null) SUPER_DAY_HOURS else state.hoursRequired
+    // met, and the description names the same target the screen shows. Once a Master
+    // day reaches 12 the cue goes away but the target stays, so success reads "12/12",
+    // never "12/8".
+    val superReached = !state.beginnerMode && state.todayHours >= SUPER_DAY_HOURS
+    val countTarget = if (superHoursLeft != null || superReached) SUPER_DAY_HOURS else state.hoursRequired
     val stripDescription =
         "$streakLabel · ${state.todayHours} of $countTarget hours rated today" +
             (superHoursLeft?.let { " · $it more for a Super day" } ?: "")

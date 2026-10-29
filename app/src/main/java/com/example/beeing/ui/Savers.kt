@@ -32,10 +32,15 @@ import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
 import com.example.beeing.ui.theme.HoneyGold
 
+/** How strongly a not-yet-earned (pending) saver slot shows its honey. */
+private const val PENDING_SLOT_ALPHA = 0.45f
+
 /**
  * [SAVER_CAP] shield slots: honey shields up to [savers], the rest the same shield
  * faded back, so earning one visibly "lights it up". Drawn for dark surfaces (the
- * brand band, the celebration); [highlightIndex] pops one slot.
+ * brand band, the celebration); [highlightIndex] pops one slot. [pendingIndex] marks
+ * a slot that could be earned but isn't yet: honey, but visibly dimmer than the earned
+ * ones, so a promise never reads as a saver already in hand.
  */
 @Composable
 fun SaverSlots(
@@ -45,17 +50,24 @@ fun SaverSlots(
     emptyColor: Color = Color.White.copy(alpha = 0.22f),
     fullColor: Color = HoneyGold,
     iconSize: Dp = 26.dp,
-    spacing: Dp = 8.dp
+    spacing: Dp = 8.dp,
+    pendingIndex: Int? = null,
+    description: String = "$savers of $SAVER_CAP streak savers"
 ) {
+    val pendingColor = fullColor.copy(alpha = fullColor.alpha * PENDING_SLOT_ALPHA)
     Row(
-        modifier.semantics { contentDescription = "$savers of $SAVER_CAP streak savers" },
+        modifier.semantics { contentDescription = description },
         horizontalArrangement = Arrangement.spacedBy(spacing),
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(SAVER_CAP) { i ->
             BeeIcon(
                 Sym.Saver, size = iconSize,
-                tint = if (i < savers) fullColor else emptyColor,
+                tint = when {
+                    i < savers -> fullColor
+                    i == pendingIndex -> pendingColor
+                    else -> emptyColor
+                },
                 contentDescription = null,
                 modifier = Modifier.scale(if (highlightIndex == i) 1.25f else 1f)
             )

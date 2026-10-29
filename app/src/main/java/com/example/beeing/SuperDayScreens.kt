@@ -205,10 +205,14 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
             if (invite.atCap) {
                 SaverSlots(invite.savers, iconSize = SLOT_SIZE, spacing = SLOT_GAP)
             } else {
-                // The slot this Super day would fill, glowing in time with the lap
+                // The slot this Super day would fill, glowing in time with the lap. It is
+                // a promise, not a saver: dimmer than the earned ones, and said that way
                 val slot = invite.savers
                 SaverSlots(
-                    invite.savers + 1, highlightIndex = slot, iconSize = SLOT_SIZE, spacing = SLOT_GAP,
+                    invite.savers, highlightIndex = slot, pendingIndex = slot,
+                    iconSize = SLOT_SIZE, spacing = SLOT_GAP,
+                    description = "${invite.savers} of $SAVER_CAP streak savers, " +
+                        "one more if you make it a Super day",
                     modifier = Modifier.drawBehind {
                         val r = 24.dp.toPx()
                         val c = Offset((SLOT_SIZE + SLOT_GAP).toPx() * slot + SLOT_SIZE.toPx() / 2f, size.height / 2f)

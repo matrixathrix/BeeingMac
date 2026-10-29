@@ -50,8 +50,14 @@ class PaletteContrastTest {
         assertContrast(7.0, Color.White, x.bandBottom, "$n white/bandBottom")
     }
 
+    // The journal's "Super day" label (12sp SemiBold) sits on a day card: small text, so 4.5.
+    @Test
+    fun accent_text_on_card_is_readable() = extras.forEach { (n, x) ->
+        assertContrast(4.5, x.accentText, schemes.getValue(n).surface, "$n accentText/surface")
+    }
+
     // The at-risk streak count (flame, number and "!") sits on the band.
-    
+    @Test
     fun at_risk_red_reads_on_band() {
         listOf(BandTopLight, BandBottomLight, BandTopDark, BandBottomDark).forEach { band ->
             assertContrast(3.0, StreakAtRiskRed, band, "at-risk red on band $band")

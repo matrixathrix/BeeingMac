@@ -167,8 +167,8 @@ case verify by static review and say so explicitly — the user compiles locally
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
 | `res/drawable/ic_sym_*.xml` | The vendored Material Symbols. Each is a converted SVG: Material Symbols ship `viewBox="0 -960 960 960"`, which a `<vector>` cannot express (there is no viewport origin), so every file wraps its path in `<group android:translateY="960">`. `fillColor` is opaque black and the tint comes from `BeeIcon` |
 | `ui/icons/BeeIcons.kt` | **The icon vocabulary.** `Sym` enum (one entry per meaning: Streak/Beginner/Rest/Reclaim/FromMemory/Lock/Hourglass/Reset/Star/Sparkle/Alarm/Chart/Tag/Note/Hive/CaughtUp) → a vector drawable in `res/drawable/ic_sym_*.xml`, plus `BeeIcon(sym, size, tint, contentDescription)` and `SymTitle(sym, text)` for dialog titles. Drawables are **Material Symbols Rounded**, converted from the official SVGs (see below) |
-| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete! 🌱" |
-| `StreakRules.kt` | **The pure rules engine (2026-10-28), no Context/Compose.** Constants (`SUPER_DAY_*`, `SAVER_*`, `COMEBACK_*`, `RECOVERY_*`, `RECLAIM_*`, `RECLAIM_TAG`), `ModeEvent` + `beginnerAt`, `DayOutcome` (QUALIFIED/SAVED/FADED/BROKEN/MISSED/RECOVERED/BEGINNER_COMPLETE), `StreakEventType`/`StreakEvent` (stable ids), `StreakState`, the one private-ish `replay` walk and its readers `computeStreakState`/`computeDayOutcomes`/`computeStreakEvents`, plus the day-keyed triggers `singleNewHourDay` / `ringClosed` / `streakMoment()` (the Super day / recovered moments: fire only when exactly one new counted hour landed in a day), `DayTally` + `StreakState.recentDays`, `computeSuperDays`. Supersedes the `StreakEngine.kt` row's engine description — that file now holds only the composables (`StreakMeter`, `StreakRing`, `StreakLogContent`), persistence helpers and `visibleTags()` |
+| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner, late, superInvite)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete!"; `late` (yesterday's ring, closed by an hour rated after midnight) captions "Yesterday's ring closed"; a non-null `superInvite` means `SuperDayInvite` follows, so the scrim fades into its aubergine field (`BandBottomLight`) instead of to transparent and the hand-off never flashes the app underneath |
+| `StreakRules.kt` | **The pure rules engine (2026-10-28), no Context/Compose.** Constants (`SUPER_DAY_*`, `SAVER_*`, `COMEBACK_*`, `RECOVERY_*`, `RECLAIM_*`, `RECLAIM_TAG`), `ModeEvent` + `beginnerAt`, `DayOutcome` (QUALIFIED/SAVED/FADED/BROKEN/MISSED/RECOVERED/BEGINNER_COMPLETE), `StreakEventType`/`StreakEvent` (stable ids), `StreakState`, the one private-ish `replay` walk and its readers `computeStreakState`/`computeDayOutcomes`/`computeStreakEvents`, plus the day-keyed triggers `singleNewHourDay` / `ringClosed` / `streakMoment()` (the Super day / recovered moments: fire only when exactly one new counted hour landed in a day, and it is one of the two hours ratable right now), `DayTally` + `StreakState.recentDays`, `computeSuperDays`. Supersedes the `StreakEngine.kt` row's engine description — that file now holds only the composables (`StreakMeter`, `StreakRing`, `StreakLogContent`), persistence helpers and `visibleTags()` |
 | `Warnings.kt` / `WarningsBell.kt` | Bell items are a filtered view of the streak events: `warningsFrom`/`unreadCount` + the spec copy (pure, `Warnings.kt`); read ids / baseline / on-off in prefs and the "Heads up" `WarningsSheet` (`WarningsBell.kt`). Events before the baseline (first launch, last import) count as read |
 | `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
 | `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
@@ -1050,7 +1050,12 @@ case verify by static review and say so explicitly — the user compiles locally
   the day's start*, not "today's count", so an 11pm hour rated after midnight still
   celebrates yesterday ("Yesterday was a Super day") while replay, import, backdated
   saves and mode toggles — none of which add exactly one new counted hour to one
-  day — still can't. `StreakMoment.SuperDay(savers, earnedSaver, late)` replaced
+  day — still can't. They also require the one new hour to be **one of the two hours
+  ratable at `nowMs`** (the last two finished clock hours; `nowMs` defaults to the
+  clock): a Delete + Undo in the Past journal restores an entry with its *old*
+  timestamp, and without this guard undoing one of yesterday's hours at 3pm (with
+  yesterday sitting at 8 or 12) fired "Yesterday's ring closed" / "Yesterday was a
+  Super day" mid-day. `StreakMoment.SuperDay(savers, earnedSaver, late)` replaced
   `SaverEarned`.
   (3) **Flow**: ring closes (8) → `RingClosedCelebration` → if
   `superInviteFor` says it's realistic *and* not yet shown today → `SuperDayInvite`
@@ -1070,9 +1075,14 @@ case verify by static review and say so explicitly — the user compiles locally
   (5) **UI**: `SuperGold` (#FFD54F, `ui/theme/Color.kt`) is the outer lap and Super
   accents; the inner ring stays `HoneyGold`. `StreakRing` draws the lap in Master once
   complete (beginner keeps the overflow head); `MiniHourRing` uses a single 1.5dp
-  SuperGold arc instead; StatusStrip reads "H/12" and "N more for a Super day" while
-  the cue is live (hidden during recovery); the Streak hero caption is "N more for a
-  Super day" → sparkle + "Super day"; the calendar tile is honey + `Sym.Sparkle` (no
+  SuperGold arc instead; the StatusStrip's visible count reads "H/12" while the cue
+  is live (hidden during recovery) and stays "H/12" once a Master day reaches 12 (it
+  never flips to "12/8"); the phrase "N more for a Super day" is only in its
+  accessibility description. The Streak hero caption shows it visibly: "N more for a
+  Super day" → sparkle + "Super day"; the invite's saver row draws the slot it would
+  earn dimmer than earned ones (`SaverSlots(pendingIndex)`) and says "N of 5 streak
+  savers, one more if you make it a Super day"; the Streak tab's state is keyed on
+  the day start, so left open across midnight it moves on to the new day; the calendar tile is honey + `Sym.Sparkle` (no
   halo — owner decision) with a legend key; the journal headline gets the sparkle and
   "Super day". Copy swept: every "Rate 12 hours to earn a saver" line now reads "Rate
   12 hours and it's a Super day, which earns a streak saver (up to 5)", built from

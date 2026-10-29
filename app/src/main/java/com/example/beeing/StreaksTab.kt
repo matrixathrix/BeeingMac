@@ -75,13 +75,24 @@ fun StreaksTab(
     var spendsVersion by remember { mutableIntStateOf(0) }
     val reclaimSpends = remember(spendsVersion) { loadReclaimSpends(context) }
     val modeEvents = viewModel.modeEvents
-    val streakState = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+    // Start of today, so a tab left open across midnight stops showing yesterday as
+    // today (its ring, its "Super day" caption). The clock ticks in the effect, and the
+    // state is written only when the day actually changes: no recomposition per tick.
+    var todayStart by remember { mutableLongStateOf(startOfToday()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            val day = startOfToday()
+            if (day != todayStart) todayStart = day
+        }
+    }
+    val streakState = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion, todayStart) {
         computeStreakState(allRatings, modeEvents)
     }
-    val outcomes = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+    val outcomes = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion, todayStart) {
         computeDayOutcomes(allRatings, modeEvents)
     }
-    val superDays = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion) {
+    val superDays = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion, todayStart) {
         computeSuperDays(allRatings, modeEvents)
     }
     // Per-day average score — tints the calendar dots
@@ -867,3 +878,8 @@ fun ReclaimHourDialog(
         }
     )
 }
+
+/** Epoch ms of local midnight today. */
+private fun startOfToday(): Long = Calendar.getInstance().apply {
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
