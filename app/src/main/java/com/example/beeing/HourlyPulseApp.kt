@@ -6,8 +6,13 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -45,6 +50,9 @@ import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -69,6 +77,8 @@ fun HourlyPulseApp(
         openTab?.let { selectedTab = it; onOpenTabConsumed() }
     }
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
+    // Continuous position: whole part = page, fraction = swipe progress
+    val pagerPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction }
     LaunchedEffect(selectedTab) {
         if (pagerState.currentPage != selectedTab) {
             pagerState.animateScrollToPage(
@@ -138,12 +148,38 @@ fun HourlyPulseApp(
 
     // Full-screen celebration when the daily ring closes (streak day secured)
     var ringCelebration by remember { mutableStateOf<RingCelebration?>(null) }
-    // A saver earned or a streak won back; waits its turn behind the ring celebration
+    // "Make it a Super day": the ring celebration hands it over when it finishes
+    var superInvite by remember { mutableStateOf<SuperInvite?>(null) }
+    // A Super day or a streak won back; waits its turn behind the ring celebration and the invite
     var streakMoment by remember { mutableStateOf<StreakMoment?>(null) }
 
+    // The current clock hour's start. Polled once a minute, but an unchanged Long writes
+    // nothing, so the root recomposes only when the hour turns: enough for "today" to
+    // roll over at midnight and for the Super day cue to drop once 12 is out of reach.
+    val hourStart by produceState(initialValue = currentHourStartMs()) {
+        while (true) {
+            delay(60_000)
+            value = currentHourStartMs()
+        }
+    }
+
     // Mode + streak, shared by the menu copy, the explainer and the nudge
-    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger) {
+    val streakState = remember(viewModel.allRatings, viewModel.modeEvents, viewModel.refreshTrigger, hourStart) {
         computeStreakState(viewModel.allRatings, viewModel.modeEvents)
+    }
+    // "N more for a Super day" on the Streak ring and the Now strip: today only, while 12
+    // still fits, and never while a recovery window is open (its own cue wins there).
+    // Keyed on hourStart directly: reachability moves with the clock hour, and an
+    // hourly recompute of streakState with no new rating is equal, so it can't carry the
+    // change. Re-read when Settings closes too, since silent hours and pause decide
+    // which hours are reachable.
+    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, showSettings, hourStart) {
+        streakState.recentDays.lastOrNull()?.takeIf { it.isToday && !streakState.recoveryOpen }?.let {
+            superCueFor(
+                it,
+                reachableHours(it.dayStartMs, it.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis())
+            )
+        }
     }
 
     // ---- The warnings bell: the "Heads up" items are a filtered view of the replayed
@@ -168,8 +204,25 @@ fun HourlyPulseApp(
         onStreakClick = { selectedTab = 0 },
         onBellClick = { showWarnings = true },
         onMenuClick = { showSettings = true },
-        onTopRowHidden = { topRowHidden = it }
+        onTopRowHidden = { topRowHidden = it },
+        bandUnder = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        superHoursLeft = superHoursLeft
     )
+
+    // Status-bar icons follow what is under them: white over a band (Streak, Now),
+    // dark over the plain light page (Past, Trends, Settings). Dark mode is always
+    // white. BeeingTheme no longer sets this — it can't see the pager.
+    val view = LocalView.current
+    val darkTheme = isSystemInDarkTheme()
+    // derivedStateOf: the root must not recompose on every swipe frame
+    val overPlainPage by remember { derivedStateOf { pagerPosition() > 1.5f } }
+    val lightStatusIcons = !darkTheme && (showSettings || showManageTags || overPlainPage)
+    SideEffect {
+        (view.context as? Activity)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightStatusIcons
+        }
+    }
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
     // as shown the moment it appears, so declining is not re-asked.
@@ -183,15 +236,29 @@ fun HourlyPulseApp(
         }
     }
 
-    // Back press handling (double tap to exit)
+    // Back: Streak and Past step home to Now first, so leaving the app always
+    // passes the Now tab, where (once caught up) the bee is the way out. On Now,
+    // a double press exits; the first one points at the bee when it is there.
+    // (Trends' and Settings' own handlers are registered later and win first.)
     var lastBackPress by remember { mutableLongStateOf(0L) }
+    var nowCaughtUp by remember { mutableStateOf(false) }
     BackHandler {
+        if (selectedTab != 1) {
+            selectedTab = 1
+            lastBackPress = 0L
+            return@BackHandler
+        }
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastBackPress < 2000) {
             (context as? Activity)?.finish()
         } else {
             lastBackPress = currentTime
-            android.widget.Toast.makeText(context, "Press back again to exit the app", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(
+                context,
+                if (nowCaughtUp) "Catch the bee to lock your phone, or press back again to exit"
+                else "Press back again to exit the app",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -325,6 +392,8 @@ fun HourlyPulseApp(
                     onRatingCardYPosition = { ratingCardYPosition = it },
                     onOpenStreaks = { selectedTab = 0 },
                     onMenuClick = { showSettings = true },
+                    onOpenTags = { showManageTags = true },
+                    onCaughtUpChange = { nowCaughtUp = it },
                     pendingScore = pendingScore,
                     pendingTags = pendingTags,
                     onPendingScoreConsumed = { pendingScore = null },
@@ -370,7 +439,7 @@ fun HourlyPulseApp(
                         InfoSection(Sym.Fire, "Build Your Streak")
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SAVER_EARN_HOURS to earn a streak saver (up to $SAVER_CAP): miss a day and one steps in on its own, so the streak holds. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
+                            "Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak. Rate $SUPER_DAY_HOURS hours and it's a Super day, which earns a streak saver (up to $SAVER_CAP). Miss a day and one steps in, so your streak still grows. With no streak running, a saver fades instead. Out of savers? The streak breaks, but rating $RECOVERY_HOURS hours on any of the next $RECOVERY_DAYS days wins it back. Missed an hour? Add a past hour from the last $RECLAIM_WINDOW_HOURS, free, $RECLAIM_PER_DAY a day. It stays in your record but doesn't count toward a streak.",
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
@@ -523,8 +592,10 @@ fun HourlyPulseApp(
 
     // ---- The top row is drawn ONCE, above the pager, so it stays put while tabs
     // slide underneath. Each tab's band reserves its height with BandTopRowSpacer.
-    // Hidden while Trends is open (it has its own back row). ----
-    if (!topRowHidden) {
+    // Hidden while Trends is open (it has its own back row) AND the pager is on
+    // Past: the pager keeps Past composed after a jump to Now, so Trends' flag
+    // alone would leave Now without its top row. ----
+    if (!(topRowHidden && overPlainPage)) {
         Box(
             Modifier
                 .align(Alignment.TopCenter)
@@ -537,9 +608,16 @@ fun HourlyPulseApp(
     }
 
     // ---- Settings: a full-screen page above the Scaffold (covers the nav bar).
-    // Registered after the root BackHandler, so system back closes it first. ----
-    if (showSettings) {
-        BackHandler { showSettings = false }
+    // Registered after the root BackHandler, so system back closes it first.
+    // Slides in from the right and back out, like Trends over the journal. ----
+    BackHandler(enabled = showSettings) { showSettings = false }
+    AnimatedVisibility(
+        visible = showSettings,
+        enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } +
+                fadeIn(tween(300, easing = FastOutSlowInEasing)),
+        exit = slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it } +
+                fadeOut(tween(260, easing = FastOutSlowInEasing))
+    ) {
         SettingsScreen(
             callbacks = SettingsCallbacks(
                 beginnerMode = streakState.beginnerMode,
@@ -582,12 +660,20 @@ fun HourlyPulseApp(
             onBack = { showSettings = false }
         )
     }
-    if (showSaverInfo) SaverExplainerDialog(streakState.savers) { showSaverInfo = false }
-    if (showManageTags) {
-        SettingsManageTags(
+    if (showSaverInfo) SaverExplainerDialog(streakState.savers, streakState.beginnerMode) { showSaverInfo = false }
+    // Tags: a page pushed over Settings, sliding the same way. ----
+    BackHandler(enabled = showManageTags) { showManageTags = false }
+    AnimatedVisibility(
+        visible = showManageTags,
+        enter = slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } +
+                fadeIn(tween(300, easing = FastOutSlowInEasing)),
+        exit = slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it } +
+                fadeOut(tween(260, easing = FastOutSlowInEasing))
+    ) {
+        TagsScreen(
             context = context,
             onChanged = { viewModel.triggerRefresh() },
-            onDismiss = { showManageTags = false }
+            onBack = { showManageTags = false }
         )
     }
 
@@ -596,12 +682,23 @@ fun HourlyPulseApp(
     ringCelebration?.let { celebration ->
         RingClosedCelebration(
             celebration = celebration,
-            onDone = { ringCelebration = null }
+            onDone = {
+                superInvite = celebration.superInvite
+                ringCelebration = null
+            }
         )
     }
-    if (ringCelebration == null) {
-        streakMoment?.let { moment ->
-            StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+    superInvite?.let { invite ->
+        // Once a day, counted from the moment it shows (not the ring close, which a
+        // kill during the takeover would otherwise burn unseen)
+        LaunchedEffect(invite) { markSuperInviteShown(context, invite.dayStartMs) }
+        SuperDayInvite(invite = invite, onDone = { superInvite = null })
+    }
+    if (ringCelebration == null && superInvite == null) {
+        when (val moment = streakMoment) {
+            is StreakMoment.SuperDay -> SuperDayCelebration(moment = moment, onDone = { streakMoment = null })
+            is StreakMoment.Recovered -> StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+            null -> Unit
         }
     }
     }
@@ -698,3 +795,9 @@ private fun BottomNavBar(
         }
     }
 }
+/** Epoch ms of the start of the current clock hour. */
+private fun currentHourStartMs(): Long = Calendar.getInstance().apply {
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis

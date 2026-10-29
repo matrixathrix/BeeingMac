@@ -51,7 +51,8 @@ class StreakRulesTest {
     private fun List<StreakEvent>.countOf(t: StreakEventType) = count { it.type == t }
 
     // 3 qualifying days, then two saver spends, then the break
-    private val brokenThree = listOf(8, 8, 8, 0, 0, 0)
+    // 3 complete days + 2 saved (each saved day still counts) = 5, then the break
+    private val brokenAtFive = listOf(8, 8, 8, 0, 0, 0)
 
     @Test fun starts_with_two_savers() {
         val s = state(emptyList())
@@ -87,7 +88,8 @@ class StreakRulesTest {
         val r = hist(listOf(8, 8, 8, 0))
         val s = state(r)
         assertEquals(DayOutcome.SAVED, outcomes(r)[keyOf(1)])
-        assertEquals(3, s.currentStreak); assertEquals(1, s.savers)
+        // The saved day counts: three complete days + one saved = 4
+        assertEquals(4, s.currentStreak); assertEquals(1, s.savers)
         val e = events(r)
         assertEquals(1, e.countOf(StreakEventType.SAVER_USED))
         assertEquals(1, e.countOf(StreakEventType.LOW_SAVERS))
@@ -101,10 +103,10 @@ class StreakRulesTest {
     }
 
     @Test fun miss_with_no_savers_breaks_and_opens_window() {
-        val r = hist(brokenThree)
+        val r = hist(brokenAtFive)
         val s = state(r)
         assertEquals(DayOutcome.BROKEN, outcomes(r)[keyOf(1)])
-        assertTrue(s.recoveryOpen); assertEquals(3, s.displayStreak); assertEquals(0, s.currentStreak)
+        assertTrue(s.recoveryOpen); assertEquals(5, s.displayStreak); assertEquals(0, s.currentStreak)
         assertEquals(3, s.recoveryDaysLeft)
         assertEquals(1, events(r).countOf(StreakEventType.STREAK_BROKE))
     }
@@ -112,31 +114,31 @@ class StreakRulesTest {
     @Test fun ten_hours_on_window_day_1_2_3_recovers() {
         val cases = listOf(listOf(10), listOf(3, 10), listOf(3, 3, 10))
         for (window in cases) {
-            val r = hist(brokenThree + window)
+            val r = hist(brokenAtFive + window)
             val s = state(r)
             assertEquals(DayOutcome.RECOVERED, outcomes(r)[keyOf(1)])
             assertFalse(s.recoveryOpen)
-            assertEquals(4, s.currentStreak)
+            assertEquals(6, s.currentStreak)
         }
     }
 
     @Test fun recovery_counts_qualifying_days_and_ignores_short_ones() {
-        assertEquals(5, state(hist(brokenThree + listOf(8, 3, 10))).currentStreak)
+        assertEquals(7, state(hist(brokenAtFive + listOf(8, 3, 10))).currentStreak)
     }
 
     @Test fun day_four_does_not_recover() {
-        val r = hist(brokenThree + listOf(3, 3, 3, 10))
+        val r = hist(brokenAtFive + listOf(3, 3, 3, 10))
         assertEquals(DayOutcome.QUALIFIED, outcomes(r)[keyOf(1)])
         assertEquals(1, state(r).currentStreak)
     }
 
     @Test fun closed_window_keeps_trailing_run() {
-        assertEquals(1, state(hist(brokenThree + listOf(8, 3, 8))).currentStreak)
-        assertEquals(0, state(hist(brokenThree + listOf(8, 8, 3))).currentStreak)
+        assertEquals(1, state(hist(brokenAtFive + listOf(8, 3, 8))).currentStreak)
+        assertEquals(0, state(hist(brokenAtFive + listOf(8, 8, 3))).currentStreak)
     }
 
     @Test fun no_burn_inside_open_window() {
-        val r = hist(brokenThree + listOf(1))
+        val r = hist(brokenAtFive + listOf(1))
         val e = events(r)
         assertEquals(2, e.countOf(StreakEventType.SAVER_USED))
         assertEquals(0, e.countOf(StreakEventType.SAVER_FADED))
@@ -153,25 +155,25 @@ class StreakRulesTest {
     }
 
     @Test fun today_ten_hours_recovers_immediately() {
-        val r = hist(brokenThree, today = 10)
+        val r = hist(brokenAtFive, today = 10)
         val s = state(r)
         assertEquals(DayOutcome.RECOVERED, outcomes(r)[keyOf(0)])
-        assertFalse(s.recoveryOpen); assertEquals(4, s.currentStreak)
+        assertFalse(s.recoveryOpen); assertEquals(6, s.currentStreak)
     }
 
     @Test fun recovery_days_left_events_at_two_and_one() {
-        val e = events(hist(brokenThree + listOf(3, 3, 3))).filter { it.type == StreakEventType.RECOVERY_DAYS_LEFT }
+        val e = events(hist(brokenAtFive + listOf(3, 3, 3))).filter { it.type == StreakEventType.RECOVERY_DAYS_LEFT }
         assertEquals(listOf(1, 2), e.map { it.daysLeft }.sorted())
         assertEquals(2, e.map { it.id }.toSet().size)
     }
 
     @Test fun beginner_days_use_window_days_and_cannot_recover() {
-        val r = hist(brokenThree + listOf(10))
+        val r = hist(brokenAtFive + listOf(10))
         val m = beginnerOn(1)
         val s = state(r, m)
         assertEquals(DayOutcome.BEGINNER_COMPLETE, outcomes(r, m)[keyOf(1)])
         assertTrue(s.recoveryOpen); assertEquals(2, s.recoveryDaysLeft)
-        assertEquals(0, state(hist(brokenThree + listOf(10, 3, 3)), beginnerOn(3)).currentStreak)
+        assertEquals(0, state(hist(brokenAtFive + listOf(10, 3, 3)), beginnerOn(3)).currentStreak)
     }
 
     @Test fun beginner_days_neither_earn_nor_spend() {
@@ -208,9 +210,98 @@ class StreakRulesTest {
             val s = state(r)
             assertEquals(DayOutcome.BROKEN, outcomes(r)[keyOf(4)])
             assertEquals(DayOutcome.RECOVERED, outcomes(r)[keyOf(1)])
-            assertEquals(4, s.currentStreak); assertFalse(s.recoveryOpen)
+            assertEquals(6, s.currentStreak); assertFalse(s.recoveryOpen)
         } finally {
             TimeZone.setDefault(saved)
         }
+    }
+
+    private fun superDays(r: List<RatingEntry>, m: List<ModeEvent> = emptyList(), nowMs: Long = now()) =
+        computeSuperDays(r, m, nowMs)
+
+    @Test fun super_day_event_fires_at_the_twelfth_hour_even_at_cap() {
+        // Four 12-hour days fill the savers to the cap of 5; the fifth is a Super day with nothing to earn.
+        val r = hist(listOf(12, 12, 12, 12, 12))
+        assertEquals(5, state(r).savers)
+        val last = events(r).filter { it.dayStartMs == dayStart(1) }
+        val supers = last.filter { it.type == StreakEventType.SUPER_DAY }
+        assertEquals(1, supers.size)
+        assertEquals("SUPER_DAY:${keyOf(1)}", supers[0].id)
+        assertEquals(entry(1, 11, false).timestamp, supers[0].timestamp)
+        assertEquals(0, last.countOf(StreakEventType.SAVER_EARNED))
+    }
+
+    @Test fun backdated_hours_never_make_a_super_day() {
+        val r = day(1, 11, 1)
+        assertEquals(0, events(r).countOf(StreakEventType.SUPER_DAY))
+        assertFalse(keyOf(1) in superDays(r))
+        assertTrue(keyOf(1) in superDays(day(1, 12)))
+    }
+
+    @Test fun beginner_day_with_twelve_hours_is_not_super() {
+        val r = day(1, 12)
+        assertFalse(keyOf(1) in superDays(r, beginnerOn(1)))
+        assertEquals(0, events(r, beginnerOn(1)).countOf(StreakEventType.SUPER_DAY))
+    }
+
+    @Test fun recent_days_hold_yesterday_and_today() {
+        val r = day(1, 3) + day(0, 1)
+        val recent = state(r).recentDays
+        assertEquals(listOf(3, 1), recent.map { it.countedHours })
+        assertTrue(recent.last().isToday)
+        assertFalse(recent.first().isToday)
+        assertEquals(8, recent.first().goal)
+        assertEquals(dayStart(1), recent.first().dayStartMs)
+        assertEquals(listOf(entry(0, 0).timestamp), recent.last().countedStarts)
+    }
+
+    @Test fun late_eleven_pm_hour_counts_for_yesterday() {
+        val midnightNow = Calendar.getInstance().apply {
+            timeInMillis = dayStart(0); set(Calendar.MINUTE, 6)
+        }.timeInMillis
+        val late = RatingEntry(
+            id = dayStart(0) + 5 * 60_000L, score = 7,
+            timestamp = entry(1, 23).timestamp, hourLabel = "", tags = listOf("Work")
+        )
+        val r = day(1, 11) + late
+        val s = computeStreakState(r, emptyList(), midnightNow)
+        assertTrue(s.recentDays.first().superDay)
+        assertEquals(12, s.recentDays.first().countedHours)
+        assertTrue(keyOf(1) in superDays(r, nowMs = midnightNow))
+    }
+
+    // --- Task 8: the record ---------------------------------------------------
+
+    private fun logEv(type: StreakEventType, dayMs: Long, id: String, savers: Int = 0) =
+        StreakEvent(id, dayMs + 1000L, type, 0, savers, 0, dayMs)
+
+    @Test fun log_rows_merge_saver_into_super_day() {
+        val d = dayStart(1)
+        val rows = logRows(
+            listOf(
+                logEv(StreakEventType.SUPER_DAY, d, "SUPER_DAY:a"),
+                logEv(StreakEventType.SAVER_EARNED, d, "SAVER_EARNED:a"),
+                logEv(StreakEventType.COMPLETED, d, "COMPLETED:a")
+            )
+        )
+        assertEquals(
+            listOf(StreakEventType.SUPER_DAY to true, StreakEventType.COMPLETED to false),
+            rows.map { it.first.type to it.second }
+        )
+    }
+
+    @Test fun super_day_log_detail_at_cap() {
+        val oct3 = Calendar.getInstance().apply {
+            set(2026, Calendar.OCTOBER, 3, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val e = logEv(StreakEventType.SUPER_DAY, oct3, "SUPER_DAY:x", savers = 4)
+        assertEquals("12 hours on 3 Oct — all 5 savers saved up", e.logDetail(false))
+        assertEquals("12 hours on 3 Oct — streak saver earned, 4 of 5 saved up", e.logDetail(true))
+    }
+
+    @Test fun super_day_is_not_a_warning_or_alert() {
+        val e = logEv(StreakEventType.SUPER_DAY, dayStart(1), "SUPER_DAY:y", savers = 3)
+        assertTrue(warningsFrom(listOf(e), 0L, e.timestamp) { "" }.isEmpty())
+        assertTrue(alertsToPost(listOf(e), emptySet(), 0L).isEmpty())
     }
 }

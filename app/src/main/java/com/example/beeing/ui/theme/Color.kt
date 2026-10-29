@@ -15,8 +15,8 @@ val HoneyDeep = Color(0xFF9A6000)        // light-mode `primary`: honey that rea
 // Brand band gradient (top → bottom), per mode.
 val BandTopLight = Color(0xFF4A1D4F)
 val BandBottomLight = Color(0xFF2E0F33)
-val BandTopDark = Color(0xFF2C1030)
-val BandBottomDark = Color(0xFF1C0920)
+val BandTopDark = Color(0xFF3F1947)     // lifted 2026-10-29: the old #2C1030 read as a muddy blob on the near-black page
+val BandBottomDark = Color(0xFF2A0F31)
 
 // Accent used as text/icon on the page (darker in light mode to read on white).
 val AccentTextLight = Color(0xFF9A6000)   // = HoneyDeep: 4.5:1+ on the page for 12–15sp labels
@@ -46,3 +46,7 @@ val RingQualifiedGreen = Color(0xFF66BB6A)
 // aubergine band (the 1-4 score red is too dark there).
 val StreakAtRiskRed = Color(0xFFFF6B6B)
 
+
+// Super day: the outer lap (hours 9-12) and its accents. Lighter than HoneyGold so
+// the two laps read apart; the inner ring stays HoneyGold.
+val SuperGold = Color(0xFFFFD54F)

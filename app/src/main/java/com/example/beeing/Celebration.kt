@@ -10,7 +10,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -25,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -32,12 +32,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.theme.BandBottomLight
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -63,9 +65,16 @@ private val CONFETTI_COLORS = listOf(
 /**
  * What closed, and under which mode. The ceremony is the same either way — it
  * is the one daily celebration — but a beginner day must not be announced as a
- * day streak, because the streak is paused and did not move.
+ * day streak, because the streak is paused and did not move. [late]: the ring
+ * that closed was yesterday's (an hour added after midnight). [superInvite]: the
+ * "Make it a Super day" invite follows, so the takeover ends on its field.
  */
-data class RingCelebration(val count: Int, val beginner: Boolean)
+data class RingCelebration(
+    val count: Int,
+    val beginner: Boolean,
+    val late: Boolean = false,
+    val superInvite: SuperInvite? = null
+)
 
 /**
  * Full-screen ~2s takeover when the daily ring closes, Duolingo style:
@@ -105,15 +114,22 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
     }
     val overshoot = remember { OvershootInterpolator(2.5f) }
 
-    val progress = t.value
-    // Phases: 0–0.18 ring slams shut · 0.18 flash + burst · 0.85–1 fade out
-    val fadeOut = ((1f - progress) / 0.15f).coerceIn(0f, 1f)
-    val scrimAlpha = (progress / 0.08f).coerceIn(0f, 1f) * 0.96f * fadeOut
+    // Phases: 0–0.18 ring slams shut · 0.18 flash + burst · 0.85–1 fade out.
+    // t is read only in draw / graphicsLayer lambdas, so the 4.2s never recomposes.
+    fun fadeOutAt(p: Float) = ((1f - p) / 0.15f).coerceIn(0f, 1f)
+    // With the invite next, the scrim fades into its aubergine field rather than
+    // to transparent, so the hand-off never flashes the app underneath.
+    val handOff = celebration.superInvite != null
+    val scrimEnd = if (handOff) BandBottomLight else Color.Black.copy(alpha = 0f)
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = scrimAlpha))
+            .drawBehind {
+                val p = t.value
+                val scrim = lerp(scrimEnd, Color.Black.copy(alpha = 0.96f), fadeOutAt(p))
+                drawRect(scrim.copy(alpha = scrim.alpha * (p / 0.08f).coerceIn(0f, 1f)))
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -121,6 +137,8 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            val progress = t.value
+            val fadeOut = fadeOutAt(progress)
             val c = center
             val radius = size.minDimension * 0.24f
 
@@ -177,12 +195,13 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
         }
 
         // Streak number pops in with overshoot as the ring closes
-        val pop = overshoot.getInterpolation(((progress - 0.14f) / 0.22f).coerceIn(0f, 1f))
         Column(
             Modifier.graphicsLayer {
+                val progress = t.value
+                val pop = overshoot.getInterpolation(((progress - 0.14f) / 0.22f).coerceIn(0f, 1f))
                 scaleX = pop
                 scaleY = pop
-                alpha = pop.coerceIn(0f, 1f) * fadeOut
+                alpha = pop.coerceIn(0f, 1f) * fadeOutAt(progress)
             },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -204,20 +223,24 @@ fun RingClosedCelebration(celebration: RingCelebration, onDone: () -> Unit) {
         }
 
         // Caption slides up beneath the ring once everything has landed
-        val captionIn = ((progress - 0.35f) / 0.2f).coerceIn(0f, 1f)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = 170.dp)
                 .graphicsLayer {
+                    val progress = t.value
+                    val captionIn = ((progress - 0.35f) / 0.2f).coerceIn(0f, 1f)
                     translationY = (1f - captionIn) * 40f
-                    alpha = captionIn * fadeOut
+                    alpha = captionIn * fadeOutAt(progress)
                 }
         ) {
             Text(
-                if (celebration.beginner) "Ring closed — beginner day complete!"
-                else "Ring closed — day secured!",
+                when {
+                    celebration.late -> "Yesterday's ring closed"
+                    celebration.beginner -> "Ring closed — beginner day complete!"
+                    else -> "Ring closed — day secured!"
+                },
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White

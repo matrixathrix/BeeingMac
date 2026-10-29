@@ -86,6 +86,13 @@ enum class Sym(@DrawableRes val res: Int, val label: String) {
     /** Nothing left to rate. */
     CaughtUp(R.drawable.ic_sym_check_circle, "all caught up"),
 
+    // ---- settings rows (24dp Material Icons, not the 960-grid Symbols) ----
+    NotificationsOff(R.drawable.ic_sym_notifications_off, "pause notifications"),
+    Folder(R.drawable.ic_sym_folder, "folder"),
+    Backup(R.drawable.ic_sym_backup, "backup"),
+    Export(R.drawable.ic_sym_export, "export"),
+    Import(R.drawable.ic_sym_import, "import"),
+
     // ---- the built-in activity tags (see tagSym) ----
     TagWork(R.drawable.ic_sym_tag_work, "work"),
     TagLearning(R.drawable.ic_sym_tag_learning, "learning"),

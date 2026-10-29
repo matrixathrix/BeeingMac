@@ -22,15 +22,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -41,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.STREAK_HOURS_REQUIRED
+import com.example.beeing.SUPER_DAY_HOURS
 import com.example.beeing.StreakState
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
@@ -48,6 +54,7 @@ import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
 import com.example.beeing.ui.theme.StreakAtRiskRed
+import com.example.beeing.ui.theme.SuperGold
 
 /**
  * What the shared top row needs from the app root. Provided once above the pager
@@ -60,7 +67,17 @@ class BandChrome(
     val onStreakClick: () -> Unit,
     val onBellClick: () -> Unit,
     val onMenuClick: () -> Unit,
-    val onTopRowHidden: (Boolean) -> Unit = {}
+    val onTopRowHidden: (Boolean) -> Unit = {},
+    /**
+     * How much of a band is under the row right now, 0…1, off the pager's
+     * continuous position: Streak and Now have one, Past doesn't (it opens on the
+     * plain page under a large title). The row crossfades its ink with the swipe.
+     */
+    val bandUnder: () -> Float = { 1f },
+    /** How much of the Now tab is showing, 0…1: the status strip lives there only. */
+    val nowShown: () -> Float = { 1f },
+    /** Hours still to go to a Super day, while 12 is reachable today (else null). */
+    val superHoursLeft: Int? = null
 )
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
@@ -75,13 +92,19 @@ fun BandTopRow(
     BandTopRow(
         state = chrome.state, unread = chrome.unread,
         onStreakClick = chrome.onStreakClick, onBellClick = chrome.onBellClick,
-        onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle
+        onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle,
+        bandUnder = chrome.bandUnder(), nowShown = chrome.nowShown(),
+        superHoursLeft = chrome.superHoursLeft
     )
 }
 
 /**
  * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. The ⋮ has no
  * circle so the bell reads as the actionable one.
+ *
+ * The strip shows on Now only: the Streak tab's hero says the same thing in large
+ * type, and Past is the record. Over the plain page (Past) the wordmark fades out
+ * under the tab's own large title and the ink turns from white to onBackground.
  */
 @Composable
 fun BandTopRow(
@@ -91,43 +114,58 @@ fun BandTopRow(
     onBellClick: () -> Unit,
     onMenuClick: () -> Unit,
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall
+    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall,
+    bandUnder: Float = 1f,
+    nowShown: Float = 1f,
+    superHoursLeft: Int? = null
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
-            modifier = titleModifier
-        )
-        Spacer(Modifier.weight(1f))
-        StatusStrip(state = state, onClick = onStreakClick)
-        Spacer(Modifier.width(8.dp))
-        BellButton(unread, onBellClick)
-        IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
+    val ink = lerp(MaterialTheme.colorScheme.onBackground, Color.White, bandUnder)
+    CompositionLocalProvider(LocalContentColor provides ink) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (bandUnder > 0.01f) Text(
+                "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
+                modifier = titleModifier.graphicsLayer { alpha = bandUnder }
+            )
+            Spacer(Modifier.weight(1f))
+            if (nowShown > 0.01f) {
+                StatusStrip(
+                    state = state, onClick = onStreakClick, superHoursLeft = superHoursLeft,
+                    modifier = Modifier.graphicsLayer { alpha = nowShown }
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            BellButton(unread, onBellClick, bandUnder)
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun BellButton(unread: Int, onClick: () -> Unit) {
+private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) {
     val extras = LocalBeeExtras.current
+    val ink = LocalContentColor.current
+    // On the band: translucent white. On the page: a faint ink wash.
+    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), OnBandFill, bandUnder)
+    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.bandTop, bandUnder)
     val description = if (unread > 0) "Warnings, $unread unread" else "Warnings"
     Box(
         Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(OnBandFill)
+            .background(fill)
             .clickable(onClickLabel = "Open warnings", onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = ink)
         if (unread > 0) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .size(18.dp)
-                    .border(2.dp, extras.bandTop, CircleShape)
+                    .border(2.dp, ringBehindBadge, CircleShape)
                     .padding(2.dp)
                     .background(extras.accentFill, CircleShape),
                 contentAlignment = Alignment.Center
@@ -149,7 +187,8 @@ private fun BellButton(unread: Int, onClick: () -> Unit) {
 internal fun StatusStrip(
     state: StreakState,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    superHoursLeft: Int? = null
 ) {
     // Sits on the brand band: a translucent white pill, white content.
     val stripBg = OnBandFill
@@ -166,8 +205,15 @@ internal fun StatusStrip(
         state.currentStreak > 0 -> "${state.currentStreak}-day streak"
         else -> "No streak yet"
     }
+    // While a Super day is still reachable the count aims at 12, not the goal already
+    // met, and the description names the same target the screen shows. Once a Master
+    // day reaches 12 the cue goes away but the target stays, so success reads "12/12",
+    // never "12/8".
+    val superReached = !state.beginnerMode && state.todayHours >= SUPER_DAY_HOURS
+    val countTarget = if (superHoursLeft != null || superReached) SUPER_DAY_HOURS else state.hoursRequired
     val stripDescription =
-        "$streakLabel · ${state.todayHours} of ${state.hoursRequired} hours rated today"
+        "$streakLabel · ${state.todayHours} of $countTarget hours rated today" +
+            (superHoursLeft?.let { " · $it more for a Super day" } ?: "")
     Card(
         modifier = modifier
             .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
@@ -209,10 +255,11 @@ internal fun StatusStrip(
             MiniHourRing(
                 hours = state.todayHours,
                 hoursRequired = state.hoursRequired,
-                qualified = state.todayQualified
+                qualified = state.todayQualified,
+                superLap = state.todayQualified && !state.beginnerMode
             )
             Text(
-                "${state.todayHours}/${state.hoursRequired}",
+                "${state.todayHours}/$countTarget",
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 18.sp
             )
@@ -230,13 +277,33 @@ private fun StripDivider() {
 }
 
 @Composable
-private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean) {
+private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, superLap: Boolean) {
     val track = Color.White.copy(alpha = 0.22f)   // on the band
     val fill = if (qualified) RingQualifiedGreen else HoneyGold
     val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
+    // Hours past the goal, as a share of the Super day lap (hours 9–12)
+    val lapFraction = ((hours - hoursRequired).toFloat() / (SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED))
+        .coerceIn(0f, 1f)
     Canvas(Modifier.size(24.dp)) {
         val stroke = 4.dp.toPx()
         val inset = stroke / 2
+        // The Super day lap here is the brief's fallback, a single 1.5dp SuperGold arc
+        // sweeping extra/4, not the four-segment drawSuperLap: at this size its 4° gaps
+        // come out under 1dp, so the segments blur into one thin dotted halo, and the
+        // "/12" count beside the ring already says what the lap is for. It sits 1dp
+        // outside the ring, spilling 2.5dp past the canvas into the strip's 8dp padding,
+        // so neither the ring nor the strip's width changes. (Not yet checked on device.)
+        if (superLap && lapFraction > 0f) {
+            val lapStroke = 1.5.dp.toPx()
+            val r = size.minDimension / 2f + 1.dp.toPx() + lapStroke / 2f
+            drawArc(
+                color = SuperGold,
+                startAngle = -90f, sweepAngle = 360f * lapFraction, useCenter = false,
+                topLeft = Offset(center.x - r, center.y - r),
+                size = androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
+                style = Stroke(width = lapStroke, cap = StrokeCap.Round)
+            )
+        }
         drawArc(
             color = track,
             startAngle = -90f, sweepAngle = 360f, useCenter = false,
@@ -267,6 +334,22 @@ private fun BandTopRowPreview() {
             recoveryOpen = true, recoveryDaysLeft = 2, todayEarnedSaver = false
         ),
         unread = 3, onStreakClick = {}, onBellClick = {}, onMenuClick = {}
+    )
+}
+
+// 10 of 12 with a Super day still reachable: the count reads "/12" and the gold lap arc
+// sweeps half way. A 3-digit streak and an unread badge keep it the widest Master case.
+@Preview(widthDp = 360, backgroundColor = 0xFF4A1D4F, showBackground = true)
+@Composable
+private fun BandTopRowSuperLapPreview() {
+    BandTopRow(
+        state = StreakState(
+            currentStreak = 124, displayStreak = 124, todayHours = 10, todayQualified = true, extraToday = 2,
+            beginnerMode = false, hoursRequired = 8, beginnerDaysCompleted = 0, savers = 3,
+            recoveryOpen = false, recoveryDaysLeft = 0, todayEarnedSaver = false
+        ),
+        unread = 3, onStreakClick = {}, onBellClick = {}, onMenuClick = {},
+        superHoursLeft = 2
     )
 }
 

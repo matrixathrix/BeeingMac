@@ -5,7 +5,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -40,10 +51,14 @@ val BandShape = RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)
 val OnBandFill = Color.White.copy(alpha = 0.14f)
 
 /**
- * The aubergine band every tab opens with (Swiggy's coloured header idea):
- * full-bleed gradient, rounded bottom corners, white content. It draws under
- * the status bar and pads itself below it, so callers place it at the very
- * top of their tab with no inset of their own.
+ * The aubergine band (Swiggy's coloured header idea): full-bleed gradient,
+ * rounded bottom corners, white content. It draws under the status bar and pads
+ * itself below it, so callers place it at the very top with no inset of their own.
+ *
+ * **A band is a stage for one thing about you, right now** — the hour to rate
+ * (Now) and the streak (Streak). Screens that are records or utilities (Past,
+ * Trends, Settings) open on the plain page under a [PageHeader] instead, so the
+ * colour keeps meaning something.
  */
 @Composable
 fun BrandBand(
@@ -60,6 +75,49 @@ fun BrandBand(
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp),
             content = content
         )
+    }
+}
+
+/**
+ * The top of a page with no band: status-bar inset, an optional back arrow, and
+ * a large title on the plain page, with an optional trailing slot (Past's
+ * "Trends ›"). [reserveTopRow] leaves room for the fixed app top row that
+ * HourlyPulseApp draws over the pager (Past needs it; Trends/Settings hide it).
+ */
+@Composable
+fun PageHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    backLabel: String = "Back",
+    reserveTopRow: Boolean = false,
+    trailing: @Composable RowScope.() -> Unit = {}
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+    ) {
+        if (reserveTopRow) BandTopRowSpacer()
+        Row(
+            Modifier.fillMaxWidth().padding(top = if (reserveTopRow) 6.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp).size(40.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = backLabel)
+                }
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f).offset(x = if (onBack != null) (-12).dp else 0.dp)
+            )
+            trailing()
+        }
     }
 }
 
@@ -123,6 +181,11 @@ fun emptyCellColor(future: Boolean): Color =
  * the band frees and never overlaps the footer. When not compact, the middle is
  * measured once against the band at rest and the growth follows from that.
  *
+ * [footerFollowsMiddle] places the footer straight under the middle instead of
+ * at the bottom edge (it still never goes below it), so whatever height is left
+ * after the capped band growth falls below the footer, not between it and the
+ * content. On a short screen there is no leftover and nothing changes.
+ *
  * Deliberately no intrinsic measurement of [middle]: asking a FlowRow of chips
  * for its intrinsic height on every animation frame is what made the
  * expand/collapse stutter.
@@ -134,7 +197,8 @@ fun BandFillLayout(
     footer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
-    maxBandGrow: Dp = 160.dp
+    maxBandGrow: Dp = 160.dp,
+    footerFollowsMiddle: Boolean = false
 ) {
     // Stable slot contents: a fresh `{ band(x) }` lambda per measure pass would
     // force the band to recompose on every animation frame. The target travels
@@ -185,10 +249,12 @@ fun BandFillLayout(
             bandP = p; bandH = h
         }
 
+        val midH = mid.maxOfOrNull { it.height } ?: 0
+        val footY = if (footerFollowsMiddle) minOf(bandH + midH, total - footH) else total - footH
         layout(width, total) {
             bandP.forEach { it.place(0, 0) }
             mid.forEach { it.place(0, bandH) }
-            foot.forEach { it.place(0, total - footH) }
+            foot.forEach { it.place(0, footY) }
         }
     }
 }

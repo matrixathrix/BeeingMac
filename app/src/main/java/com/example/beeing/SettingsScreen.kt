@@ -2,7 +2,6 @@ package com.example.beeing
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,17 +17,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -45,9 +39,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.BrandBand
+import com.example.beeing.ui.PageHeader
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import java.text.SimpleDateFormat
@@ -90,15 +83,8 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
             // Swallow touches so the tabs and the fixed top row underneath stay inert
             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {}
     ) {
-        BrandBand {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                }
-                Spacer(Modifier.width(8.dp))
-                Text("Settings", style = MaterialTheme.typography.headlineSmall)
-            }
-        }
+        // A utility page: no band, a large title on the plain page.
+        PageHeader("Settings", onBack = onBack)
         Column(
             Modifier
                 .weight(1f)
@@ -122,7 +108,7 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                 ) { Switch(checked = prefs.remindersOn, onCheckedChange = { c.onNotifPrefsChange(prefs.copy(remindersOn = it)) }) }
                 Divider()
                 SettingsRow(
-                    sym = Sym.Lock, title = "Silent hours",
+                    sym = Sym.Rest, title = "Silent hours",
                     subtitle = if (prefs.silentOn && prefs.silentStartMin != prefs.silentEndMin)
                         "Every day, ${formatMinuteOfDay(prefs.silentStartMin)} to ${formatMinuteOfDay(prefs.silentEndMin)} · no sound"
                     else "Off",
@@ -131,13 +117,13 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                 Divider()
                 if (paused) {
                     SettingsRow(
-                        icon = Icons.Default.Notifications, title = "Paused until ${SimpleDateFormat("EEE h a", Locale.getDefault()).format(Date(prefs.pauseUntilMs))} · ${if (prefs.pauseMode == PauseMode.QUIET) "Quiet" else "Off"}",
+                        sym = Sym.NotificationsOff, title = "Paused until ${SimpleDateFormat("EEE h a", Locale.getDefault()).format(Date(prefs.pauseUntilMs))} · ${if (prefs.pauseMode == PauseMode.QUIET) "Quiet" else "Off"}",
                         subtitle = "Streak alerts and the weekly report still arrive",
                         onClick = {}, highlight = true
                     ) { TextButton(onClick = { c.onNotifPrefsChange(prefs.copy(pauseUntilMs = 0L)) }) { Text("End now") } }
                 } else {
                     SettingsRow(
-                        icon = Icons.Default.Notifications, title = "Pause notifications",
+                        sym = Sym.NotificationsOff, title = "Pause notifications",
                         subtitle = "Until a time you choose, up to 2 days",
                         onClick = { showPause = true }
                     ) { Chevron() }
@@ -152,7 +138,7 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
             }
             Section("BACKUP & DATA") {
                 SettingsRow(
-                    sym = Sym.Hive, title = "Daily auto-backup",
+                    sym = Sym.Backup, title = "Daily auto-backup",
                     subtitle = if (c.autoBackup && c.lastBackupMs > 0)
                         "Last backed up " + SimpleDateFormat("hh:mma, dd-MMM-yyyy", Locale.getDefault()).format(Date(c.lastBackupMs))
                     else "Every day at 12:05 AM",
@@ -161,19 +147,19 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                 if (c.autoBackup) {
                     Divider()
                     SettingsRow(
-                        icon = Icons.Default.Settings, title = "Backup folder",
+                        sym = Sym.Folder, title = "Backup folder",
                         subtitle = "Where the daily copy is saved",
                         onClick = c.onPickBackupFolder
                     ) { Chevron() }
                 }
                 Divider()
                 SettingsRow(
-                    sym = Sym.Note, title = "Export data", subtitle = "Save your ratings as a CSV file",
+                    sym = Sym.Export, title = "Export data", subtitle = "Save your ratings as a CSV file",
                     onClick = c.onExport
                 ) { Chevron() }
                 Divider()
                 SettingsRow(
-                    sym = Sym.Reset, title = "Import data", subtitle = "Replace everything with a backup file",
+                    sym = Sym.Import, title = "Import data", subtitle = "Replace everything with a backup file",
                     onClick = c.onImport
                 ) { Chevron() }
             }
@@ -193,6 +179,8 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(24.dp))
+            // Settings covers the nav bar, so it clears the gesture/nav inset itself
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
     if (showSilent) SilentHoursSheet(prefs, onChange = { c.onNotifPrefsChange(it) }, onDismiss = { showSilent = false })
@@ -252,16 +240,17 @@ private fun SettingsRow(
             Modifier
                 .size(34.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
             contentAlignment = Alignment.Center
         ) {
-            val tint = MaterialTheme.colorScheme.primary
+            // Neutral tiles: honey is for "act here" (the switches), not decoration.
+            val tint = MaterialTheme.colorScheme.onSurfaceVariant
             if (sym != null) BeeIcon(sym, size = 20.dp, tint = tint, contentDescription = null)
             else if (icon != null) Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             if (subtitle != null) {
                 Text(subtitle, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -282,49 +271,5 @@ private fun ValueChevron(value: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(value, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Chevron()
-    }
-}
-
-/**
- * The tag list editor, opened from Settings. Owns its own copy of the tags and
- * saves on every change, like the Now tab's editor (tag edits are picker-only:
- * old entries keep the name they were rated with).
- */
-@Composable
-fun SettingsManageTags(context: android.content.Context, onChanged: () -> Unit, onDismiss: () -> Unit) {
-    var tags by remember { mutableStateOf(loadTags(context)) }
-    var adding by remember { mutableStateOf(false) }
-    var newTag by remember { mutableStateOf("") }
-    fun update(next: List<String>) { saveTags(context, next); tags = next; onChanged() }
-
-    ManageTagsDialog(
-        tags = tags,
-        onReorder = { update(it) },
-        onRename = { old, new -> update(tags.map { if (it == old) new else it }) },
-        onDelete = { tag -> update(tags.filter { it != tag }) },
-        onAddNew = { newTag = ""; adding = true },
-        onDismiss = onDismiss
-    )
-    if (adding) {
-        AlertDialog(
-            onDismissRequest = { adding = false },
-            title = { Text("New tag") },
-            text = {
-                androidx.compose.material3.OutlinedTextField(
-                    value = newTag,
-                    onValueChange = { v -> newTag = v.replace(Regex("[,;|]"), " ").take(20) },
-                    singleLine = true,
-                    supportingText = { Text("${tags.size}/30 tags") }
-                )
-            },
-            confirmButton = {
-                Button(
-                    colors = BeeButtonDefaults.colors(),
-                    enabled = newTag.isNotBlank() && tags.size < 30,
-                    onClick = { update((tags + newTag.trim()).distinct()); adding = false }
-                ) { Text("Add") }
-            },
-            dismissButton = { TextButton(onClick = { adding = false }) { Text("Cancel") } }
-        )
     }
 }

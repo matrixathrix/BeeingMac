@@ -28,9 +28,16 @@ notification → rate → tag → save → lock phone → back to life.
 - **Streak savers** (2026-10-28, replace rest days). Every history starts with
   `SAVER_START` (2). A Master day with ≥ `SAVER_EARN_HOURS` (12) counted hours
   earns +1 (cap `SAVER_CAP` 5). A finished Master day under 8 **spends one
-  automatically**: with a streak running it is `SAVED` (streak holds, doesn't
-  grow); with none it is `FADED` (saver burns for nothing — a rule, not a bug).
+  automatically**: with a streak running it is `SAVED` (the saved day counts, so
+  the streak grows by one — 2026-10-29); with none it is `FADED` (saver burns for
+  nothing — a rule, not a bug).
   No savers + a running streak = `BROKEN`; no streak and no savers = `MISSED`.
+- **Super day** (2026-10-29). A Master day (mode at day end) with ≥ `SUPER_DAY_HOURS`
+  (12) counted hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, so it earns a saver when
+  under `SAVER_CAP`. It is a *label and a ceremony over the existing rule* — no
+  `DayOutcome`, saver or streak number changed. Backdated hours never count and
+  beginner days never qualify. Anchored on the same "exactly one new counted hour"
+  idea as the old saver moment, now keyed by day (see the history entry).
 - **Comeback gift**: every `COMEBACK_IDLE_DAYS` (7) days in a row with no
   complete day (Master 8+ or beginner 4+) gifts `COMEBACK_GIFT` (2) savers
   (capped), credited at that day's end.
@@ -92,17 +99,17 @@ a qualifying day is a **complete day** ("Day complete", "⬢ Day complete",
 calendar legend "complete"), and the count reads "**N-day streak**" /
 "Day N of your streak", never a cell count · **History** = the event log on
 the Streak tab · **Streak saver** (`Sym.Saver`, a shield with the flame) =
-earned at 12 hours, steps in on a missed day ("A streak saver kept your streak
+earned on a **Super day**, steps in on a missed day ("A streak saver kept your streak
 alive"), fades if no streak is running · **Streak at risk** = the red count with
 a "!" while the 3-day **recovery** window is open ("N days left to win it back")
-· **Heads up** = the warnings bell sheet · 🕐 **Added later** = an hour added via
+· **Super day** = a Master day with 12 counted hours (`Sym.Sparkle`, `SuperGold`; "Make it a Super day", "N more for a Super day", "Yesterday was a Super day"), earns a saver when under the cap · **Heads up** = the warnings bell sheet · 🕐 **Added later** = an hour added via
 "Add a past hour" (rest days are gone) · 🌱 **Beginner day** = a completed 4-hour day in
 **beginner mode** ("Beginner day complete", calendar legend "beginner day");
 the opposite mode is **Master mode** (8 hours) and a streak inside beginner
 mode is **paused**, never lost ("Streak paused at N", "Resumes in Master
 mode") · celebration is reserved for rare milestones — never per-save; the
 daily celebration is the ring closing, plus the two full-screen "streak moments"
-(saver earned, streak recovered).
+(Super day, streak recovered).
 Honey/🍯 and flowers/🌸 no longer appear anywhere in mechanics — honey gold
 survives only as an accent color.
 
@@ -160,13 +167,17 @@ case verify by static review and say so explicitly — the user compiles locally
 | `Utils.kt` | `RatingEntry`, persistence (SharedPreferences `"b"`), notifications + hourly alarm (`NotificationReceiver`), tags, CSV import/export (HMAC-signed), auto-backup, `computeActiveWindow`, `EDIT_WINDOW_MS`, `scoreBandColor(Int)` |
 | `res/drawable/ic_sym_*.xml` | The vendored Material Symbols. Each is a converted SVG: Material Symbols ship `viewBox="0 -960 960 960"`, which a `<vector>` cannot express (there is no viewport origin), so every file wraps its path in `<group android:translateY="960">`. `fillColor` is opaque black and the tint comes from `BeeIcon` |
 | `ui/icons/BeeIcons.kt` | **The icon vocabulary.** `Sym` enum (one entry per meaning: Streak/Beginner/Rest/Reclaim/FromMemory/Lock/Hourglass/Reset/Star/Sparkle/Alarm/Chart/Tag/Note/Hive/CaughtUp) → a vector drawable in `res/drawable/ic_sym_*.xml`, plus `BeeIcon(sym, size, tint, contentDescription)` and `SymTitle(sym, text)` for dialog titles. Drawables are **Material Symbols Rounded**, converted from the official SVGs (see below) |
-| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete! 🌱" |
-| `StreakRules.kt` | **The pure rules engine (2026-10-28), no Context/Compose.** Constants (`SAVER_*`, `COMEBACK_*`, `RECOVERY_*`, `RECLAIM_*`, `RECLAIM_TAG`), `ModeEvent` + `beginnerAt`, `DayOutcome` (QUALIFIED/SAVED/FADED/BROKEN/MISSED/RECOVERED/BEGINNER_COMPLETE), `StreakEventType`/`StreakEvent` (stable ids), `StreakState`, the one private-ish `replay` walk and its readers `computeStreakState`/`computeDayOutcomes`/`computeStreakEvents`, plus `streakMoment()` (the saver-earned / recovered trigger: fires only when exactly one new counted hour landed). Supersedes the `StreakEngine.kt` row's engine description — that file now holds only the composables (`StreakMeter`, `StreakRing`, `StreakLogContent`), persistence helpers and `visibleTags()` |
+| `Celebration.kt` | Full-screen ring-closed confetti takeover (`RingClosedCelebration`), driven by a `RingCelebration(count, beginner, late, superInvite)` payload so a paused streak is never announced as a day streak — beginner reads "N BEGINNER DAYS" + "Ring closed — beginner day complete!"; `late` (yesterday's ring, closed by an hour rated after midnight) captions "Yesterday's ring closed"; a non-null `superInvite` means `SuperDayInvite` follows, so the scrim fades into its aubergine field (`BandBottomLight`) instead of to transparent and the hand-off never flashes the app underneath |
+| `StreakRules.kt` | **The pure rules engine (2026-10-28), no Context/Compose.** Constants (`SUPER_DAY_*`, `SAVER_*`, `COMEBACK_*`, `RECOVERY_*`, `RECLAIM_*`, `RECLAIM_TAG`), `ModeEvent` + `beginnerAt`, `DayOutcome` (QUALIFIED/SAVED/FADED/BROKEN/MISSED/RECOVERED/BEGINNER_COMPLETE), `StreakEventType`/`StreakEvent` (stable ids), `StreakState`, the one private-ish `replay` walk and its readers `computeStreakState`/`computeDayOutcomes`/`computeStreakEvents`, plus the day-keyed triggers `singleNewHourDay` / `ringClosed` / `streakMoment()` (the Super day / recovered moments: fire only when exactly one new counted hour landed in a day, and it is one of the two hours ratable right now), `DayTally` + `StreakState.recentDays`, `computeSuperDays`. Supersedes the `StreakEngine.kt` row's engine description — that file now holds only the composables (`StreakMeter`, `StreakRing`, `StreakLogContent`), persistence helpers and `visibleTags()` |
 | `Warnings.kt` / `WarningsBell.kt` | Bell items are a filtered view of the streak events: `warningsFrom`/`unreadCount` + the spec copy (pure, `Warnings.kt`); read ids / baseline / on-off in prefs and the "Heads up" `WarningsSheet` (`WarningsBell.kt`). Events before the baseline (first launch, last import) count as read |
 | `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
 | `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
-| `SaverCelebration.kt` | `StreakMomentCelebration` — full-screen saver-earned / streak-recovered |
-| `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone) + `SettingsManageTags` |
+| `SaverCelebration.kt` | `StreakMomentCelebration` — the full-screen streak-recovered moment (the saver-earned screen became `SuperDayCelebration`) |
+| `SuperDay.kt` | **Pure Super day logic (2026-10-29), no Context/Compose.** `reachableHours` (today's uncounted hours still ratable *in the moment*: the two ratable hours always; future hours unless their reminder moment — the hour's end — falls in silent hours or an OFF pause; reminders-off does not drop hours), `SuperInvite(hoursNeeded, savers, dayStartMs)`, `superInviteFor` (shows only when `reachable >= needed + SUPER_DAY_SLACK`), `superCueFor` (the status cue: exact fit, no slack), `lateHourHint` (the Save-label suffix) and `gateInvite` (the once-a-day gate) |
+| `SuperDayScreens.kt` | `SuperDayInvite` ("Make it a Super day", ONE "Let's go" button, no haptic) and `SuperDayCelebration` (overline "SUPER DAY", "Super day", "Keep going"; replaces the saver-earned screen and fires at the cap too). Both sit on the full-screen aubergine `SuperField`, draw the inner ring + `drawSuperRings` outer lap, and show end states when system animations are off |
+| `ui/SuperLap.kt` | `drawSuperLap` — the 4-segment outer lap (`SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED` arcs, 4° gaps, butt caps, fractional `filled` so it can draw itself in) in `SuperGold`. Used by `StreakRing` (Master, once complete) and the Super day screens |
+| `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
+| `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
 | `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
 
@@ -201,9 +212,13 @@ case verify by static review and say so explicitly — the user compiles locally
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
   You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. Every tab opens with a
-  **`BrandBand`** (aubergine gradient, 26dp bottom corners, white content,
-  owns the status-bar inset — there is no Scaffold topBar) over a calm page
+  all 15 M3 type roles), so plain `Text()` inherits it. **A `BrandBand` is a
+  stage for one thing about you, right now** — only **Now** (the hour to rate)
+  and **Streak** (the streak) have one (aubergine gradient, 26dp bottom corners,
+  white content, owns the status-bar inset — there is no Scaffold topBar).
+  Records and utilities — **Past (Journal), Trends, Settings** — open on the
+  plain page under a **`PageHeader`** (large title, optional back arrow /
+  trailing slot), all over a calm page
   (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
   20dp, shadow in light mode only). Swiggy-style nav bar: outline icons, the
   active tab filled + bold in `accentText`, no pill. `PaletteContrastTest`
@@ -882,3 +897,195 @@ case verify by static review and say so explicitly — the user compiles locally
   "Pick a time" in the pause sheet is a day-chip + hour list, not a drum wheel.
   Not device-verified from this session: the 360dp top row with a 3-digit at-risk
   streak, the celebration screens, silent-channel behaviour and the 00:01 alert.
+- 2026-10-29 (**band only where it earns it — UI refinement pass**): owner asked
+  for a UI-expert review ("where does the purple make sense?"), approved
+  previews, then "go all in". (1) **Band on Now and Streak only.** Past, Trends
+  and Settings lost their `BrandBand` for the new `PageHeader` (`ui/BeeSurfaces.kt`);
+  Past's title is "Journal" with an accent-text "Trends ›". The fixed top row
+  (`BandTopRow`) now reads `BandChrome.bandUnder()` / `nowShown()` (off the
+  pager's continuous position): its ink lerps white → `onBackground` and the
+  "Beeing" wordmark fades out over Past, and the **`StatusStrip` shows on Now
+  only** (it duplicated the Streak hero). Status-bar icon colour moved out of
+  `BeeingTheme` into `HourlyPulseApp` (dark icons over the plain light page),
+  read through `derivedStateOf` so swipes don't recompose the root. Dark band
+  lifted (`BandTopDark` #3F1947 / `BandBottomDark` #2A0F31) — the old one was a
+  muddy blob on near-black. (2) **Journal**: day cards became rows grouped per
+  month under sticky `JournalMonthHeader`s ("OCTOBER ▾" opens `DateJumpDialog`);
+  the 24 tick boxes became one 6dp Canvas track where only rated hours are
+  coloured (elapsed vs future in the two `emptyCellColor`s). (3) **One score
+  palette**: `getScoreColor` now returns `scoreBandColor`'s hues (the old
+  #F57C00 orange is gone); `onScoreColor` = ink on those fills;
+  `@Composable scoreTextColor` = the band as readable text per mode (use it for
+  coloured numbers, never the fill colours). (4) **Trends**: bars are neutral
+  (`onSurface` 16%) with every value printed above in `scoreTextColor` (a month
+  of red slabs read as an alarm); "hours rated" is a bare count (29/696
+  divided by every hour of the month); Weeks/Months and by score/by count are
+  neutral segmented controls with both words always shown (the lone "M"
+  looked clipped); tag bars are plain Box tracks (M3's progress indicator drew
+  a gap + stop dot that read as a second bar). (5) **Streak calendar** is a
+  heat-map: complete days are filled honey tiles (a red "complete" tile read as an alarm), saved =
+  honey wash + saver glyph, beginner = leaf, missed = hollow red tile, other
+  past days faint; ~40% shorter. Legend keys are squares. (6) **Settings**:
+  neutral icon tiles (honey stays on the switches), meaning-matched icons
+  (moon for silent hours, bell-off, backup, folder, export, import — five new
+  24dp `ic_sym_*` drawables + `Sym` entries), nav-bar inset under the footer.
+  The bell's "saver kept your streak" item is honey, not red. (7) **Now**:
+  `BandFillLayout` gained `footerFollowsMiddle` — in the rating state Save sits
+  right under the card and band growth is capped at 48dp (it was turning
+  ~170dp of spare height into empty purple + a hole above Save); caught-up
+  keeps the bottom-anchored bee. Copy: one time format "1pm – 2pm" (picker and
+  Save), "2h left" not "120m left", disabled Save says "Rate and tag to save"
+  (the dial core already says "Pick a rating").
+- 2026-10-29 (follow-ups): (1) **Now lost its top row after Trends** — `TrendsView`
+  hides the shared `BandTopRow` while composed, and the pager keeps Past
+  composed after a jump to Now; the hide is now also gated on `overPlainPage`.
+  (2) Trends' "How tags score" lost its 210dp inner scroll: every row shows and
+  the page scrolls. (3) Settings and the new Tags page slide in from the right
+  (`AnimatedVisibility`, 300ms in / 260ms out; their BackHandlers sit outside
+  it, registered in stacking order). (4) Manage tags became the **Tags** page
+  (`TagsScreen.kt`, see the file map). (5) Streak calendar: complete days are
+  honey tiles (a red "complete" tile read as an alarm), and the journal's ▲/▼
+  cap pills moved into the day headline so every track spans the same width.
+- 2026-10-29 (tags fill the card · one tag editor): (1) **Now's rating state is
+  a fixed frame again**: `BandFillLayout(compact = !allCaughtUp,
+  maxBandGrow = 0 while rating)`, so the band stays at rest, Save is pinned just
+  above the nav bar, and the card fills everything between. (2) **The tags own
+  the card's spare height**: collapsed, `TagPickerSection` is a **`ContextualFlowRow`** with
+  `ContextualFlowRowOverflow.expandIndicator` (Compose 1.7; plain `FlowRow`'s
+  indicator throws if `shownItemCount` is read in composition — that crashed
+  the app on launch) — as many chips as fit show,
+  in the user's order, and only the spill folds into **"+N more"** (an outlined
+  8dp rounded RECTANGLE, `TagFoldButton`, laid out at 48dp and pinned to the
+  top of its slot because the row squeezes trailing items, so it never reads as a tag pill; it
+  adds "· N selected" when a chosen tag is in the fold). `COLLAPSED_TAG_COUNT`
+  is gone. The last item is "Edit tags"; when only it would spill, the indicator
+  itself says "Edit tags". Expanded still scrolls inside the card.
+  (3) **One tag editor**: the Now pencil / "Edit tags" open the Tags page
+  (`NowTab(onOpenTags)` → `showManageTags`); `ManageTagsDialog`, its helpers
+  and Now's add-tag dialog are deleted. (4) Tags page: **edge auto-scroll while
+  dragging** (within 72dp of the list's top/bottom, up to 14dp/frame, the held
+  row rides along via `dragOffset += scroll.scrollBy(v)`), and the rename/add
+  dialog is a custom `Dialog`: title · full-width field · hint and counter on one
+  line · ONE action row (Delete at the start, Cancel + Save at the end).
+- 2026-10-29 (back goes home first): the root `BackHandler` sends Streak and
+  Past back to **Now** (`selectedTab = 1`) before the double-press exit, so
+  leaving the app always passes the Now tab. There, the first press's toast
+  points at the bee when one is showing ("Catch the bee to lock your phone, or
+  press back again to exit"); `NowTab(onCaughtUpChange)` reports `allCaughtUp`
+  for that. Trends, Settings and Tags register their own handlers later, so
+  they still close first.
+- 2026-10-29 (caught-up hero): the green tick spans **both** lines ("All caught
+  up" + "Next hour opens in Nm"): a small `Layout` measures the text column
+  first and draws the tick as a square of exactly that height, in the layout
+  phase, so it follows the title's `scaledLayout` as the band grows. The bee
+  prompt went 15sp → 20sp.
+- 2026-10-29 (journal months fold): month headers ("OCTOBER · 5 days ˅") fold
+  and unfold their month; the **two newest months that have entries** start
+  open, older ones start as one header line (a collapsed month contributes no
+  day rows). Hand toggles live in `PastTab`'s `monthOverrides` so a Trends
+  round-trip keeps them. The date jump moved to a calendar icon beside
+  "Trends" (the month name used to open it); picking a day in a collapsed
+  month opens that month first and scrolls via `pendingJumpDay` once its row
+  exists. Inside an open day the hours run **newest first** (same direction as
+  the days; `day.entries` stays ascending for `EditEntrySheet`'s carets), and
+  only the title block (headline + track) folds the day, so taps on the hour
+  rows or the "N hours unrated" line never collapse it.
+- 2026-10-29 (journal line = the whole day): each day's line now spans
+  **midnight to midnight** (24 slots), not the active window, so the marks
+  always add up to the hour count beside the date; the ▲N/▼N cap pills
+  (`TickCapPill`) and `JournalDay.early/late` are gone from the journal, and
+  `buildJournalDays`/`JournalView`/`JournalDayItem` no longer take `window`.
+  Neighbouring hours keep a 2dp gap (was 1.5dp, which merged them), and short
+  ticks under the line mark 6am / 12pm / 6pm. The Now strip and the Trends
+  pattern grid still use the active window and its cap pills.
+- 2026-10-29 (journal, second thoughts): hours inside an open day are back to
+  **earliest first** (a day reads morning → night, like its line and the edit
+  sheet's ‹ ›; days stay newest first). The 6am/12pm/6pm ticks are gone:
+  collapsed rows show the bare line (for scanning), and only an **expanded** day
+  gets "12am · 12pm · 12am" labels under it, in the Now strip's 10sp type.
+- 2026-10-29 (read-only hours · undo everywhere): past `EDIT_WINDOW_MS`,
+  `EditEntrySheet` no longer shows a greyed-out editor. `ReadOnlyEntry`
+  (private, `UIComponents.kt`) shows what was logged: the score as a 60dp
+  `scoreBandColor` circle + its `DIAL_WORDS` word, "Rated h:mm" (from `id`, only
+  when it falls after the hour began) or the 🕐 "Added later" badge, only the
+  picked tags (`visibleTags()`), the note or an italic "No note", and one footer
+  line — lock · "Locked · hours can be edited for 10 hours" · red "Delete"
+  (still behind "Delete this hour?"). Header and ‹ › carets are shared, so
+  stepping between an editable and a locked hour swaps the body in place.
+  **Undo is the caller's job now**: the sheet dropped its own snackbar (the
+  callers close the sheet on delete, which killed it — the Now tab had no
+  working undo at all). `PastTab` and `NowTab` each show "Rating deleted ·
+  Undo" (Now's host floats above the pinned footer), and the Tags page shows
+  "Deleted "X" · Undo", which restores the tag to its old slot.
+- 2026-10-29 (Streak band redesign · savers grow the streak): the band was three
+  objects in three languages (solid disc, open ring, translucent savers pill) and
+  three yellows. Now `StreakMeter` is **two equal columns split by a 0.5dp
+  hairline**: left = `StreakMedallion` (a solid honey `accentFill` disc, flame
+  beside the count in `onAccentFill`, label under; red + "N!" at risk, leaf when
+  paused/beginner, faint white with no streak) over the `SaverSlots` row (15dp
+  shields + "4/5", or "N days to win it back" at risk); right = the hour ring
+  (now honey, green once complete) over "N more to complete". Both counts are
+  `COUNT_SIZE` 46sp. The separate savers pill in `StreaksTab` is gone. Each whole
+  column is one tap target (`bandTapTarget`): left opens **"Streak and Savers"**
+  (`SaverExplainerDialog`, three lines only — fading, the comeback gift and
+  recovery explain themselves when they happen), right opens **"Today's goal"**
+  (`DailyGoalDialog`, live "Rate N more hours", no saver line in beginner mode).
+  `SaverSlots` gained `fullColor`/`iconSize`/`spacing` (defaults unchanged).
+  **Rule change (owner):** a `SAVED` day now grows the streak by one instead of
+  holding it; history replays under it, so counts across saved days rise. Tests
+  updated (`brokenThree` → `brokenAtFive`), and the "holds" copy swept (bell,
+  day stats, both explainers).
+- 2026-10-29 (**Super days**): the 12-hour saver moment became a named, visible
+  achievement. Spec `docs/superpowers/specs/2026-10-29-super-day-design.md`, plan
+  `docs/superpowers/plans/2026-10-29-super-day.md`. **No outcome, saver or streak
+  number changed** — `StreakRulesTest`'s outcome assertions pass untouched.
+  (1) **Rule**: Master day (mode at day end) with ≥ `SUPER_DAY_HOURS` (12) counted
+  hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, `SUPER_DAY_SLACK` = 1. Backdated
+  (`RECLAIM_TAG`) hours never count; beginner days never qualify.
+  (2) **Engine** (`StreakRules.kt`): `DayTally` + `StreakState.recentDays`
+  (yesterday + today), `StreakEventType.SUPER_DAY` (out of `WARNING_TYPES` /
+  `ALERT_TYPES`; History's `logRows` merges the old SAVER_EARNED into one "Super
+  day" row per day), `computeSuperDays`. **The triggers are day-keyed**:
+  `singleNewHourDay` / `ringClosed` / `streakMoment` compare counted hours *keyed by
+  the day's start*, not "today's count", so an 11pm hour rated after midnight still
+  celebrates yesterday ("Yesterday was a Super day") while replay, import, backdated
+  saves and mode toggles — none of which add exactly one new counted hour to one
+  day — still can't. They also require the one new hour to be **one of the two hours
+  ratable at `nowMs`** (the last two finished clock hours; `nowMs` defaults to the
+  clock): a Delete + Undo in the Past journal restores an entry with its *old*
+  timestamp, and without this guard undoing one of yesterday's hours at 3pm (with
+  yesterday sitting at 8 or 12) fired "Yesterday's ring closed" / "Yesterday was a
+  Super day" mid-day. `StreakMoment.SuperDay(savers, earnedSaver, late)` replaced
+  `SaverEarned`.
+  (3) **Flow**: ring closes (8) → `RingClosedCelebration` → if
+  `superInviteFor` says it's realistic *and* not yet shown today → `SuperDayInvite`
+  (one "Let's go") → at 12 → `SuperDayCelebration`. The only new stored value is
+  **`"super_invite_shown_day"`** (Long, the day's start millis, prefs `"b"`, not in
+  the CSV), written the moment the invite first shows, so declining or backgrounding
+  never re-asks and the next day starts fresh; it lives in `StreakEngine.kt` beside
+  the other prefs helpers. A late (after-midnight) ring close gets no invite by the
+  normal rule ("Yesterday's ring closed"). The Save label gains " · finishes your
+  Super day" / " · closes yesterday's ring" for yesterday's late hours
+  (`lateHourHint`).
+  (4) **Realism** (`reachableHours`): the invite and the status cue only promise
+  hours you can actually rate on time. Silent hours and an OFF pause remove a future
+  hour *only if its reminder moment (the hour's end) falls inside them*; reminders-off
+  drops nothing, since you can still open the app. Invite needs a spare hour
+  (`SUPER_DAY_SLACK`); the cue needs an exact fit.
+  (5) **UI**: `SuperGold` (#FFD54F, `ui/theme/Color.kt`) is the outer lap and Super
+  accents; the inner ring stays `HoneyGold`. `StreakRing` draws the lap in Master once
+  complete (beginner keeps the overflow head); `MiniHourRing` uses a single 1.5dp
+  SuperGold arc instead; the StatusStrip's visible count reads "H/12" while the cue
+  is live (hidden during recovery) and stays "H/12" once a Master day reaches 12 (it
+  never flips to "12/8"); the phrase "N more for a Super day" is only in its
+  accessibility description. The Streak hero caption shows it visibly: "N more for a
+  Super day" → sparkle + "Super day"; the invite's saver row draws the slot it would
+  earn dimmer than earned ones (`SaverSlots(pendingIndex)`) and says "N of 5 streak
+  savers, one more if you make it a Super day"; the Streak tab's state is keyed on
+  the day start, so left open across midnight it moves on to the new day; the calendar tile is honey + `Sym.Sparkle` (no
+  halo — owner decision) with a legend key; the journal headline gets the sparkle and
+  "Super day". Copy swept: every "Rate 12 hours to earn a saver" line now reads "Rate
+  12 hours and it's a Super day, which earns a streak saver (up to 5)", built from
+  `SUPER_DAY_HOURS`/`SAVER_CAP`.
+  Not device-verified from this session: the celebration screens, the invite timing
+  around silent hours, the after-midnight "Yesterday" variants.

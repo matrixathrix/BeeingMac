@@ -12,8 +12,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,13 +31,21 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.example.beeing.ui.SaverSlots
+import com.example.beeing.ui.drawSuperLap
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.theme.LocalBeeExtras
+import com.example.beeing.ui.theme.SuperGold
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -78,6 +88,7 @@ fun recordReclaimSpend(context: android.content.Context) {
 
 private const val MODE_EVENTS_KEY = "mode_events"
 private const val GRADUATION_SHOWN_KEY = "beginner_graduation_shown"
+private const val SUPER_INVITE_SHOWN_KEY = "super_invite_shown_day"
 
 /** Oldest first — the replay and `isBeginnerMode` both rely on that order. */
 fun loadModeEvents(context: android.content.Context): List<ModeEvent> =
@@ -119,6 +130,14 @@ fun markBeginnerGraduationShown(context: android.content.Context) {
     context.getSharedPreferences("b", 0).edit().putBoolean(GRADUATION_SHOWN_KEY, true).apply()
 }
 
+/** The Super day invite is once a day: the start millis of the day it last showed on, or -1. */
+fun superInviteShownDay(context: android.content.Context): Long =
+    context.getSharedPreferences("b", 0).getLong(SUPER_INVITE_SHOWN_KEY, -1L)
+
+fun markSuperInviteShown(context: android.content.Context, dayStartMs: Long) {
+    context.getSharedPreferences("b", 0).edit().putLong(SUPER_INVITE_SHOWN_KEY, dayStartMs).apply()
+}
+
 /** Past hours already added today — free, but capped per day. */
 fun reclaimsUsedToday(spends: List<Long>): Int {
     val todayKey = Calendar.getInstance().dayKey()
@@ -135,23 +154,36 @@ fun reclaimsUsedToday(spends: List<Long>): Int {
 fun StreakMeter(
     state: StreakState,
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null
+    onStreakClick: () -> Unit = {},
+    onGoalClick: () -> Unit = {},
+    /** Hours still to go to a Super day, while 12 is reachable today (Master, goal met). */
+    superHoursLeft: Int? = null
 ) {
     val context = LocalContext.current
     val goal = state.hoursRequired
     val filled = state.todayHours.coerceAtMost(goal)
-    val animatedFill by animateFloatAsState(
+    // Animated values travel as States and are read only in the ring's draw/layer lambdas
+    val animatedFill = animateFloatAsState(
         targetValue = filled.toFloat(),
         animationSpec = tween(700),
         label = "streakFill"
     )
-    // Hours beyond the goal grow the pointy overflow head past 12 o'clock
+    // Hours beyond the goal fill the Super day lap (Master) or grow the pointy
+    // overflow head past 12 o'clock (beginner)
     val extraHours = (state.todayHours - goal).coerceAtLeast(0)
-    val animatedExtra by animateFloatAsState(
+    val animatedExtra = animateFloatAsState(
         targetValue = extraHours.toFloat(),
         animationSpec = tween(700),
         label = "extraFill"
     )
+    // The Super day lap: Master mode only, there from the moment the ring closes
+    val superLap = !state.beginnerMode
+    val lapShown = animateFloatAsState(
+        targetValue = if (superLap && state.todayQualified) 1f else 0f,
+        animationSpec = tween(500),
+        label = "superLap"
+    )
+    val superToday = state.recentDays.lastOrNull()?.let { it.isToday && it.superDay } == true
     // Long double throb + a small buzz for EVERY rated hour, incl. beyond 8
     val ringScale = remember { Animatable(1f) }
     var lastHours by remember { mutableIntStateOf(state.todayHours) }
@@ -177,91 +209,227 @@ fun StreakMeter(
         }
         lastHours = state.todayHours
     }
-    val accent = Color(0xFFFFE082) // pastel honey yellow
-    val done = Color(0xFF66BB6A)
-    val track = Color.White.copy(alpha = 0.16f)   // drawn on the brand band
-    val ringColor = if (state.todayQualified) done else accent
+    // One honey on the band: the disc, the ring and the shields all share it
+    val honey = LocalBeeExtras.current.accentFill
+    val done = com.example.beeing.ui.theme.RingQualifiedGreen
+    val track = Color.White.copy(alpha = 0.14f)   // drawn on the brand band
+    val ringColor = if (state.todayQualified) done else honey
 
     val atRisk = state.recoveryOpen
     val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
-    // A running streak reads as a big numeral; the other states (paused, beginner,
-    // none yet) are sentences, so they stay text.
-    val bigCount = when {
-        atRisk -> state.displayStreak
-        state.streakPaused || state.beginnerMode -> null
-        state.currentStreak > 0 -> state.currentStreak
-        else -> null
-    }
-    val streakTitle = when {
-        state.streakPaused -> "Streak paused at ${state.currentStreak}"
-        state.beginnerMode -> "Beginner mode"
-        else -> "No streak yet"
-    }
+    val soft = Color.White.copy(alpha = 0.72f)
     val remaining = (goal - state.todayHours).coerceAtLeast(0)
-    val statusText = when {
-        atRisk -> "${state.recoveryDaysLeft} ${if (state.recoveryDaysLeft == 1) "day" else "days"} left to win it back. Rate $RECOVERY_HOURS hours in one."
-        state.todayQualified && state.beginnerMode -> "Beginner day complete ✓"
-        state.todayQualified -> "Today is secured ✓"
-        state.beginnerMode -> "$remaining more hour${if (remaining == 1) "" else "s"} to complete today"
-        else -> "$remaining more hour${if (remaining == 1) "" else "s"} to secure today"
+    val toRecover = (RECOVERY_HOURS - state.todayHours).coerceAtLeast(0)
+    // Each caption belongs to the object above it, so both stay short
+    // An open recovery window outranks the Super day copy
+    val todayCaption = when {
+        atRisk -> "$toRecover more wins it back"
+        superHoursLeft != null -> "$superHoursLeft more for a Super day"
+        superToday -> "Super day"
+        state.todayQualified && state.beginnerMode -> "Beginner day done"
+        state.todayQualified -> "Day secured"
+        else -> "$remaining more to complete"
     }
-    // A paused streak has to say it is paused, or beginner mode reads as a loss
-    val pausedNote = if (state.streakPaused) "Resumes in Master mode" else null
-    val soft = Color.White.copy(alpha = 0.78f)
+    val todayCaptionColor = when {
+        atRisk -> riskColor
+        superHoursLeft != null || superToday -> SuperGold
+        state.todayQualified -> done
+        else -> soft
+    }
 
-    // No card: the meter sits directly on the Streak tab's brand band.
+    // Two equal columns on the band — the streak first (this tab's headline),
+    // today beside it — each an object over one caption, split by a hairline.
+    // Each whole column is one tap target: streak + savers, and the ring.
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(22.dp)
+            .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        StreakRing(
-            animatedFill = animatedFill,
-            animatedExtra = animatedExtra,
-            ringColor = ringColor,
-            trackColor = track,
-            hoursRequired = goal,
-            ringSize = 116.dp,
-            strokeWidth = 12.dp,
-            scale = ringScale.value
+        Column(
+            Modifier.weight(1f).bandTapTarget("Streak and Savers", onStreakClick),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "${state.todayHours}",
-                    fontSize = 36.sp, lineHeight = 38.sp,
-                    fontWeight = FontWeight.ExtraBold, color = Color.White
-                )
-                Text("of $goal hours", fontSize = 11.sp, color = soft)
+            StreakMedallion(state = state, size = MEDALLION_SIZE, riskColor = riskColor)
+            Spacer(Modifier.height(CAPTION_GAP))
+            Box(
+                Modifier
+                    .height(CAPTION_HEIGHT)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (atRisk) {
+                    val d = state.recoveryDaysLeft
+                    Text(
+                        "$d ${if (d == 1) "day" else "days"} to win it back",
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = riskColor
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SaverSlots(
+                            state.savers, fullColor = honey,
+                            emptyColor = Color.White.copy(alpha = 0.20f),
+                            iconSize = 15.dp, spacing = 3.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${state.savers}/$SAVER_CAP",
+                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = soft
+                        )
+                    }
+                }
             }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (bigCount != null) {
-                Row(verticalAlignment = Alignment.Bottom) {
+        // Hairline split, inset so it never touches the band's edges
+        Box(
+            Modifier
+                .padding(vertical = 12.dp)
+                .width(0.5.dp)
+                .fillMaxHeight()
+                .background(Color.White.copy(alpha = 0.14f))
+        )
+        Column(
+            Modifier.weight(1f).bandTapTarget("Today's goal", onGoalClick),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            StreakRing(
+                animatedFill = { animatedFill.value },
+                animatedExtra = { animatedExtra.value },
+                ringColor = ringColor,
+                trackColor = track,
+                hoursRequired = goal,
+                ringSize = MEDALLION_SIZE,
+                strokeWidth = 11.dp,
+                scale = { ringScale.value },
+                superLap = superLap,
+                lapShown = { lapShown.value }
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        "$bigCount",
-                        fontSize = 56.sp, lineHeight = 58.sp, fontWeight = FontWeight.Black,
-                        color = if (atRisk) riskColor else Color.White
+                        "${state.todayHours}",
+                        fontSize = COUNT_SIZE, lineHeight = COUNT_SIZE,
+                        fontWeight = FontWeight.ExtraBold, color = Color.White
                     )
-                    Spacer(Modifier.width(8.dp))
                     Text(
-                        if (atRisk) "day streak at risk!" else "day streak",
-                        fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                        color = if (atRisk) riskColor else soft,
-                        modifier = Modifier.padding(bottom = 9.dp)
+                        "of $goal hours",
+                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = soft
                     )
                 }
-            } else {
-                Text(streakTitle, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
             }
-            Text(
-                statusText,
-                fontSize = 13.sp, lineHeight = 17.sp,
-                color = if (state.todayQualified) done else soft
-            )
-            pausedNote?.let { Text(it, fontSize = 12.sp, color = soft) }
+            Spacer(Modifier.height(CAPTION_GAP))
+            Box(Modifier.height(CAPTION_HEIGHT), contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!atRisk && superHoursLeft == null && superToday) {
+                        BeeIcon(Sym.Sparkle, size = 14.dp, tint = SuperGold, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        todayCaption,
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = todayCaptionColor
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A band column as one pressable area, rounded so its ripple reads as a tile. */
+private fun Modifier.bandTapTarget(label: String, onClick: () -> Unit) =
+    clip(RoundedCornerShape(20.dp))
+        .clickable(onClickLabel = label, onClick = onClick)
+        .padding(vertical = 6.dp)
+
+private val MEDALLION_SIZE = 112.dp
+private val COUNT_SIZE = 46.sp
+private val CAPTION_GAP = 10.dp
+private val CAPTION_HEIGHT = 28.dp
+
+// 10 of 12: the ring closed, two of the four lap segments gold, the Super day caption.
+@Preview(widthDp = 360, backgroundColor = 0xFF4A1D4F, showBackground = true)
+@Composable
+private fun StreakMeterSuperLapPreview() = com.example.beeing.ui.theme.BeeingTheme {
+    StreakMeter(
+        state = StreakState(
+            currentStreak = 6, displayStreak = 6, todayHours = 10, todayQualified = true, extraToday = 2,
+            beginnerMode = false, hoursRequired = STREAK_HOURS_REQUIRED, beginnerDaysCompleted = 0, savers = 3,
+            recoveryOpen = false, recoveryDaysLeft = 0, todayEarnedSaver = false
+        ),
+        superHoursLeft = 2
+    )
+}
+
+/**
+ * The streak's own object, the same size as the hour ring beside it: a solid honey disc
+ * with the flame over the count. Paused / beginner swap the flame for the leaf,
+ * an open recovery window turns it red with a "!", and no streak dims it.
+ */
+@Composable
+private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
+    val honey = LocalBeeExtras.current.accentFill
+    val atRisk = state.recoveryOpen
+    val leaf = !atRisk && (state.streakPaused || state.beginnerMode)
+    val count = when {
+        atRisk -> state.displayStreak
+        state.streakPaused -> state.currentStreak
+        state.beginnerMode -> state.beginnerDaysCompleted
+        else -> state.currentStreak
+    }
+    val label = when {
+        atRisk -> "at risk"
+        state.streakPaused -> "paused"
+        state.beginnerMode -> if (count == 1) "beginner day" else "beginner days"
+        else -> "day streak"
+    }
+    val live = count > 0
+    // A solid disc beside the open ring: the two weigh the same without the disc
+    // reading as a second progress ring. No streak = a faint white disc.
+    val fill = when {
+        atRisk -> riskColor
+        live -> honey
+        else -> Color.White.copy(alpha = 0.10f)
+    }
+    val ink = when {
+        atRisk -> Color.White
+        live -> LocalBeeExtras.current.onAccentFill
+        else -> Color.White.copy(alpha = 0.55f)
+    }
+    val description = when {
+        atRisk -> "$count-day streak at risk"
+        state.streakPaused -> "Streak paused at $count"
+        state.beginnerMode -> "$count $label"
+        live -> "$count-day streak"
+        else -> "No streak yet"
+    }
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(fill)
+            .semantics(mergeDescendants = true) { contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Flame beside the count, not above it, so the count gets the height.
+            // Steps down with length so "123!" still fits inside the disc.
+            val countText = if (atRisk) "$count!" else "$count"
+            val countSize = when (countText.length) {
+                1, 2 -> COUNT_SIZE   // the same size as the ring's hour count
+                3 -> 38.sp
+                else -> 30.sp
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BeeIcon(
+                    if (leaf) Sym.Beginner else Sym.Fire,
+                    size = 28.dp, tint = ink, contentDescription = null
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    countText,
+                    fontSize = countSize, lineHeight = countSize, fontWeight = FontWeight.ExtraBold,
+                    color = ink
+                )
+            }
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = ink.alpha * 0.8f))
         }
     }
 }
@@ -269,48 +437,63 @@ fun StreakMeter(
 /**
  * The hour ring: one continuous arc that fills toward the goal (8 hours in Master,
  * 4 in beginner mode), with a thin tick at each hour so the count is still legible
- * without chunky segments. Once closed it becomes a solid circle, and hours beyond
- * the goal grow a pointy head past 12 o'clock, its color darkening toward the tip.
+ * without chunky segments. Once closed it becomes a solid circle.
+ *
+ * Hours beyond the goal: in Master mode ([superLap]) they fill the Super day lap, four
+ * segments just outside the ring. The lap fades in over [lapShown] (0…1) as the ring
+ * closes, and the main ring shrinks by the lap's width as it does, so the lap's outer
+ * edge sits where the ring's used to and the column's footprint never changes. In
+ * beginner mode they grow a pointy head past 12 o'clock, darkening toward the tip.
+ *
+ * The animated inputs are lambdas, read only in the draw / layer phase.
  */
 @Composable
 private fun StreakRing(
-    animatedFill: Float,
-    animatedExtra: Float,
+    animatedFill: () -> Float,
+    animatedExtra: () -> Float,
     ringColor: Color,
     trackColor: Color,
     hoursRequired: Int,
     ringSize: Dp,
     strokeWidth: Dp,
-    scale: Float,
+    scale: () -> Float,
+    superLap: Boolean,
+    lapShown: () -> Float,
     centerContent: @Composable () -> Unit
 ) {
     Box(
         Modifier
             .size(ringSize)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val s = scale()
+                scaleX = s
+                scaleY = s
             },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            val fill = animatedFill()
+            val extra = animatedExtra()
             val stroke = strokeWidth.toPx()
-            val inset = stroke / 2
-            val arcSize = Size(size.width - stroke, size.height - stroke)
-            val topLeft = Offset(inset, inset)
-            val ringRadius = (size.minDimension - stroke) / 2f
+            val lapStroke = SUPER_LAP_STROKE.toPx()
+            val lapGap = SUPER_LAP_GAP.toPx()
+            val lap = if (superLap) lapShown().coerceIn(0f, 1f) else 0f
             val c = Offset(size.width / 2f, size.height / 2f)
-            val fraction = (animatedFill / hoursRequired).coerceIn(0f, 1f)
-            val complete = animatedFill >= hoursRequired - 0.001f
+            val fullRadius = (size.minDimension - stroke) / 2f
+            val ringRadius = fullRadius - lap * (lapGap + lapStroke)
+            val topLeft = Offset(c.x - ringRadius, c.y - ringRadius)
+            val arcSize = Size(ringRadius * 2f, ringRadius * 2f)
+            val fraction = (fill / hoursRequired).coerceIn(0f, 1f)
+            val complete = fill >= hoursRequired - 0.001f
 
             drawCircle(color = trackColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
             if (complete) {
                 drawCircle(color = ringColor, radius = ringRadius, center = c, style = Stroke(width = stroke))
 
-                // Overflow head: each hour beyond the goal pushes a tapering point
-                // further past 12 o'clock, darkening toward the tip
-                val headSweep = (animatedExtra * 4f).coerceAtMost(32f)
+                // Overflow head (beginner only): each hour beyond the goal pushes a
+                // tapering point further past 12 o'clock, darkening toward the tip
+                val headSweep = if (superLap) 0f else (extra * 4f).coerceAtMost(32f)
                 if (headSweep > 0.1f) {
                     val tipColor = Color(0xFF1B5E20)
                     val steps = 20
@@ -345,6 +528,19 @@ private fun StreakRing(
                 )
             }
 
+            // The Super day lap, hours 9–12, faded in with the shrink (and out again if
+            // the ring reopens, so it never pops)
+            if (lap > 0.001f) {
+                drawSuperLap(
+                    center = c,
+                    radius = ringRadius + stroke / 2f + lapGap + lapStroke / 2f,
+                    stroke = lapStroke,
+                    filled = extra.coerceAtMost(4f),
+                    track = trackColor.copy(alpha = trackColor.alpha * lap),
+                    fill = SuperGold.copy(alpha = lap)
+                )
+            }
+
             // One hairline tick per hour, in the band's own dark, across the stroke
             val tickColor = Color(0xFF1C0920).copy(alpha = 0.55f)
             val half = stroke / 2f + 0.5f
@@ -364,6 +560,10 @@ private fun StreakRing(
     }
 }
 
+/** The Super day lap's stroke, and its gap off the main ring: together, what the ring gives up. */
+private val SUPER_LAP_STROKE = 3.5.dp
+private val SUPER_LAP_GAP = 2.5.dp
+
 // ============================================================
 // STREAK LOG  (timestamped event history; the bell shows a filtered view)
 // ============================================================
@@ -377,6 +577,7 @@ internal fun StreakEventType.sym(): Sym = when (this) {
     StreakEventType.STREAK_BROKE -> Sym.Reset
     StreakEventType.RECOVERY_DAYS_LEFT, StreakEventType.RECOVERED -> Sym.Fire
     StreakEventType.PAST_HOUR_ADDED -> Sym.FromMemory
+    StreakEventType.SUPER_DAY -> Sym.Sparkle
 }
 
 internal fun StreakEvent.logTitle(): String = when (type) {
@@ -384,10 +585,25 @@ internal fun StreakEvent.logTitle(): String = when (type) {
     StreakEventType.BEGINNER -> "Beginner day complete"
     StreakEventType.SAVER_EARNED -> "Streak saver earned"
     StreakEventType.PAST_HOUR_ADDED -> "Past hour added"
+    StreakEventType.SUPER_DAY -> "Super day"
     else -> warningTitle()
 }
 
-internal fun StreakEvent.logDetail(): String {
+/**
+ * The History rows: a Super day and its saver are one moment (same timestamp), so the saver row is
+ * folded into the Super day's detail line instead of listing twice. The flag says whether a
+ * SAVER_EARNED shares the Super day's [StreakEvent.dayStartMs] (absent at the cap).
+ */
+internal fun logRows(events: List<StreakEvent>): List<Pair<StreakEvent, Boolean>> {
+    val earned = events.filter { it.type == StreakEventType.SAVER_EARNED }.associateBy { it.dayStartMs }
+    return events.filter { it.type != StreakEventType.SAVER_EARNED }.map { ev ->
+        val saver = if (ev.type == StreakEventType.SUPER_DAY) earned[ev.dayStartMs] else null
+        // The Super day is logged just before the saver lands, so its own count is one short.
+        if (saver != null) ev.copy(savers = saver.savers) to true else ev to false
+    }
+}
+
+internal fun StreakEvent.logDetail(earnedSaver: Boolean = false): String {
     val day = SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(dayStartMs))
     return when (type) {
         StreakEventType.COMPLETED -> "Day $streak of your streak — $STREAK_HOURS_REQUIRED hours on $day"
@@ -395,6 +611,9 @@ internal fun StreakEvent.logDetail(): String {
             if (streak > 0) " — streak paused at $streak" else ""
         StreakEventType.SAVER_EARNED -> "$SAVER_EARN_HOURS hours on $day — $savers of $SAVER_CAP saved up"
         StreakEventType.PAST_HOUR_ADDED -> "Added an hour from earlier"
+        StreakEventType.SUPER_DAY -> "$SUPER_DAY_HOURS hours on $day — " +
+            if (earnedSaver) "streak saver earned, $savers of $SAVER_CAP saved up"
+            else "all $SAVER_CAP savers saved up"
         else -> warningDetail(day)
     }
 }
@@ -412,6 +631,7 @@ fun StreakLogContent(
         computeStreakEvents(ratings, loadReclaimSpends(context), modeEvents)
             .filter { it.timestamp >= cutoff }
     }
+    val rows = remember(events) { logRows(events) }
     val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
     val goal = hoursRequiredFor(isBeginnerMode(modeEvents))
 
@@ -419,7 +639,7 @@ fun StreakLogContent(
         Text("Nothing in the last 3 months — rate $goal hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Column {
-            events.take(60).forEach { ev ->
+            rows.take(60).forEach { (ev, earnedSaver) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                     BeeIcon(
                         ev.type.sym(), size = 20.dp,
@@ -427,7 +647,7 @@ fun StreakLogContent(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(ev.logTitle(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(ev.logDetail(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(ev.logDetail(earnedSaver), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
                             fmt.format(java.util.Date(ev.timestamp)),
                             fontSize = 11.sp,
@@ -437,10 +657,10 @@ fun StreakLogContent(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
             }
-            if (events.size > 60) {
+            if (rows.size > 60) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Showing latest 60 of ${events.size} events",
+                    "Showing latest 60 of ${rows.size} events",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
