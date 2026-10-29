@@ -168,10 +168,13 @@ fun HourlyPulseApp(
         computeStreakState(viewModel.allRatings, viewModel.modeEvents)
     }
     // "N more for a Super day" on the Streak ring and the Now strip: today only, while 12
-    // still fits. Re-read when Settings closes too, since silent hours and pause decide
+    // still fits, and never while a recovery window is open (its own cue wins there).
+    // Keyed on hourStart directly: reachability moves with the clock hour, and an
+    // hourly recompute of streakState with no new rating is equal, so it can't carry the
+    // change. Re-read when Settings closes too, since silent hours and pause decide
     // which hours are reachable.
-    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, showSettings) {
-        streakState.recentDays.lastOrNull()?.takeIf { it.isToday }?.let {
+    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, showSettings, hourStart) {
+        streakState.recentDays.lastOrNull()?.takeIf { it.isToday && !streakState.recoveryOpen }?.let {
             superCueFor(
                 it,
                 reachableHours(it.dayStartMs, it.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis())

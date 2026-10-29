@@ -205,11 +205,12 @@ internal fun StatusStrip(
         state.currentStreak > 0 -> "${state.currentStreak}-day streak"
         else -> "No streak yet"
     }
-    val stripDescription =
-        "$streakLabel · ${state.todayHours} of ${state.hoursRequired} hours rated today" +
-            (superHoursLeft?.let { " · $it more for a Super day" } ?: "")
-    // While a Super day is still reachable the count aims at 12, not the goal already met
+    // While a Super day is still reachable the count aims at 12, not the goal already
+    // met, and the description names the same target the screen shows
     val countTarget = if (superHoursLeft != null) SUPER_DAY_HOURS else state.hoursRequired
+    val stripDescription =
+        "$streakLabel · ${state.todayHours} of $countTarget hours rated today" +
+            (superHoursLeft?.let { " · $it more for a Super day" } ?: "")
     Card(
         modifier = modifier
             .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
