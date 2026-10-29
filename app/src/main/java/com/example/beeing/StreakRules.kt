@@ -123,7 +123,8 @@ private class Window(val breakIndex: Int, val prevStreak: Int) {
  *  - A Master day with >= 8 counted hours is complete and extends the streak; >= 12
  *    also earns a saver (cap 5).
  *  - A finished Master day under 8 spends a saver automatically: it SAVES a running
- *    streak, or FADES uselessly with no streak. With no savers, a running streak
+ *    streak (the saved day counts, so the streak grows by one), or FADES uselessly
+ *    with no streak. With no savers, a running streak
  *    BREAKS and opens a 3-day recovery window; no streak just MISSES.
  *  - Inside an open window nothing is spent. A day with >= 10 counted hours RECOVERS
  *    the streak (old count + qualifying days up to it); when the window closes
@@ -229,6 +230,8 @@ internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, now
             savers > 0 -> {
                 savers--
                 if (streak > 0) {
+                    // A saver doesn't just hold the streak: the saved day counts, so it grows
+                    streak++
                     outcome = DayOutcome.SAVED
                     ev(StreakEventType.SAVER_USED, dayEndMs, streak)
                     if (savers <= 2) ev(StreakEventType.LOW_SAVERS, dayEndMs, streak)

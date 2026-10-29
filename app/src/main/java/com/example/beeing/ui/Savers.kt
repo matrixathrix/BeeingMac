@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -23,14 +21,12 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.beeing.RECOVERY_DAYS
-import com.example.beeing.RECOVERY_HOURS
-import com.example.beeing.COMEBACK_GIFT
-import com.example.beeing.COMEBACK_IDLE_DAYS
 import com.example.beeing.SAVER_CAP
 import com.example.beeing.SAVER_EARN_HOURS
+import com.example.beeing.STREAK_HOURS_REQUIRED
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -46,17 +42,20 @@ fun SaverSlots(
     savers: Int,
     modifier: Modifier = Modifier,
     highlightIndex: Int? = null,
-    emptyColor: Color = Color.White.copy(alpha = 0.22f)
+    emptyColor: Color = Color.White.copy(alpha = 0.22f),
+    fullColor: Color = HoneyGold,
+    iconSize: Dp = 26.dp,
+    spacing: Dp = 8.dp
 ) {
     Row(
         modifier.semantics { contentDescription = "$savers of $SAVER_CAP streak savers" },
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(SAVER_CAP) { i ->
             BeeIcon(
-                Sym.Saver, size = 26.dp,
-                tint = if (i < savers) HoneyGold else emptyColor,
+                Sym.Saver, size = iconSize,
+                tint = if (i < savers) fullColor else emptyColor,
                 contentDescription = null,
                 modifier = Modifier.scale(if (highlightIndex == i) 1.25f else 1f)
             )
@@ -64,26 +63,70 @@ fun SaverSlots(
     }
 }
 
-/** How savers, fading, the comeback gift and recovery work — shared by the Streak tab and Settings. */
+/**
+ * "Streak and Savers" — only what a user acts on: how the streak grows, how a saver
+ * is earned, what it does. Fading, the comeback gift and recovery explain themselves
+ * when they happen (the bell and the at-risk state), so they stay out of here.
+ * Shared by the Streak tab and Settings.
+ */
 @Composable
-fun SaverExplainerDialog(savers: Int, onDismiss: () -> Unit) {
+fun SaverExplainerDialog(savers: Int, beginner: Boolean = false, onDismiss: () -> Unit) {
+    BandExplainerDialog(
+        sym = Sym.Fire,
+        title = "Streak and Savers",
+        lead = "You have $savers of $SAVER_CAP savers.",
+        points = listOf(
+            "Savers make sure you don't lose your streak on a day you rate fewer than $STREAK_HOURS_REQUIRED hours.",
+            if (beginner) "Streaks grow in Master mode: rate $STREAK_HOURS_REQUIRED hours a day."
+            else "Rate $STREAK_HOURS_REQUIRED hours a day to grow your streak.",
+            "Rate $SAVER_EARN_HOURS hours in a day to earn a saver, up to $SAVER_CAP."
+        ),
+        onDismiss = onDismiss
+    )
+}
+
+/** What the hour ring is for: the daily goal that grows a streak. */
+@Composable
+fun DailyGoalDialog(todayHours: Int, hoursRequired: Int, beginner: Boolean, onDismiss: () -> Unit) {
+    val remaining = (hoursRequired - todayHours).coerceAtLeast(0)
+    val more = "$remaining more ${if (remaining == 1) "hour" else "hours"}"
+    BandExplainerDialog(
+        sym = Sym.Hourglass,
+        title = "Today's goal",
+        lead = "$todayHours of $hoursRequired hours rated today.",
+        points = listOfNotNull(
+            when {
+                beginner && remaining == 0 -> "Today is a beginner day. Beginner days don't grow your streak; Master mode's $STREAK_HOURS_REQUIRED-hour days do."
+                beginner -> "Rate $more today and it's a beginner day. Beginner days don't grow your streak; Master mode's $STREAK_HOURS_REQUIRED-hour days do."
+                remaining == 0 -> "Today is complete. Each complete day grows your streak by one."
+                else -> "Rate $more today and the day is complete. Each complete day grows your streak by one."
+            },
+            "Only hours you rate on time count. Hours added later don't.",
+            // Beginner days never earn savers, so don't promise one
+            if (beginner) null
+            else "Rating $SAVER_EARN_HOURS hours in a day earns a streak saver, up to $SAVER_CAP."
+        ),
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+private fun BandExplainerDialog(
+    sym: Sym,
+    title: String,
+    lead: String,
+    points: List<String>,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { SymTitle(Sym.Saver, "Streak savers") },
+        title = { SymTitle(sym, title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("You have $savers of $SAVER_CAP.", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, fontSize = 14.sp)
-                Spacer(Modifier.height(0.dp))
-                listOf(
-                    "Rate $SAVER_EARN_HOURS hours in one day to earn a saver. You can hold $SAVER_CAP.",
-                    "Miss a day and a saver steps in on its own, so your streak holds. It doesn't grow.",
-                    "Savers fade when you miss a day with no streak running. Start one to keep them.",
-                    "$COMEBACK_IDLE_DAYS days in a row with no complete day? $COMEBACK_GIFT savers on the house.",
-                    "Out of savers and miss a day? The streak breaks, but you get $RECOVERY_DAYS days to win it back. Rate $RECOVERY_HOURS hours on any one of them.",
-                    "Hours added later never count toward any of this."
-                ).forEach { Text("• $it", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface) }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(lead, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, fontSize = 14.sp)
+                points.forEach { Text("• $it", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it!") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } }
     )
 }

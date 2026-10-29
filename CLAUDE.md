@@ -28,8 +28,9 @@ notification → rate → tag → save → lock phone → back to life.
 - **Streak savers** (2026-10-28, replace rest days). Every history starts with
   `SAVER_START` (2). A Master day with ≥ `SAVER_EARN_HOURS` (12) counted hours
   earns +1 (cap `SAVER_CAP` 5). A finished Master day under 8 **spends one
-  automatically**: with a streak running it is `SAVED` (streak holds, doesn't
-  grow); with none it is `FADED` (saver burns for nothing — a rule, not a bug).
+  automatically**: with a streak running it is `SAVED` (the saved day counts, so
+  the streak grows by one — 2026-10-29); with none it is `FADED` (saver burns for
+  nothing — a rule, not a bug).
   No savers + a running streak = `BROKEN`; no streak and no savers = `MISSED`.
 - **Comeback gift**: every `COMEBACK_IDLE_DAYS` (7) days in a row with no
   complete day (Master 8+ or beginner 4+) gifts `COMEBACK_GIFT` (2) savers
@@ -1007,3 +1008,21 @@ case verify by static review and say so explicitly — the user compiles locally
   working undo at all). `PastTab` and `NowTab` each show "Rating deleted ·
   Undo" (Now's host floats above the pinned footer), and the Tags page shows
   "Deleted "X" · Undo", which restores the tag to its old slot.
+- 2026-10-29 (Streak band redesign · savers grow the streak): the band was three
+  objects in three languages (solid disc, open ring, translucent savers pill) and
+  three yellows. Now `StreakMeter` is **two equal columns split by a 0.5dp
+  hairline**: left = `StreakMedallion` (a solid honey `accentFill` disc, flame
+  beside the count in `onAccentFill`, label under; red + "N!" at risk, leaf when
+  paused/beginner, faint white with no streak) over the `SaverSlots` row (15dp
+  shields + "4/5", or "N days to win it back" at risk); right = the hour ring
+  (now honey, green once complete) over "N more to complete". Both counts are
+  `COUNT_SIZE` 46sp. The separate savers pill in `StreaksTab` is gone. Each whole
+  column is one tap target (`bandTapTarget`): left opens **"Streak and Savers"**
+  (`SaverExplainerDialog`, three lines only — fading, the comeback gift and
+  recovery explain themselves when they happen), right opens **"Today's goal"**
+  (`DailyGoalDialog`, live "Rate N more hours", no saver line in beginner mode).
+  `SaverSlots` gained `fullColor`/`iconSize`/`spacing` (defaults unchanged).
+  **Rule change (owner):** a `SAVED` day now grows the streak by one instead of
+  holding it; history replays under it, so counts across saved days rise. Tests
+  updated (`brokenThree` → `brokenAtFive`), and the "holds" copy swept (bell,
+  day stats, both explainers).

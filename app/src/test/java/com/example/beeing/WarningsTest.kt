@@ -23,9 +23,9 @@ class WarningsTest {
     @Test fun copy_matches_spec() {
         one(ev(StreakEventType.SAVER_USED, streak = 12, savers = 1)).let {
             assertEquals("A streak saver kept your streak alive", it.title)
-            assertEquals("You missed Mon. Your 12-day streak is safe. 1 saver left.", it.detail)
+            assertEquals("You missed Mon and your streak still grew to 12 days. 1 saver left.", it.detail)
         }
-        assertEquals("You missed Mon. Your 12-day streak is safe. 2 savers left.",
+        assertEquals("You missed Mon and your streak still grew to 12 days. 2 savers left.",
             one(ev(StreakEventType.SAVER_USED, streak = 12, savers = 2)).detail)
         one(ev(StreakEventType.SAVER_FADED, savers = 1)).let {
             assertEquals("A streak saver faded", it.title)

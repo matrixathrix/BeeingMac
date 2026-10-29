@@ -42,6 +42,7 @@ import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.BandTopRowSpacer
+import com.example.beeing.ui.DailyGoalDialog
 import com.example.beeing.ui.SaverExplainerDialog
 import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.icons.BeeIcon
@@ -93,6 +94,7 @@ fun StreaksTab(
     var reclaimStartMillis by remember { mutableStateOf<Long?>(null) }
     var showRules by remember { mutableStateOf(false) }
     var showSavers by remember { mutableStateOf(false) }
+    var showGoal by remember { mutableStateOf(false) }
     // Day tapped on the calendar (start-of-day millis) → stats popup
     var statsDayMillis by remember { mutableStateOf<Long?>(null) }
 
@@ -121,32 +123,15 @@ fun StreaksTab(
         // must never scroll away and leave them over the light page. ----
         BrandBand {
             BandTopRowSpacer()
-            Spacer(Modifier.height(16.dp))
-            StreakMeter(state = streakState)
-            Spacer(Modifier.height(16.dp))
-            // Savers: one calm pill under the ring, tap for how they work
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(com.example.beeing.ui.OnBandFill)
-                    .clickable(onClickLabel = "How savers work") { showSavers = true }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Streak savers",
-                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.weight(1f)
-                )
-                SaverSlots(streakState.savers)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    "${streakState.savers}/$SAVER_CAP",
-                    fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color.White
-                )
-            }
+            Spacer(Modifier.height(14.dp))
+            // Savers ride under the streak they protect: streak + savers is one tap
+            // target (Streak and Savers), the ring is the other (Today's goal)
+            StreakMeter(
+                state = streakState,
+                onStreakClick = { showSavers = true },
+                onGoalClick = { showGoal = true }
+            )
+            Spacer(Modifier.height(4.dp))
         }
 
         Column(
@@ -413,7 +398,12 @@ fun StreaksTab(
         )
     }
 
-    if (showSavers) SaverExplainerDialog(streakState.savers) { showSavers = false }
+    if (showSavers) SaverExplainerDialog(streakState.savers, streakState.beginnerMode) { showSavers = false }
+    if (showGoal) DailyGoalDialog(
+        todayHours = streakState.todayHours,
+        hoursRequired = streakState.hoursRequired,
+        beginner = streakState.beginnerMode
+    ) { showGoal = false }
 
     // ---- The one explainer: how streaks work ----
     if (showRules) {
@@ -442,7 +432,7 @@ fun StreaksTab(
                     } else {
                         Text("• Rate $STREAK_HOURS_REQUIRED hours in a day and that day is complete — complete days are your streak.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
-                        Text("• Rate $SAVER_EARN_HOURS hours in a day to earn a streak saver (up to $SAVER_CAP). Miss a day and a saver steps in on its own: the streak holds, it just doesn't grow.", fontSize = 14.sp)
+                        Text("• Rate $SAVER_EARN_HOURS hours in a day to earn a streak saver (up to $SAVER_CAP). Miss a day and a saver steps in, so your streak still grows.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
                         Text("• With no streak running, a missed day makes a saver fade — so start one. $COMEBACK_IDLE_DAYS days in a row without a complete day earns $COMEBACK_GIFT savers on the house.", fontSize = 14.sp)
                         Spacer(Modifier.height(8.dp))
@@ -661,7 +651,7 @@ private fun DayStatsDialog(
         outcome == DayOutcome.QUALIFIED -> "Day complete"
         outcome == DayOutcome.RECOVERED -> "Streak recovered"
         outcome == DayOutcome.BEGINNER_COMPLETE -> "Beginner day complete"
-        outcome == DayOutcome.SAVED -> "Saver used — the streak held"
+        outcome == DayOutcome.SAVED -> "Saver used — the streak still grew"
         outcome == DayOutcome.BROKEN -> "Streak broke"
         outcome == DayOutcome.MISSED || outcome == DayOutcome.FADED -> "Missed"
         isToday -> "In progress"

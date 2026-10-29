@@ -37,7 +37,7 @@ internal fun StreakEvent.warningTitle(): String = when (type) {
 
 internal fun StreakEvent.warningDetail(dayLabel: String): String = when (type) {
     StreakEventType.SAVER_USED ->
-        "You missed $dayLabel. Your $streak-day streak is safe. $savers ${plural(savers, "saver")} left."
+        "You missed $dayLabel and your streak still grew to $streak days. $savers ${plural(savers, "saver")} left."
     StreakEventType.SAVER_FADED -> "No streak was running on $dayLabel." +
         if (savers == 0) " That was your last saver." else " Start one today to keep the $savers you have left."
     StreakEventType.COMEBACK_GIFT -> "Rate a few hours today to start a new streak."
