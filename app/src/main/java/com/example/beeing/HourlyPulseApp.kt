@@ -148,7 +148,9 @@ fun HourlyPulseApp(
 
     // Full-screen celebration when the daily ring closes (streak day secured)
     var ringCelebration by remember { mutableStateOf<RingCelebration?>(null) }
-    // A saver earned or a streak won back; waits its turn behind the ring celebration
+    // "Make it a Super day": the ring celebration hands it over when it finishes
+    var superInvite by remember { mutableStateOf<SuperInvite?>(null) }
+    // A Super day or a streak won back; waits its turn behind the ring celebration and the invite
     var streakMoment by remember { mutableStateOf<StreakMoment?>(null) }
 
     // Mode + streak, shared by the menu copy, the explainer and the nudge
@@ -655,12 +657,20 @@ fun HourlyPulseApp(
     ringCelebration?.let { celebration ->
         RingClosedCelebration(
             celebration = celebration,
-            onDone = { ringCelebration = null }
+            onDone = {
+                superInvite = celebration.superInvite
+                ringCelebration = null
+            }
         )
     }
-    if (ringCelebration == null) {
-        streakMoment?.let { moment ->
-            StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+    superInvite?.let { invite ->
+        SuperDayInvite(invite = invite, onDone = { superInvite = null })
+    }
+    if (ringCelebration == null && superInvite == null) {
+        when (val moment = streakMoment) {
+            is StreakMoment.SuperDay -> SuperDayCelebration(moment = moment, onDone = { streakMoment = null })
+            is StreakMoment.Recovered -> StreakMomentCelebration(moment = moment, onDone = { streakMoment = null })
+            null -> Unit
         }
     }
     }

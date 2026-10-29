@@ -76,6 +76,10 @@ fun superInviteFor(day: DayTally, savers: Int, reachable: Int): SuperInvite? {
     return if (reachable >= needed + SUPER_DAY_SLACK) SuperInvite(needed, savers) else null
 }
 
+/** The invite shows at most once a day: [shownDay] is the day start it last showed on. */
+fun gateInvite(invite: SuperInvite?, dayStartMs: Long, shownDay: Long): SuperInvite? =
+    invite?.takeIf { shownDay != dayStartMs }
+
 /**
  * Hours left to a Super day, for the quiet caption once the goal is met: a Master day at
  * or past its goal, under 12, where the hours still fit exactly (no slack, it is only a caption).

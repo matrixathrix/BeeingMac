@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeButtonDefaults
-import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.theme.BandBottomDark
@@ -51,13 +50,13 @@ import kotlin.math.sin
 private val SparkColors = listOf(Color(0xFFFFD54F), Color(0xFFFFB300), Color.White)
 
 /**
- * Full-screen moment for a saver earned (the 12th counted hour) or a streak won
- * back. A shield (or flame) drops in with overshoot, floats on a glowing aubergine
- * field, sparks fly, and a row of saver slots shows the new one popping in.
- * One haptic on the drop. With system animations off it shows the end state.
+ * Full-screen moment for a streak won back (a Super day has its own screen,
+ * `SuperDayCelebration`). A flame drops in with overshoot, floats on a glowing
+ * aubergine field and sparks fly. One haptic on the drop. With system animations
+ * off it shows the end state.
  */
 @Composable
-fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
+fun StreakMomentCelebration(moment: StreakMoment.Recovered, onDone: () -> Unit) {
     val context = LocalContext.current
     val animationsOn = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
@@ -76,16 +75,7 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
     }
     val bob = if (animationsOn) sin(float.value * PI.toFloat() * 2f) * 6f else 0f
 
-    val (label, title, sub, sym) = when (moment) {
-        is StreakMoment.SuperDay -> Copy(
-            "$SAVER_EARN_HOURS-HOUR DAY", "Streak saver earned",
-            "It will step in automatically the next time you miss a day.", Sym.Saver
-        )
-        is StreakMoment.Recovered -> Copy(
-            "STREAK RECOVERED", "Your ${moment.streak}-day streak is back",
-            "You won it back. Keep it going.", Sym.Fire
-        )
-    }
+    val title = "Your ${moment.streak}-day streak is back"
 
     Box(
         Modifier
@@ -117,7 +107,7 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
             BeeIcon(
-                sym, size = 132.dp, tint = HoneyGold, contentDescription = null,
+                Sym.Fire, size = 132.dp, tint = HoneyGold, contentDescription = null,
                 modifier = Modifier.graphicsLayer {
                     val s = drop.value
                     scaleX = s; scaleY = s
@@ -126,15 +116,14 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
                 }
             )
             Spacer(Modifier.height(24.dp))
-            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp, color = HoneyGold)
+            Text("STREAK RECOVERED", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp, color = HoneyGold)
             Spacer(Modifier.height(6.dp))
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
-            Text(sub, fontSize = 15.sp, color = Color.White.copy(alpha = 0.8f), textAlign = TextAlign.Center)
-            if (moment is StreakMoment.SuperDay) {
-                Spacer(Modifier.height(22.dp))
-                SaverSlots(moment.savers, highlightIndex = moment.savers - 1)
-            }
+            Text(
+                "You won it back. Keep it going.",
+                fontSize = 15.sp, color = Color.White.copy(alpha = 0.8f), textAlign = TextAlign.Center
+            )
             Spacer(Modifier.height(32.dp))
             Button(onClick = onDone, colors = BeeButtonDefaults.colors()) {
                 Text("Keep going", fontWeight = FontWeight.Bold)
@@ -142,5 +131,3 @@ fun StreakMomentCelebration(moment: StreakMoment, onDone: () -> Unit) {
         }
     }
 }
-
-private data class Copy(val label: String, val title: String, val sub: String, val sym: Sym)

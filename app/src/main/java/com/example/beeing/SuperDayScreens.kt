@@ -189,14 +189,15 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
                 Canvas(Modifier.fillMaxSize()) {
                     val drawn = FastOutSlowInEasing.transform(((intro.value - 0.2f) / 0.8f).coerceIn(0f, 1f))
                     drawSuperRings(trackIn = drawn * LAP_SEGMENTS, lapFilled = 0f)
-                    // The next hour's segment, breathing
+                    // The next hour's segment, breathing; it sweeps in with its own track
+                    // segment, so nothing shows before the lap has drawn there
                     val s = size.minDimension
                     drawSuperLap(
-                        center, s * 0.445f, s * 0.045f, filled = 1f, track = Color.Transparent,
-                        fill = SuperGold.copy(alpha = 0.15f + 0.45f * breath())
+                        center, s * 0.445f, s * 0.045f, filled = (drawn * LAP_SEGMENTS).coerceAtMost(1f),
+                        track = Color.Transparent, fill = SuperGold.copy(alpha = 0.15f + 0.45f * breath())
                     )
                 }
-                RingReadout("$STREAK_HOURS_REQUIRED", "of $SUPER_DAY_HOURS", Color.White)
+                RingReadout("${SUPER_DAY_HOURS - invite.hoursNeeded}", "of $SUPER_DAY_HOURS", Color.White)
             }
             Spacer(Modifier.height(24.dp))
             TitleAndBody("Make it a Super day", body)
@@ -285,11 +286,17 @@ fun SuperDayCelebration(moment: StreakMoment.SuperDay, onDone: () -> Unit) {
                             SuperGold.copy(alpha = 0.35f * settle), radius = s * 0.53f, center = center,
                             style = Stroke(width = 1.5.dp.toPx())
                         )
-                        if (p > 0.55f) for (i in 0 until 14) {
+                        // Sparks burst to just outside the halo (0.50–0.58 of the ring size,
+                        // short of the overline and title around the box) and fade out over
+                        // the float; the end state, animations off included, has none
+                        val sparkAlpha = if (animationsOn) 0.85f * (1f - float.value) else 0f
+                        if (p > 0.55f && sparkAlpha > 0f) for (i in 0 until 14) {
                             val a = i * (2f * PI.toFloat() / 14f)
-                            val dist = s * (0.60f + 0.22f * ((i * 7) % 5) / 4f) * ((p - 0.55f) / 0.45f)
+                            // Clamped: the spring overshoots past 1 and would fling them into the text
+                            val burst = ((p - 0.55f) / 0.45f).coerceAtMost(1f)
+                            val dist = s * (0.50f + 0.08f * ((i * 7) % 5) / 4f) * burst
                             drawCircle(
-                                SuperSparks[i % SuperSparks.size].copy(alpha = 0.85f),
+                                SuperSparks[i % SuperSparks.size].copy(alpha = sparkAlpha),
                                 radius = 3.dp.toPx() + (i % 3).dp.toPx(),
                                 center = Offset(center.x + cos(a) * dist, center.y + sin(a) * dist)
                             )

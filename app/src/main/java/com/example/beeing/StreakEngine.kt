@@ -85,6 +85,7 @@ fun recordReclaimSpend(context: android.content.Context) {
 
 private const val MODE_EVENTS_KEY = "mode_events"
 private const val GRADUATION_SHOWN_KEY = "beginner_graduation_shown"
+private const val SUPER_INVITE_SHOWN_KEY = "super_invite_shown_day"
 
 /** Oldest first — the replay and `isBeginnerMode` both rely on that order. */
 fun loadModeEvents(context: android.content.Context): List<ModeEvent> =
@@ -124,6 +125,14 @@ fun beginnerGraduationShown(context: android.content.Context): Boolean =
 
 fun markBeginnerGraduationShown(context: android.content.Context) {
     context.getSharedPreferences("b", 0).edit().putBoolean(GRADUATION_SHOWN_KEY, true).apply()
+}
+
+/** The Super day invite is once a day: the start millis of the day it last showed on, or -1. */
+fun superInviteShownDay(context: android.content.Context): Long =
+    context.getSharedPreferences("b", 0).getLong(SUPER_INVITE_SHOWN_KEY, -1L)
+
+fun markSuperInviteShown(context: android.content.Context, dayStartMs: Long) {
+    context.getSharedPreferences("b", 0).edit().putLong(SUPER_INVITE_SHOWN_KEY, dayStartMs).apply()
 }
 
 /** Past hours already added today — free, but capped per day. */

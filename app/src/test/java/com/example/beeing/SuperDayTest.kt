@@ -130,4 +130,12 @@ class SuperDayTest {
         val reachable = reachableHours(day28, yesterday.countedStarts, prefs(), at(29, 0, 5))
         assertNull(superInviteFor(yesterday, 2, reachable))
     }
+
+    @Test fun invite_flag_blocks_a_second_invite_the_same_day() {
+        val inv = SuperInvite(hoursNeeded = 4, savers = 2)
+        val d = day28
+        assertNull(gateInvite(inv, d, shownDay = d))
+        assertEquals(inv, gateInvite(inv, d, shownDay = d - 24 * 3_600_000L))
+        assertNull(gateInvite(null, d, shownDay = -1L))
+    }
 }

@@ -235,35 +235,27 @@ fun NowTab(
         computeStreakState(allRatings, viewModel.modeEvents)
     }
 
-    // Fire the full-screen celebration exactly when today flips to qualified —
-    // at 4 hours in beginner mode, 8 in Master. It's the one daily ceremony
-    // either way; only what it announces changes.
-    // Lowering the goal can also flip todayQualified — but a settings toggle is
-    // not a ring closing, so a goal change only re-baselines, never celebrates.
-    var wasQualified by remember { mutableStateOf<Boolean?>(null) }
-    var lastGoal by remember { mutableIntStateOf(streakState.hoursRequired) }
-    LaunchedEffect(streakState.todayQualified, streakState.hoursRequired) {
-        val prev = wasQualified
-        val goalChanged = lastGoal != streakState.hoursRequired
-        wasQualified = streakState.todayQualified
-        lastGoal = streakState.hoursRequired
-        if (prev == false && streakState.todayQualified && !goalChanged) {
-            onRingClosed(
-                RingCelebration(
-                    count = if (streakState.beginnerMode) streakState.beginnerDaysCompleted
-                    else streakState.currentStreak,
-                    beginner = streakState.beginnerMode
-                )
-            )
-        }
-    }
-
-    // A saver earned / a streak won back. streakMoment() only fires when exactly one
-    // new counted hour landed, so replays, imports, backdated saves and mode
-    // toggles can never celebrate; the first composition just sets the baseline.
+    // The day's ring closing (the one daily ceremony, 4 hours in beginner mode, 8 in
+    // Master), a Super day, a streak won back. ringClosed() and streakMoment() only
+    // fire when exactly one new counted hour landed, so replays, imports, backdated
+    // saves and mode toggles can never celebrate; the first composition just sets
+    // the baseline. A ring close may carry the once-a-day "Make it a Super day"
+    // invite; the flag is written only when one is actually handed over.
     var previousState by remember { mutableStateOf<StreakState?>(null) }
     LaunchedEffect(streakState) {
-        streakMoment(previousState, streakState)?.let(onStreakMoment)
+        val prev = previousState
+        ringClosed(prev, streakState)?.let { closed ->
+            val day = closed.day
+            val reachable = reachableHours(
+                day.dayStartMs, day.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis()
+            )
+            val invite = gateInvite(
+                superInviteFor(day, streakState.savers, reachable), day.dayStartMs, superInviteShownDay(context)
+            )
+            if (invite != null) markSuperInviteShown(context, day.dayStartMs)
+            onRingClosed(RingCelebration(closed.count, closed.beginner, closed.late, invite))
+        }
+        streakMoment(prev, streakState)?.let(onStreakMoment)
         previousState = streakState
     }
 
@@ -682,7 +674,12 @@ fun NowTab(
                         // Not "Pick a rating": the dial's core already says that
                         selectedScore == null -> "Rate and tag to save"
                         selectedTags.isEmpty() -> "Add a tag to save"
-                        else -> "Save ${displayHourInfo.first}"
+                        else -> {
+                            // A late hour that tips yesterday over says so
+                            val targetHourStartMs = hourStart - (targetedHourOffset + 1) * 3_600_000L
+                            "Save ${displayHourInfo.first}" +
+                                (lateHourHint(targetHourStartMs, streakState.recentDays) ?: "")
+                        }
                     }
                     Button(
                             onClick = {
@@ -722,11 +719,14 @@ fun NowTab(
                                 contentColor = LocalBeeExtras.current.onAccentFill
                             )
                         ) {
+                            // A hint-long label wraps to two centred lines, never ellipsizes
                             Text(
                                 saveLabel,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = JakartaFontFamily
+                                fontFamily = JakartaFontFamily,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 19.sp
                             )
                         }
                     }
