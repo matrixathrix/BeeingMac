@@ -16,7 +16,9 @@ const val BEGINNER_HOURS_REQUIRED = 4 // ...and the softer day-one goal in begin
 const val BEGINNER_GRADUATION_DAYS = 3 // completed beginner days before the one-time nudge
 const val SAVER_START = 2             // every history begins with this many savers
 const val SAVER_CAP = 5
-const val SAVER_EARN_HOURS = 12       // a Master day this long earns one saver
+const val SUPER_DAY_HOURS = 12        // a Master day this long is a Super day
+const val SUPER_DAY_SLACK = 1         // hours short of it at which the app still nudges toward it
+const val SAVER_EARN_HOURS = SUPER_DAY_HOURS // ...and a Super day earns one saver
 const val COMEBACK_IDLE_DAYS = 7      // days in a row with no complete day => gift
 const val COMEBACK_GIFT = 2
 const val RECOVERY_DAYS = 3           // calendar days after a break
@@ -51,7 +53,8 @@ enum class DayOutcome { QUALIFIED, SAVED, FADED, BROKEN, MISSED, RECOVERED, BEGI
 
 enum class StreakEventType {
     COMPLETED, BEGINNER, SAVER_EARNED, SAVER_USED, SAVER_FADED, LOW_SAVERS,
-    COMEBACK_GIFT, STREAK_BROKE, RECOVERY_DAYS_LEFT, RECOVERED, PAST_HOUR_ADDED
+    COMEBACK_GIFT, STREAK_BROKE, RECOVERY_DAYS_LEFT, RECOVERED, PAST_HOUR_ADDED,
+    SUPER_DAY
 }
 
 /**
@@ -69,6 +72,26 @@ data class StreakEvent(
     val dayStartMs: Long
 )
 
+/**
+ * One calendar day as the replay saw it. `countedStarts` are the sorted start
+ * millis of its in-the-moment hours (backdated ones never appear); `goal` is the
+ * daily goal in the mode in effect at the day's end.
+ */
+data class DayTally(
+    val dayStartMs: Long,
+    val countedStarts: List<Long>,
+    val beginner: Boolean,
+    val goal: Int,
+    val streakAfter: Int,
+    val earnedSaver: Boolean,
+    val recovered: Boolean,
+    val isToday: Boolean
+) {
+    val countedHours: Int get() = countedStarts.size
+    /** A Master day with SUPER_DAY_HOURS counted hours. Beginner days never qualify. */
+    val superDay: Boolean get() = !beginner && countedHours >= SUPER_DAY_HOURS
+}
+
 data class StreakState(
     val currentStreak: Int,        // consecutive complete days (the in-window run while recovery is open)
     val displayStreak: Int,        // the pre-break count while recoveryOpen, else currentStreak
@@ -82,7 +105,8 @@ data class StreakState(
     val recoveryOpen: Boolean,
     val recoveryDaysLeft: Int,     // including today; 0 when no window is open
     val todayEarnedSaver: Boolean,
-    val todayRecovered: Boolean = false // today's hours are what won the streak back
+    val todayRecovered: Boolean = false, // today's hours are what won the streak back
+    val recentDays: List<DayTally> = emptyList() // yesterday and today (oldest first), when the replay has them
 ) {
     /** In beginner mode the streak is frozen, not lost — say so, don't hide it. */
     val streakPaused: Boolean get() = beginnerMode && currentStreak > 0
@@ -91,14 +115,16 @@ data class StreakState(
 internal class ReplayDay(
     val key: Long,                  // year * 1000 + dayOfYear
     val dayStartMs: Long,
-    val countedHours: Int,
+    val countedStarts: List<Long>,  // sorted start millis of the counted hours
     val outcome: DayOutcome?,       // null = today in progress, or a beginner day under the goal
     val streakAfter: Int,
     val saversAfter: Int,
     val earnedSaver: Boolean,
     val beginner: Boolean,          // the mode in effect at this day's END
     val isToday: Boolean
-)
+) {
+    val countedHours: Int get() = countedStarts.size
+}
 
 internal class Replay(
     val days: List<ReplayDay>,
@@ -190,7 +216,10 @@ internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, now
 
         var outcome: DayOutcome? = null
         var earned = false
+        // Runs only on Master QUALIFIED/RECOVERED days, so beginner days never reach it.
         fun maybeEarn() {
+            // The Super day is recorded even at the saver cap, when there is nothing to earn.
+            if (n >= SUPER_DAY_HOURS) ev(StreakEventType.SUPER_DAY, hourTs[SUPER_DAY_HOURS - 1], streak)
             if (n >= SAVER_EARN_HOURS && savers < SAVER_CAP) {
                 savers++; earned = true
                 ev(StreakEventType.SAVER_EARNED, hourTs[SAVER_EARN_HOURS - 1], streak)
@@ -259,7 +288,7 @@ internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, now
             }
         }
 
-        days.add(ReplayDay(key, dayStartMs, n, outcome, streak, savers, earned, beginner, isToday))
+        days.add(ReplayDay(key, dayStartMs, hourTs, outcome, streak, savers, earned, beginner, isToday))
         lastDaysLeft = window?.let { RECOVERY_DAYS + 1 - (index - it.breakIndex) } ?: 0
 
         if (isToday) break
@@ -295,9 +324,36 @@ fun computeStreakState(
         recoveryOpen = r.recoveryOpen,
         recoveryDaysLeft = r.recoveryDaysLeft,
         todayEarnedSaver = today?.earnedSaver == true,
-        todayRecovered = today?.outcome == DayOutcome.RECOVERED
+        todayRecovered = today?.outcome == DayOutcome.RECOVERED,
+        recentDays = r.days.takeLast(2).filter { it.dayStartMs >= yesterdayStart(nowMs) }.map { it.toTally() }
     )
 }
+
+private fun ReplayDay.toTally() = DayTally(
+    dayStartMs = dayStartMs, countedStarts = countedStarts, beginner = beginner,
+    goal = hoursRequiredFor(beginner), streakAfter = streakAfter, earnedSaver = earnedSaver,
+    recovered = outcome == DayOutcome.RECOVERED, isToday = isToday
+)
+
+/** Midnight at the start of the calendar day before `nowMs`. */
+private fun yesterdayStart(nowMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = nowMs
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    add(Calendar.DAY_OF_YEAR, -1)
+}.timeInMillis
+
+/**
+ * The days that were Super days: a Master day (mode at the day's end) with
+ * >= SUPER_DAY_HOURS counted hours. Key = year * 1000 + dayOfYear. Backdated
+ * hours never count, so they can't make one.
+ */
+fun computeSuperDays(
+    ratings: List<RatingEntry>,
+    modeEvents: List<ModeEvent>,
+    nowMs: Long = System.currentTimeMillis()
+): Set<Long> =
+    replay(ratings, modeEvents, nowMs).days.filter { it.toTally().superDay }.map { it.key }.toSet()
 
 /**
  * Per-day outcome for every day from the first rating through yesterday.

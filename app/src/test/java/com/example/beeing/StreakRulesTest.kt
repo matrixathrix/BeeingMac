@@ -215,4 +215,58 @@ class StreakRulesTest {
             TimeZone.setDefault(saved)
         }
     }
+
+    private fun superDays(r: List<RatingEntry>, m: List<ModeEvent> = emptyList(), nowMs: Long = now()) =
+        computeSuperDays(r, m, nowMs)
+
+    @Test fun super_day_event_fires_at_the_twelfth_hour_even_at_cap() {
+        // Four 12-hour days fill the savers to the cap of 5; the fifth is a Super day with nothing to earn.
+        val r = hist(listOf(12, 12, 12, 12, 12))
+        assertEquals(5, state(r).savers)
+        val last = events(r).filter { it.dayStartMs == dayStart(1) }
+        val supers = last.filter { it.type == StreakEventType.SUPER_DAY }
+        assertEquals(1, supers.size)
+        assertEquals("SUPER_DAY:${keyOf(1)}", supers[0].id)
+        assertEquals(entry(1, 11, false).timestamp, supers[0].timestamp)
+        assertEquals(0, last.countOf(StreakEventType.SAVER_EARNED))
+    }
+
+    @Test fun backdated_hours_never_make_a_super_day() {
+        val r = day(1, 11, 1)
+        assertEquals(0, events(r).countOf(StreakEventType.SUPER_DAY))
+        assertFalse(keyOf(1) in superDays(r))
+        assertTrue(keyOf(1) in superDays(day(1, 12)))
+    }
+
+    @Test fun beginner_day_with_twelve_hours_is_not_super() {
+        val r = day(1, 12)
+        assertFalse(keyOf(1) in superDays(r, beginnerOn(1)))
+        assertEquals(0, events(r, beginnerOn(1)).countOf(StreakEventType.SUPER_DAY))
+    }
+
+    @Test fun recent_days_hold_yesterday_and_today() {
+        val r = day(1, 3) + day(0, 1)
+        val recent = state(r).recentDays
+        assertEquals(listOf(3, 1), recent.map { it.countedHours })
+        assertTrue(recent.last().isToday)
+        assertFalse(recent.first().isToday)
+        assertEquals(8, recent.first().goal)
+        assertEquals(dayStart(1), recent.first().dayStartMs)
+        assertEquals(listOf(entry(0, 0).timestamp), recent.last().countedStarts)
+    }
+
+    @Test fun late_eleven_pm_hour_counts_for_yesterday() {
+        val midnightNow = Calendar.getInstance().apply {
+            timeInMillis = dayStart(0); set(Calendar.MINUTE, 6)
+        }.timeInMillis
+        val late = RatingEntry(
+            id = dayStart(0) + 5 * 60_000L, score = 7,
+            timestamp = entry(1, 23).timestamp, hourLabel = "", tags = listOf("Work")
+        )
+        val r = day(1, 11) + late
+        val s = computeStreakState(r, emptyList(), midnightNow)
+        assertTrue(s.recentDays.first().superDay)
+        assertEquals(12, s.recentDays.first().countedHours)
+        assertTrue(keyOf(1) in superDays(r, nowMs = midnightNow))
+    }
 }

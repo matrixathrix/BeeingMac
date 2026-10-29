@@ -495,6 +495,7 @@ internal fun StreakEventType.sym(): Sym = when (this) {
     StreakEventType.STREAK_BROKE -> Sym.Reset
     StreakEventType.RECOVERY_DAYS_LEFT, StreakEventType.RECOVERED -> Sym.Fire
     StreakEventType.PAST_HOUR_ADDED -> Sym.FromMemory
+    StreakEventType.SUPER_DAY -> Sym.Sparkle
 }
 
 internal fun StreakEvent.logTitle(): String = when (type) {
@@ -502,6 +503,7 @@ internal fun StreakEvent.logTitle(): String = when (type) {
     StreakEventType.BEGINNER -> "Beginner day complete"
     StreakEventType.SAVER_EARNED -> "Streak saver earned"
     StreakEventType.PAST_HOUR_ADDED -> "Past hour added"
+    StreakEventType.SUPER_DAY -> "Super day"
     else -> warningTitle()
 }
 
@@ -513,6 +515,7 @@ internal fun StreakEvent.logDetail(): String {
             if (streak > 0) " — streak paused at $streak" else ""
         StreakEventType.SAVER_EARNED -> "$SAVER_EARN_HOURS hours on $day — $savers of $SAVER_CAP saved up"
         StreakEventType.PAST_HOUR_ADDED -> "Added an hour from earlier"
+        StreakEventType.SUPER_DAY -> "$SUPER_DAY_HOURS hours on $day"
         else -> warningDetail(day)
     }
 }
