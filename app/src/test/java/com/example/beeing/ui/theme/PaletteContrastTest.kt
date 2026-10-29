@@ -58,6 +58,14 @@ class PaletteContrastTest {
         }
     }
 
+    // The Super day outer lap, its numerals and overlines sit on the aubergine field.
+    @Test
+    fun super_gold_reads_on_the_band() {
+        listOf(BandTopLight, BandBottomLight, BandTopDark, BandBottomDark).forEach { band ->
+            assertContrast(4.5, SuperGold, band, "SuperGold on band $band")
+        }
+    }
+
     // M3 draws TextButtons (every dialog's Cancel/OK), switches and checkboxes
     // in `primary`, so primary must read as text on a card.
     @Test

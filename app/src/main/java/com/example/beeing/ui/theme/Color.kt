@@ -46,3 +46,7 @@ val RingQualifiedGreen = Color(0xFF66BB6A)
 // aubergine band (the 1-4 score red is too dark there).
 val StreakAtRiskRed = Color(0xFFFF6B6B)
 
+
+// Super day: the outer lap (hours 9-12) and its accents. Lighter than HoneyGold so
+// the two laps read apart; the inner ring stays HoneyGold.
+val SuperGold = Color(0xFFFFD54F)
