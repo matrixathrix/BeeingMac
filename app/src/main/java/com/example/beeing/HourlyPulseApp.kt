@@ -171,13 +171,12 @@ fun HourlyPulseApp(
     // still fits, and never while a recovery window is open (its own cue wins there).
     // Keyed on hourStart directly: reachability moves with the clock hour, and an
     // hourly recompute of streakState with no new rating is equal, so it can't carry the
-    // change. Re-read when Settings closes too, since silent hours and pause decide
-    // which hours are reachable.
-    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, showSettings, hourStart) {
+    // change.
+    val superHoursLeft = remember(streakState, viewModel.refreshTrigger, hourStart) {
         streakState.recentDays.lastOrNull()?.takeIf { it.isToday && !streakState.recoveryOpen }?.let {
             superCueFor(
                 it,
-                reachableHours(it.dayStartMs, it.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis())
+                reachableHours(it.dayStartMs, it.countedStarts, System.currentTimeMillis())
             )
         }
     }

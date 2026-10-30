@@ -138,10 +138,12 @@ private fun TitleAndBody(title: String, body: String) {
 }
 
 /**
- * Beat 2, "Make it a Super day": shown straight after the ring closes when the day
- * can still reach [SUPER_DAY_HOURS]. The outer lap draws itself in around the closed
- * ring and its first empty segment breathes; the saver the day would earn glows.
- * One button, system back also dismisses, no haptic (beat 1 spent the budget).
+ * Beat 2, "Make it a Super day": shown straight after every Master ring close today.
+ * The outer lap draws itself in around the closed ring and its first empty segment
+ * breathes; the saver the day would earn glows. When the day has too few hours left
+ * ([SuperInvite.tooLate]) the lap draws in without the breath, the screen says so, and
+ * the saver row goes. One button, system back also dismisses, no haptic (beat 1 spent
+ * the budget).
  */
 @Composable
 fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
@@ -153,7 +155,7 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
         if (animationsOn) intro.animateTo(1f, tween(1500, easing = LinearEasing))
     }
     // No infinite transition at all with animations off (animationsOn never changes)
-    val wave = if (animationsOn) {
+    val wave = if (animationsOn && !invite.tooLate) {
         rememberInfiniteTransition(label = "superInvite").animateFloat(
             initialValue = 0f, targetValue = 1f,
             animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
@@ -162,7 +164,8 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
     } else null
     // The breath, faded in once the lap has drawn; a still mid-glow with animations off
     fun breath(): Float =
-        if (wave == null) 0.5f
+        if (invite.tooLate) 0f
+        else if (wave == null) 0.5f
         else ((intro.value - 0.85f) / 0.15f).coerceIn(0f, 1f) * wave.value
 
     val evening = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) >= 17 }
@@ -192,7 +195,7 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
                     // The next hour's segment, breathing; it sweeps in with its own track
                     // segment, so nothing shows before the lap has drawn there
                     val s = size.minDimension
-                    drawSuperLap(
+                    if (!invite.tooLate) drawSuperLap(
                         center, s * 0.445f, s * 0.045f, filled = (drawn * LAP_SEGMENTS).coerceAtMost(1f),
                         track = Color.Transparent, fill = SuperGold.copy(alpha = 0.15f + 0.45f * breath())
                     )
@@ -200,9 +203,19 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
                 RingReadout("${SUPER_DAY_HOURS - invite.hoursNeeded}", "of $SUPER_DAY_HOURS", Color.White)
             }
             Spacer(Modifier.height(24.dp))
-            TitleAndBody("Make it a Super day", body)
-            Spacer(Modifier.height(22.dp))
-            if (invite.atCap) {
+            if (invite.tooLate) {
+                Text(
+                    "Too bad you do not have enough hours to make it a Super day",
+                    fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                TitleAndBody("Make it a Super day", body)
+                Spacer(Modifier.height(22.dp))
+            }
+            if (invite.tooLate) {
+                // No saver row: nothing is on offer today
+            } else if (invite.atCap) {
                 SaverSlots(invite.savers, iconSize = SLOT_SIZE, spacing = SLOT_GAP)
             } else {
                 // The slot this Super day would fill, glowing in time with the lap. It is
@@ -228,7 +241,7 @@ fun SuperDayInvite(invite: SuperInvite, onDone: () -> Unit) {
             }
             Spacer(Modifier.height(32.dp))
             Button(onClick = onDone, colors = BeeButtonDefaults.colors()) {
-                Text("Let's go", fontWeight = FontWeight.Bold)
+                Text(if (invite.tooLate) "Keep going" else "Let's go", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -347,6 +360,12 @@ private fun SuperDayInvitePreview() = BeeingTheme {
 @Composable
 private fun SuperDayInviteCappedPreview() = BeeingTheme {
     SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = SAVER_CAP, dayStartMs = 0L), onDone = {})
+}
+
+@Preview(widthDp = 360, heightDp = 760)
+@Composable
+private fun SuperDayInviteTooLatePreview() = BeeingTheme {
+    SuperDayInvite(SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = 0L, tooLate = true), onDone = {})
 }
 
 @Preview(widthDp = 360, heightDp = 760)

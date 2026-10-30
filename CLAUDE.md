@@ -173,7 +173,7 @@ case verify by static review and say so explicitly — the user compiles locally
 | `ui/BandTopRow.kt` | The row at the top of every tab's band: "Beeing" · `StatusStrip` · bell with unread badge · ⋮ Settings. Reads `LocalBandChrome`, provided once by `HourlyPulseApp`. `StatusStrip` shows the at-risk red count + "!" while recovery is open |
 | `ui/Savers.kt` | `SaverSlots` (5 shields) and the shared `SaverExplainerDialog` |
 | `SaverCelebration.kt` | `StreakMomentCelebration` — the full-screen streak-recovered moment (the saver-earned screen became `SuperDayCelebration`) |
-| `SuperDay.kt` | **Pure Super day logic (2026-10-29), no Context/Compose.** `reachableHours` (today's uncounted hours still ratable *in the moment*: the two ratable hours always; future hours unless their reminder moment — the hour's end — falls in silent hours or an OFF pause; reminders-off does not drop hours), `SuperInvite(hoursNeeded, savers, dayStartMs)`, `superInviteFor` (shows only when `reachable >= needed + SUPER_DAY_SLACK`), `superCueFor` (the status cue: exact fit, no slack), `lateHourHint` (the Save-label suffix) and `gateInvite` (the once-a-day gate) |
+| `SuperDay.kt` | **Pure Super day logic (2026-10-29), no Context/Compose.** `reachableHours` (today's uncounted hours still ratable *in the moment*: the two ratable hours always; every future hour of the day; silent hours, pause and reminders-off drop nothing — 2026-10-31), `SuperInvite(hoursNeeded, savers, dayStartMs)`, `superInviteFor` (every Master ring close today; `tooLate` when `reachable < needed`), `superCueFor` (the status cue: exact fit, no slack), `lateHourHint` (the Save-label suffix) and `gateInvite` (the once-a-day gate) |
 | `SuperDayScreens.kt` | `SuperDayInvite` ("Make it a Super day", ONE "Let's go" button, no haptic) and `SuperDayCelebration` (overline "SUPER DAY", "Super day", "Keep going"; replaces the saver-earned screen and fires at the cap too). Both sit on the full-screen aubergine `SuperField`, draw the inner ring + `drawSuperRings` outer lap, and show end states when system animations are off |
 | `ui/SuperLap.kt` | `drawSuperLap` — the 4-segment outer lap (`SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED` arcs, 4° gaps, butt caps, fractional `filled` so it can draw itself in) in `SuperGold`. Used by `StreakRing` (Master, once complete) and the Super day screens |
 | `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
@@ -1040,7 +1040,7 @@ case verify by static review and say so explicitly — the user compiles locally
   `docs/superpowers/plans/2026-10-29-super-day.md`. **No outcome, saver or streak
   number changed** — `StreakRulesTest`'s outcome assertions pass untouched.
   (1) **Rule**: Master day (mode at day end) with ≥ `SUPER_DAY_HOURS` (12) counted
-  hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, `SUPER_DAY_SLACK` = 1. Backdated
+  hours; `SAVER_EARN_HOURS = SUPER_DAY_HOURS`, no invite threshold any more (was `SUPER_DAY_SLACK` = 1, see 2026-10-31). Backdated
   (`RECLAIM_TAG`) hours never count; beginner days never qualify.
   (2) **Engine** (`StreakRules.kt`): `DayTally` + `StreakState.recentDays`
   (yesterday + today), `StreakEventType.SUPER_DAY` (out of `WARNING_TYPES` /
@@ -1089,3 +1089,17 @@ case verify by static review and say so explicitly — the user compiles locally
   `SUPER_DAY_HOURS`/`SAVER_CAP`.
   Not device-verified from this session: the celebration screens, the invite timing
   around silent hours, the after-midnight "Yesterday" variants.
+- 2026-10-31 (Super day invite on every ring close, owner call): the ring closed
+  at 8:50pm on 30 Oct and no invite showed — silent hours from 11pm left only 2
+  "reachable" hours against the old `needed + SUPER_DAY_SLACK` = 5, and the owner
+  didn't want the invite to come and go for reasons the user can't see. Now
+  `reachableHours(dayStartMs, countedStarts, nowMs)` counts by the clock only (the
+  two ratable hours + every hour still to come; it no longer takes
+  `NotificationPrefs`), and `superInviteFor` returns an invite for **every Master
+  ring close today**. When the hours left are fewer than needed (an 8-hour ring
+  after ~9pm), `SuperInvite.tooLate` is set and `SuperDayInvite` shows "Too bad you
+  do not have enough hours to make it a Super day" with a "Keep going" button — lap
+  drawn in without the breathing segment, no saver row. Both still go through the
+  once-a-day `super_invite_shown_day` gate. Yesterday's ring closed after midnight
+  still gets no screen (`!day.isToday`). The status cue keeps its exact fit over
+  the same clock-only count.

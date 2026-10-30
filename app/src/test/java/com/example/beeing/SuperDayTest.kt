@@ -19,11 +19,6 @@ class SuperDayTest {
             set(2026, month, day, hour, minute, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
-    private fun prefs(
-        reminders: Boolean = true, silent: Boolean = false, start: Int = 22 * 60, end: Int = 7 * 60,
-        pauseUntil: Long = 0L, mode: PauseMode = PauseMode.OFF
-    ) = NotificationPrefs(reminders, silent, start, end, pauseUntil, mode)
-
     private fun hours(day: Int, from: Int, to: Int) = (from..to).map { at(day, it) }
 
     private fun tally(
@@ -35,62 +30,47 @@ class SuperDayTest {
 
     private val day28 = at(28, 0)
 
-    @Test fun evening_ring_close_with_no_silent_hours() {
-        val r = reachableHours(day28, hours(28, 9, 16), prefs(), at(28, 19, 30))
-        assertEquals(7, r) // 17, 18 ratable; 19..23
+    @Test fun evening_ring_close_counts_every_hour_left() {
+        val r = reachableHours(day28, hours(28, 9, 16), at(28, 19, 30))
+        assertEquals(7, r) // 17, 18 ratable; 19..23, whatever the reminder settings
     }
 
-    @Test fun silent_hours_drop_future_hours_by_their_reminder_moment() {
-        val r = reachableHours(day28, hours(28, 9, 16), prefs(silent = true), at(28, 19, 30))
-        assertEquals(4, r) // 17, 18 ratable; 19, 20 (21 ends at 22:00, silent)
+    @Test fun ring_close_at_8_50pm_gets_the_invite() {
+        // The owner's 30 Oct: 8 hours, the ring closed by the 7pm hour at 20:50.
+        val eight = hours(28, 0, 1) + hours(28, 7, 10) + hours(28, 18, 19)
+        val r = reachableHours(day28, eight, at(28, 20, 50))
+        assertEquals(4, r) // 20, 21, 22, 23 to come; 18 and 19 are counted
+        assertEquals(false, superInviteFor(tally(eight), 2, r)!!.tooLate)
     }
 
-    @Test fun silent_start_mid_hour_drops_the_hour_whose_end_is_silent() {
-        // Silent from 22:30. 21:00 ends 22:00 (awake) so it stays; 22:00 ends 23:00 (silent) so it goes.
-        val p = prefs(silent = true, start = 22 * 60 + 30, end = 7 * 60)
-        val r = reachableHours(day28, hours(28, 9, 16), p, at(28, 19, 30))
-        assertEquals(2 + 3, r) // 17, 18 ratable; 19, 20, 21
-    }
-
-    @Test fun ratable_hours_count_even_inside_silent_hours() {
-        val r = reachableHours(day28, hours(28, 0, 20), prefs(silent = true), at(28, 23, 10))
-        assertEquals(2, r) // 21:00 and 22:00; 23:00 ends at midnight, silent
-    }
-
-    @Test fun off_pause_drops_hours_quiet_pause_does_not() {
-        val until = at(28, 22)
-        val off = prefs(pauseUntil = until, mode = PauseMode.OFF)
-        val quiet = prefs(pauseUntil = until, mode = PauseMode.QUIET)
-        val now = at(28, 19, 30)
-        // OFF: 19 ends 20:00 and 20 ends 21:00 are paused; 21 ends 22:00 (not > 22:00), 22, 23 stay.
-        assertEquals(2 + 3, reachableHours(day28, hours(28, 9, 16), off, now))
-        assertEquals(7, reachableHours(day28, hours(28, 9, 16), quiet, now))
-    }
-
-    @Test fun reminders_off_does_not_drop_hours() {
-        val r = reachableHours(day28, hours(28, 9, 16), prefs(reminders = false), at(28, 19, 30))
-        assertEquals(7, r)
+    @Test fun ring_close_after_9pm_is_too_late() {
+        val eight = hours(28, 0, 1) + hours(28, 7, 10) + hours(28, 19, 20)
+        val r = reachableHours(day28, eight, at(28, 21, 10))
+        assertEquals(3, r) // 21, 22, 23
+        assertEquals(true, superInviteFor(tally(eight), 2, r)!!.tooLate)
     }
 
     @Test fun after_midnight_only_ratable_hours_of_yesterday_remain() {
-        val r = reachableHours(day28, hours(28, 9, 16), prefs(), at(29, 0, 5))
+        val r = reachableHours(day28, hours(28, 9, 16), at(29, 0, 5))
         assertEquals(2, r) // 22:00 and 23:00
     }
 
     @Test fun dst_spring_forward_day_has_23_candidate_hours() {
         TimeZone.setDefault(TimeZone.getTimeZone("Europe/London"))
         val dayStart = at(29, 0, month = Calendar.MARCH)
-        val r = reachableHours(dayStart, emptyList(), prefs(), dayStart)
+        val r = reachableHours(dayStart, emptyList(), dayStart)
         assertEquals(23, r)
     }
 
-    @Test fun invite_threshold_needs_one_spare_hour() {
+    @Test fun invite_always_shows_and_says_when_the_hours_dont_fit() {
         val eight = tally(hours(28, 9, 16))
         assertEquals(8, eight.countedHours)
-        assertNull(superInviteFor(eight, 2, 4))
-        assertNull(superInviteFor(eight, 2, 3))
-        assertNotNull(superInviteFor(eight, 2, 5))
-        assertEquals(SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = day28), superInviteFor(eight, 2, 5))
+        assertEquals(SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = day28), superInviteFor(eight, 2, 4))
+        assertEquals(
+            SuperInvite(hoursNeeded = 4, savers = 2, dayStartMs = day28, tooLate = true),
+            superInviteFor(eight, 2, 3)
+        )
+        assertEquals(true, superInviteFor(eight, 2, 0)!!.tooLate)
         assertNull(superInviteFor(tally(hours(28, 9, 16), beginner = true, goal = 4), 2, 10))
         assertNull(superInviteFor(tally(hours(28, 7, 18)), 2, 10)) // already 12
     }
@@ -125,9 +105,9 @@ class SuperDayTest {
         assertNull(lateHourHint(missing, listOf(tally(hours(28, 9, 12), isToday = false)))) // 4 counted
     }
 
-    @Test fun late_ring_close_gets_no_invite_by_the_normal_rule() {
+    @Test fun yesterdays_ring_closed_after_midnight_gets_no_screen() {
         val yesterday = tally(hours(28, 9, 16), isToday = false) // 8 counted
-        val reachable = reachableHours(day28, yesterday.countedStarts, prefs(), at(29, 0, 5))
+        val reachable = reachableHours(day28, yesterday.countedStarts, at(29, 0, 5))
         assertNull(superInviteFor(yesterday, 2, reachable))
     }
 

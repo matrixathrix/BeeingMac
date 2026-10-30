@@ -17,7 +17,6 @@ const val BEGINNER_GRADUATION_DAYS = 3 // completed beginner days before the one
 const val SAVER_START = 2             // every history begins with this many savers
 const val SAVER_CAP = 5
 const val SUPER_DAY_HOURS = 12        // a Master day this long is a Super day
-const val SUPER_DAY_SLACK = 1         // hours short of it at which the app still nudges toward it
 const val SAVER_EARN_HOURS = SUPER_DAY_HOURS // ...and a Super day earns one saver
 const val COMEBACK_IDLE_DAYS = 7      // days in a row with no complete day => gift
 const val COMEBACK_GIFT = 2

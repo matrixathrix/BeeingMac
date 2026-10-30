@@ -253,9 +253,7 @@ fun NowTab(
         val prev = previousState
         ringClosed(prev, streakState)?.let { closed ->
             val day = closed.day
-            val reachable = reachableHours(
-                day.dayStartMs, day.countedStarts, loadNotificationPrefs(context), System.currentTimeMillis()
-            )
+            val reachable = reachableHours(day.dayStartMs, day.countedStarts, System.currentTimeMillis())
             val invite = gateInvite(
                 superInviteFor(day, streakState.savers, reachable), day.dayStartMs, superInviteShownDay(context)
             )

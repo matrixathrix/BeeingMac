@@ -25,17 +25,12 @@ private fun nextDayStart(dayStartMs: Long): Long = Calendar.getInstance().apply 
  * How many more hours the day starting at [dayStartMs] can still collect, given the hours
  * already counted. Walks the day's real clock hours, so a DST day has 23 or 25.
  *
- * Each uncounted hour is either ratable right now (the two just-finished hours, always
- * reachable), still to come (reachable unless its end falls in silent hours or an OFF
- * pause, i.e. unless no reminder would reach the user then), or past and gone. The
- * reminders switch is ignored on purpose: it is the user's choice, not a limit on the day.
+ * Each uncounted hour is either ratable right now (the two just-finished hours), still to
+ * come, or past and gone. Only the clock limits the day: silent hours, a pause and the
+ * reminders switch are ignored on purpose, so the invite never comes and goes for
+ * reasons the user can't see (owner call, 2026-10-31).
  */
-fun reachableHours(
-    dayStartMs: Long,
-    countedStarts: Collection<Long>,
-    prefs: NotificationPrefs,
-    nowMs: Long
-): Int {
+fun reachableHours(dayStartMs: Long, countedStarts: Collection<Long>, nowMs: Long): Int {
     val cur = Calendar.getInstance().apply {
         timeInMillis = nowMs
         set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -48,13 +43,7 @@ fun reachableHours(
     while (start < dayEnd) {
         val end = hourStartOffset(start, 1)
         if (start !in countedStarts) {
-            val reachable = when {
-                start in ratable -> true
-                start >= cur -> !inSilentHours(prefs, end) &&
-                    !(prefs.pauseMode == PauseMode.OFF && prefs.pauseUntilMs > end)
-                else -> false
-            }
-            if (reachable) n++
+            if (start in ratable || start >= cur) n++
         }
         start = end
     }
@@ -64,19 +53,26 @@ fun reachableHours(
 /**
  * "Make it a Super day": [hoursNeeded] more counted hours; [savers] decides the cap copy.
  * [dayStartMs] is the day it invites to, which the once-a-day flag records when it shows.
+ * [tooLate]: the day has fewer hours left than it needs, so the screen says so instead.
  */
-data class SuperInvite(val hoursNeeded: Int, val savers: Int, val dayStartMs: Long) {
+data class SuperInvite(
+    val hoursNeeded: Int,
+    val savers: Int,
+    val dayStartMs: Long,
+    val tooLate: Boolean = false
+) {
     val atCap: Boolean get() = savers >= SAVER_CAP
 }
 
 /**
- * The invite shows only when the day can get there with a spare hour to give
- * ([SUPER_DAY_SLACK]), so it never promises something one missed reminder would break.
+ * Every Master ring close today gets the screen: the invite when the clock still holds
+ * the hours it needs, otherwise the "not enough hours" variant ([SuperInvite.tooLate]).
+ * Yesterday's ring closed after midnight gets neither (its day is over).
  */
 fun superInviteFor(day: DayTally, savers: Int, reachable: Int): SuperInvite? {
-    if (day.beginner || day.countedHours >= SUPER_DAY_HOURS) return null
+    if (day.beginner || !day.isToday || day.countedHours >= SUPER_DAY_HOURS) return null
     val needed = SUPER_DAY_HOURS - day.countedHours
-    return if (reachable >= needed + SUPER_DAY_SLACK) SuperInvite(needed, savers, day.dayStartMs) else null
+    return SuperInvite(needed, savers, day.dayStartMs, tooLate = reachable < needed)
 }
 
 /** The invite shows at most once a day: [shownDay] is the day start it last showed on. */
