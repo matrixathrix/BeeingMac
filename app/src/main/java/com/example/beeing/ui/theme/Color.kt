@@ -38,6 +38,17 @@ val InkDark = Color(0xFFECE7EA)
 val InkSoftDark = Color(0xFF9C969B)
 val HairlineDark = Color(0xFF2A2630)
 
+// Score bands as TEXT (Past: averages, chart values, tag scores, ▲ ▼). The band
+// fills are too dark (red) or too pale (amber on white) to read as type, so each
+// mode gets its own tint. They sit on glass over the field: PaletteContrastTest
+// holds each to 4.5:1 there, and bare on the light glow red would fail.
+val ScoreTextGreenLight = Color(0xFF2E7D32)
+val ScoreTextAmberLight = Color(0xFF9A6000)
+val ScoreTextRedLight = Color(0xFFC62828)
+val ScoreTextGreenDark = Color(0xFF81C784)
+val ScoreTextAmberDark = Color(0xFFFFCA28)
+val ScoreTextRedDark = Color(0xFFFF8A80)
+
 // Hive identity — streak/ring accents, not score bands (see scoreBandColor).
 val HoneyGold = Color(0xFFFFB300)
 val RingQualifiedGreen = Color(0xFF66BB6A)

@@ -143,6 +143,30 @@ fun tagLabelOf(tag: String): String {
 fun tagDisplayText(tag: String): String =
     if (tagSym(tag) != null) tagLabelOf(tag) else tag.trim()
 
+/**
+ * A tag split into its emoji and its name, for display only: a leading glyph
+ * ("😴 Rest"), else a trailing one ("FeelGood😇"); null when there is neither.
+ */
+internal fun tagParts(tag: String): Pair<String?, String> {
+    val label = tagLabelOf(tag)
+    tagGlyphOf(tag)?.let { return it to label }
+    val lastWord = label.indexOfLast { it.isLetterOrDigit() }
+    val tail = if (lastWord >= 0) label.substring(lastWord + 1).trim() else ""
+    return if (tail.isNotEmpty() && tail.none { it.isLetterOrDigit() })
+        tail to label.substring(0, lastWord + 1).trim()
+    else null to label
+}
+
+/**
+ * A user's own tag as a chip shows it: the emoji always first, so chip starts
+ * line up row to row ("FeelGood😇" → "😇 FeelGood"). The stored string is
+ * untouched — it is the tag's identity in every rating.
+ */
+internal fun tagChipText(tag: String): String {
+    val (glyph, label) = tagParts(tag)
+    return if (glyph != null) "$glyph $label" else label
+}
+
 fun tagSym(tag: String): Sym? = when (tagLabelOf(tag).lowercase()) {
     "work" -> Sym.TagWork
     "learning" -> Sym.TagLearning

@@ -160,7 +160,7 @@ case verify by static review and say so explicitly — the user compiles locally
 | `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (shown when reachable hours exist; disabled once the day's 2 bees are spent), calendar with score-tinted dots (🌱 = completed beginner day, 🌙 = rest day, hollow red ring = missed — 🌱 is a glyph, not a hollow tinted dot, which would collide with the missed ring at 9dp), a `FlowRow` legend (four keys + the info button no longer fit one line), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight; the cap is re-checked in `onReclaim` because the dialog can outlive the tap), and the rules explainer, which swaps to a "🌱 How beginner mode works" body in beginner mode. No currency card |
 | `StreakEngine.kt` | Pure streak logic. **`replayDays` is the single walk over history** — private, returns one `ReplayDay` per calendar day (outcome, streak after, `brokeStreak`, `beginner`, that day's hour timestamps + reclaim spends); `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` are thin readers over it and all three take the same `modeEvents` list, so they *cannot* disagree. Also `DayOutcome` (QUALIFIED/REST/MISSED/**BEGINNER_COMPLETE**), the **mode-event layer** (`ModeEvent`, `loadModeEvents`/`recordModeEvent`, `isBeginnerMode`, `hoursRequiredFor`, private `beginnerAt(timeMs, events)` = the mode at an instant, `ensureModeInitialized`, `beginnerGraduationShown`/`markBeginnerGraduationShown`), `reclaimsUsedToday`, the `isReclaimed`/`visibleTags()` entry extensions, `StreakMeter`/`StreakRing` composables (`StreakRing` takes `hoursRequired`, so the ring is 4 segments in beginner mode; `StreakMeter` reads `state.hoursRequired` and shows "Beginner day complete ✓" / "Streak paused at N" + "Resumes in Master mode"), constants |
-| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; a row tap **always opens `EditEntrySheet`**, and **the row's trailing icon labels how it opens**: ✏️ (≤10h, editable) or › (older — read-only "Entry details"). A tap never deletes. The 10h rule lives *inside* `EditEntrySheet` (`editable = now - timestamp <= EDIT_WINDOW_MS`, re-checked on every caret step): score/tags/note locked for older entries, delete available behind a confirm dialog. `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days — counted off `computeStreakLog`, now passed `loadModeEvents(context)`, so beginner stretches correctly contribute none) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **Zoom is Weeks (across a month) / Months (across a year) only** — no Day level, no `DaySheetContent`, and every chart is a pure readout (no taps, no highlight). Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
+| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; a row tap **always opens `EditEntrySheet`**, and **the row's trailing icon labels how it opens**: ✏️ (≤10h, editable) or › (older — read-only "Entry details"). A tap never deletes. The 10h rule lives *inside* `EditEntrySheet` (`editable = now - timestamp <= EDIT_WINDOW_MS`, re-checked on every caret step): score/tags/note locked for older entries, delete available behind a confirm dialog. `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days — counted off `computeStreakLog`, now passed `loadModeEvents(context)`, so beginner stretches correctly contribute none) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **The span is Month (weekly bars) / Year (monthly bars) only** (the selector read "Weeks/Months" until 2026-10-31) — no Day level, no `DaySheetContent`. **Tapping a bar scopes the numbers, not the charts** (2026-10-31): see the history entry. Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
 | `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (opens fully expanded on one tap via `skipPartiallyExpanded`; grouped SCORE/TAGS/NOTE sections via the `SectionLabel` overline; edits score, note, **and** tags — every available tag is a toggleable `InputChip` (centered, tightened rows). **The 10h edit gate lives here**: an `editable` flag per `currentEntry` (`now - timestamp <= EDIT_WINDOW_MS`) locks the score circles, tag chips and note for older entries, swaps the title to "Entry details", replaces "Save Changes" with an "Editable for 10 hours after the hour ends" notice, and leaves delete always available. Header = "Edit entry"/"Entry details" + date on the left, time range flanked by ‹ › **seek carets** right-aligned. Carets step through that day's rated hours only (`dayEntries`, sorted; disabled at the ends), swapping `currentEntry` in place without closing; edited buffers are keyed on `currentEntry.id` so they reset per hour. Seeking mid-edit raises a save-or-discard `AlertDialog` (`pendingTarget`). Callbacks are split `onPersist`/`onClose` so an in-sheet save doesn't dismiss the sheet), `SoulFuelTagsSection` (display-only tag chips + a pencil that opens `NowTab`'s `ManageTagsDialog`; the old in-place delete mode is gone), `NotesSection` (collapsed "＋ Add a note" row → compact `BasicTextField`; a `hadFocus` flag stops the initial unfocused `onFocusChanged` event from re-collapsing it), `HistoryPanel` (🕐 badge + `visibleTags()`; legacy — unmounted since the Past tab became a journal, which supersedes it), misc format helpers (`formatHour`, `getOrdinalSuffix`, `isSameDay`) |
 | `StatsComponents.kt` | Just the weekly report notification now (`buildWeeklySummaryText` — third line is mode-aware: "streak ⬢N", or "🌱 N beginner days · streak paused at M" — `showWeeklyReportNotification`, `schedule`/`cancelWeeklyReport`) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers, plus `modeEvents` / `beginnerMode` / `setBeginnerMode` — the mode lives here (not per-tab like `spendsVersion`) because it is replay input: one toggle has to re-derive the meter, calendar and log in the same composition |
@@ -180,6 +180,8 @@ case verify by static review and say so explicitly — the user compiles locally
 | `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
 | `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
+| `RatingFrameGaps.kt` | Pure: `shareRatingGaps` and its base/min gaps, the rule `RatingFrame` (Now tab) uses to spread spare height over its four gaps |
+| `TrendsSelection.kt` | Pure: `previousSpan` (what a selected Trends bar's ▲ ▼ compare against) and `spanLabel` (the scope chip's text) |
 
 ## Data model & persistence gotchas
 
@@ -212,8 +214,8 @@ case verify by static review and say so explicitly — the user compiles locally
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
   You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. **Now and Streak sit on
-  the night field; there is no band** (2026-10-31, spec
+  all 15 M3 type roles), so plain `Text()` inherits it. **Now, Streak and Past
+  (Journal + Trends) sit on the night field; there is no band** (2026-10-31, spec
   `docs/superpowers/specs/2026-10-31-night-field-design.md`): one radial-glow
   surface (`BeeExtras.fieldBrush`) edge to edge, each tab owning its status-bar
   inset (there is no Scaffold topBar). On the field everything is **glass**
@@ -223,12 +225,17 @@ case verify by static review and say so explicitly — the user compiles locally
   Field text uses the field roles (`fieldInk`, `fieldInkMuted` ≥60%/70%,
   `fieldHoney`, `fieldRed`, `fieldSuperText`, `fieldDone`), never the page's:
   the page values fail contrast on the violet light field. Only the Save pill and
-  the streak medallion glow (a honey shadow). Records and utilities — **Past (Journal), Trends, Settings** — open on the
-  plain page under a **`PageHeader`** (large title, optional back arrow /
-  trailing slot), all over a calm page
-  (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
-  20dp, shadow in light mode only). Swiggy-style nav bar: outline icons, the
-  active tab filled + bold in `accentText`, no pill. `PaletteContrastTest`
+  the streak medallion glow (a honey shadow). Past keeps its page-written code
+  under **`FieldColors`** (`ui/BeeSurfaces.kt`), which remaps the page roles to
+  the field's in one place; a dialog opened inside it wraps itself in
+  **`PageColors`**. **Score text sits on glass, never bare on the field** (light
+  red on the glow is ~3.8:1). App-wide utilities — **Settings, Tags**, every
+  dialog and sheet — stay on the plain page under a **`PageHeader`** (large
+  title, optional back arrow / trailing slot; it takes the ambient ink, so Past
+  uses it too), over a calm page (`background`) of **white/charcoal cards**
+  (`BeeCardDefaults`: `surface`, 20dp, shadow in light mode only). Swiggy-style
+  nav bar: outline icons, the active tab filled + bold, no pill; with all three
+  tabs on the field it is always `navOnField` with field honey. `PaletteContrastTest`
   pins every text-on-colour pairing; run it after any palette change.
 - **Color roles:** honey = "act here", used sparingly. Two forms: the big
   fill (Save, selected chips/segments) is `LocalBeeExtras.current.accentFill`
@@ -246,8 +253,9 @@ case verify by static review and say so explicitly — the user compiles locally
   single daily full-screen celebration, waggle = rare milestones only.
 - **Lock phone exists ONLY in the caught-up state** (no pending hours).
   Rating pending hours always outranks leaving.
-- Cards (plain page only — Past, Trends, Settings): `BeeCardDefaults` (20dp radius,
-  `surface` fill, light-mode shadow), 16dp padding. The field tabs have no cards.
+- Cards (plain page only — Settings and dialogs): `BeeCardDefaults` (20dp radius,
+  `surface` fill, light-mode shadow), 16dp padding. On the field the same code
+  draws glass: Past's day groups and Trends panel get their 1dp `glassLine` edge.
   Cards inside a dialog use `surfaceVariant` instead (a card on a card-coloured dialog vanishes).
   Every scrollable tab ends with a 24dp spacer — the nav is a `bottomBar` and
   insets the pager itself, so nothing has to clear a floating pill any more.
@@ -1222,3 +1230,102 @@ case verify by static review and say so explicitly — the user compiles locally
   -0.8 / -0.6sp tracking; the top-row counts Bold; Lock SemiBold). The dial
   now draws in **Plus Jakarta Sans** (`DialFaces`: cells 600, core numeral 800,
   score word 600, "Pick a rating" 500) instead of the phone's system bold.
+- 2026-10-31 (**Now tab spacing pass**): measured from a device screenshot; the
+  owner reviewed redlines and four alignment mockups (artifact "Now Tab Spacing")
+  before this was built. Layout only: no rule, size, colour or font changed.
+  (1) **`RatingFrame`** (`NowTab.kt`, a multi-content `Layout`) holds the dial,
+  tags and note between the hour pill and Save. The dial and note keep their
+  size; the tags get as many rows as fit with every gap at its minimum; the
+  leftover is spread over four gaps by **`shareRatingGaps`** (`RatingFrameGaps.kt`,
+  pure, `RatingFrameGapsTest`): hour pill→dial, dial→tags, tags→note, note→Save,
+  base 24/24/12/24, min 16/16/8/16, in proportion to the base. Why: tags come in
+  40dp rows, and the frame's height changes with screen zoom even under
+  `designDensity` (the status and nav bars are in system dp) and with aspect
+  ratio; spread like this the gaps keep their ratios everywhere and none moves
+  more than ~11dp. It replaced the `weight(1f)` tag box whose `fillMaxSize`
+  `ContextualFlowRow` dumped the 0–40dp row remainder under the tags (55dp of
+  empty field above the note on the owner's phone, with only 9dp between the dial
+  and the tags). The flow row now wraps (`fillMaxWidth`) and the frame's max
+  height decides the rows. Gaps are measured between what you see: the chips'
+  8dp touch padding (`TagTouchInset`) and the note row's 4dp tap padding
+  (`NoteTapInset`) are taken out. The tags' `FadingScrollbar` sits in a
+  `matchParentSize` box, so `tagsViewportHeightPx` is gone.
+  (2) **Alignment "D"** (owner's pick): the words and Save on the 16dp edge, the
+  dial and tags centred. 16, not the mockup's 20, because the shared top row and
+  the other tabs already use 16. Title padding 20→16, the spacer above it 18→14,
+  and in field mode `NotesSection` nudges its row −7dp so the "+" stroke, not its
+  tap padding, sits on the edge.
+  (3) **Hour pill** (owner's pick over arrows-around-the-time and
+  arrows-on-the-right): `HourWindowPicker` is one 36dp glass pill
+  (`glass(x, PillShape)`) holding ‹ range ›. The countdown sits 8dp outside it,
+  lost its "·", and still opens "Why only these hours?".
+  (4) Save: 16dp from the sides and the nav bar (bottom was 10); no top padding,
+  since the frame's last gap is above it.
+  (5) **Top row** (all tabs): flame in a 22dp box (it draws about as tall as the
+  ring), `MiniHourRing` 24→20dp (stroke 3.5), spacers 6 / 16 / 6. The bell lost
+  its glass circle (owner OK, reverses the earlier call): a bare 24dp icon in a
+  40dp target whose clipped tap circle is a sibling, so the badge (offset 9, −13)
+  is never cut off. The ⋮ target is 36dp wide and the row has no end padding
+  (`HourlyPulseApp`), so the dots end on the 16dp edge.
+  (6) User tags show their emoji first on chips (`tagChipText` in `BeeIcons.kt`,
+  `TagChipTextTest`; `tagParts` moved there from `TagsScreen.kt`). Display only:
+  stored tag strings are untouched.
+  Not device-verified from this session (built, unit-tested and installed).
+- 2026-10-31 (**Past joins the night field**): owner's call after a mockup
+  (artifact "Past on the Field"); reverses the 2026-10-29 "purple only where it
+  earns it" split, made when the purple was a saturated band. The three tabs you
+  swipe between are now one surface. Colour only: no layout, size or data change.
+  (1) `PastTab`'s Scaffold paints `fieldBrush`; the Journal and Trends run inside
+  **`FieldColors`**, which remaps the page roles they were written against
+  (`onSurface`/`onBackground` → `fieldInk`, `onSurfaceVariant` → `fieldInkMuted`,
+  `surface` → `glassFill`, `surfaceVariant` → ink 8%, `primary` and `accentText` →
+  `fieldHoney`, no card shadow, `LocalContentColor` → `fieldInk`). One place
+  instead of ~60 role reads. The date-jump calendar is wrapped in **`PageColors`**
+  (dialogs stay plain); the edit sheet and the undo snackbar sit outside it.
+  (2) Glass edges: the Trends card gets a `glassLine` border; a month's day rows
+  draw theirs row by row (`drawWithContent` + two `ClipOp.Difference` strips), so
+  the month reads as one panel with dividers, not stacked boxes.
+  (3) The sticky month header paints its own slice of the field
+  (**`Modifier.fieldBackdrop`**, `ui/BeeSurfaces.kt`, from `FieldBrush.at(page,
+  offset)` in `Theme.kt`), so days scroll under it with no seam; `PastTab`
+  records the page bounds for it.
+  (4) Score text: the tints moved to `Color.kt` (`ScoreText*`) and
+  `PaletteContrastTest.score_text_reads_on_field_glass` pins them at 4.5:1 on
+  glass over both ends of the field (light 4.6–5.5, dark 4.8–10.7). Trends' ▲ ▼
+  now use them instead of the fill green (~2:1 as type), and the chart's "goal 7"
+  line/label use muted ink instead of a fixed grey.
+  (5) Chrome: `BandChrome.bandUnder` → **`wordmarkShown`** (the top row is field
+  ink on every tab; only the wordmark still fades over Past, which has its own
+  "Journal" title); the bell's badge ring is always `fieldTop`; `BottomNavBar` is
+  always `navOnField` with field honey (no more page↔field cross-fade);
+  `overPlainPage` → `overPast`.
+  Not device-verified from this session (built, 125 unit tests, installed).
+- 2026-10-31 (**Trends: Month · Year, and bars you can tap**): owner noticed
+  tapping a bar did nothing and that "Weeks/Months" named the bars' unit, not
+  the span shown. (1) `Zoom.fullLabel()` now reads **Month / Year** (matching the
+  "October 2026" / "2026" range label); the enum and "WEEK/MONTH SCORES" are
+  unchanged. (2) **A tapped bar scopes the stats, the savers count, the insight
+  and the tag table** to its span; the bar chart and the year grid stay whole
+  (the selected bar takes its band fill via `getScoreColor`, the rest dim to 7%
+  and their values to 45%; grid columns other than the selected month dim to
+  30%). State is `TrendsView.selected` (an index into the view's units); only the
+  current `PastViewKey` slot honours it, so an outgoing view is always whole.
+  (3) **Resets**: a second tap on the bar, any tap on the chart that isn't a bar
+  (axis, gaps, future weeks, labels: the chart's outer `clickable`, enabled only
+  while something is selected), the **scope chip** that replaces the range label
+  ("12–18 Oct ✕", honey on an 18% honey wash), stepping the period, switching
+  Month/Year, or leaving Trends. Deliberately NOT "tap anywhere outside": on a
+  scrolling page that includes the sort toggle and tag rows, so a stray tap
+  would silently reset the view. (4) **Comparisons stay honest**:
+  `previousSpan` (`TrendsSelection.kt`, pure, `TrendsSelectionTest`) gives a
+  month bar the calendar month before it and a week bar (clipped to 1–7 days at a
+  month's edge) the same number of days just before it, by calendar days so a
+  DST week still starts at midnight; `spanLabel` writes the chip ("12–18 Oct",
+  "31 Oct", "28 Sep – 4 Oct", "March 2026"). The insight keeps its 20-hour
+  floor, so a thin week shows none. (5) A muted "Tap a week/month" sits right of
+  the chart's section label until a bar is chosen. Each bar column is the whole
+  column height (`selectable`, `Role.Button`, described as "12–18 Oct, average
+  5.9"; the value text and x-label clear their own semantics). This reverses the
+  2026-08-04 "every chart is a pure readout" call, which was about the deleted
+  Day-zoom drill; scoping to a bar doesn't duplicate the journal.
+  Not device-verified from this session (built, 134 unit tests, installed).

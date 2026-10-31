@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -133,18 +134,30 @@ data class BeeExtras(
  * so it is drawn as a circle of the horizontal radius squashed vertically by its
  * local matrix. Rebuilt only when the size changes (ShaderBrush caches by size).
  */
-private class FieldBrush(private val top: Color, private val mid: Color, private val bottom: Color) : ShaderBrush() {
-    override fun createShader(size: Size): Shader {
-        val cx = size.width / 2f
-        val rx = (size.width * 1.2f).coerceAtLeast(1f)
-        val ry = (size.height * 0.7f).coerceAtLeast(1f)
+internal class FieldBrush(private val top: Color, private val mid: Color, private val bottom: Color) : ShaderBrush() {
+    override fun createShader(size: Size): Shader = shader(size, Offset.Zero)
+
+    /**
+     * The same field for one piece of a page: [page] is the size of the surface
+     * the field fills, [offset] where the piece sits on it. A sticky header that
+     * must hide what scrolls under it paints this and shows no seam.
+     */
+    fun at(page: Size, offset: Offset): Brush = object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = shader(page, offset)
+    }
+
+    private fun shader(page: Size, offset: Offset): Shader {
+        val cx = page.width / 2f - offset.x
+        val cy = -offset.y
+        val rx = (page.width * 1.2f).coerceAtLeast(1f)
+        val ry = (page.height * 0.7f).coerceAtLeast(1f)
         return android.graphics.RadialGradient(
-            cx, 0f, rx,
+            cx, cy, rx,
             intArrayOf(top.toArgb(), mid.toArgb(), bottom.toArgb()),
             floatArrayOf(0f, 0.45f, 1f),
             android.graphics.Shader.TileMode.CLAMP
         ).apply {
-            setLocalMatrix(android.graphics.Matrix().apply { setScale(1f, ry / rx, cx, 0f) })
+            setLocalMatrix(android.graphics.Matrix().apply { setScale(1f, ry / rx, cx, cy) })
         }
     }
 

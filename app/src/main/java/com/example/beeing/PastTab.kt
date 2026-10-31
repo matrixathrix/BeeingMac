@@ -17,6 +17,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
@@ -35,10 +37,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -47,12 +57,19 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeCardDefaults
+import com.example.beeing.ui.FieldColors
+import com.example.beeing.ui.PageColors
 import com.example.beeing.ui.PageHeader
+import com.example.beeing.ui.fieldBackdrop
 import com.example.beeing.ui.emptyCellColor
 import com.example.beeing.ui.designDensity
 import com.example.beeing.ui.icons.BeeIcon
@@ -60,6 +77,12 @@ import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
 import com.example.beeing.ui.icons.tagSym
 import com.example.beeing.ui.theme.LocalBeeExtras
+import com.example.beeing.ui.theme.ScoreTextAmberDark
+import com.example.beeing.ui.theme.ScoreTextAmberLight
+import com.example.beeing.ui.theme.ScoreTextGreenDark
+import com.example.beeing.ui.theme.ScoreTextGreenLight
+import com.example.beeing.ui.theme.ScoreTextRedDark
+import com.example.beeing.ui.theme.ScoreTextRedLight
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.launch
@@ -76,8 +99,9 @@ import kotlinx.coroutines.launch
  *   full-screen view over the journal (system back returns). Trends is for the
  *   rare deep-dive, so it is deliberately short: summary stats, one written
  *   line of insight, the bar chart, the hour-by-hour grid, the tag table.
- *   It zooms only to Weeks (across a month) and Months (across a year) —
- *   there is no day level, because looking up a day is what the journal is for.
+ *   It spans a Month (weekly bars) or a Year (monthly bars) — there is no day
+ *   level, because looking up a day is what the journal is for. Tapping a bar
+ *   scopes the stats, insight and tags to it; the charts stay whole.
  *
  * The pattern grid is the reason an hourly app exists: rows pinned to the
  * stable active window so the same hour lands on the same row in every period.
@@ -444,8 +468,15 @@ fun PastTab(
     // Months the user opened or closed by hand; the rest follow the default
     // (this month and last open, older ones collapsed).
     var monthOverrides by remember { mutableStateOf(mapOf<Long, Boolean>()) }
+    // Where the field is painted, so a sticky month header can repaint its slice
+    var pageBounds by remember { mutableStateOf(Rect.Zero) }
 
+    // On the night field like Now and Streak: the three tabs are one surface
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LocalBeeExtras.current.fieldBrush)
+            .onGloballyPositioned { pageBounds = it.boundsInRoot() },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0.dp)
@@ -453,6 +484,7 @@ fun PastTab(
         // The journal and Trends keep fixed proportions, like Now and Streak;
         // the edit sheet and date jump below stay on the system font size
         CompositionLocalProvider(LocalDensity provides designDensity()) {
+        FieldColors {
         AnimatedContent(
             targetState = showTrends,
             modifier = Modifier.padding(padding).fillMaxSize(),
@@ -490,9 +522,11 @@ fun PastTab(
                     monthOverrides = monthOverrides,
                     onMonthOverridesChange = { monthOverrides = it },
                     onOpenTrends = { showTrends = true },
-                    onEdit = { editingEntry = it }
+                    onEdit = { editingEntry = it },
+                    pageBounds = { pageBounds }
                 )
             }
+        }
         }
         }
     }
@@ -553,7 +587,8 @@ private fun JournalView(
     monthOverrides: Map<Long, Boolean>,
     onMonthOverridesChange: (Map<Long, Boolean>) -> Unit,
     onOpenTrends: () -> Unit,
-    onEdit: (RatingEntry) -> Unit
+    onEdit: (RatingEntry) -> Unit,
+    pageBounds: () -> Rect
 ) {
     val days = remember(allRatings, refresh) { buildJournalDays(allRatings) }
     var showJump by remember { mutableStateOf(false) }
@@ -602,7 +637,7 @@ private fun JournalView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        // The record, not a stage: no band, a large title on the plain page.
+        // The record: a large title over glass rows on the field.
         PageHeader("Journal", reserveTopRow = true) {
             // Month names now fold their month, so the date jump lives here.
             IconButton(onClick = { showJump = true }, modifier = Modifier.size(40.dp)) {
@@ -639,7 +674,8 @@ private fun JournalView(
                             label = row.label,
                             dayCount = row.dayCount,
                             open = row.open,
-                            onClick = { onMonthOverridesChange(monthOverrides + (row.monthStartMs to !row.open)) }
+                            onClick = { onMonthOverridesChange(monthOverrides + (row.monthStartMs to !row.open)) },
+                            pageBounds = pageBounds
                         )
                     }
                     is JournalDayRow -> item(key = row.day.dayStartMs) {
@@ -663,7 +699,8 @@ private fun JournalView(
         }
     }
 
-    if (showJump) {
+    // A dialog, so back on the page's colours like every other dialog
+    if (showJump) PageColors {
         val firstVisibleDay = rows.drop(listState.firstVisibleItemIndex)
             .firstNotNullOfOrNull { (it as? JournalDayRow)?.day?.dayStartMs }
         DateJumpDialog(
@@ -719,14 +756,21 @@ private fun buildJournalRows(days: List<JournalDay>, isOpen: (Long) -> Boolean):
 }
 
 /** "OCTOBER · 12 days ˅": sticks to the top while its days scroll; the whole
- *  line folds and unfolds the month (the chevron turns to show which). */
+ *  line folds and unfolds the month (the chevron turns to show which). It paints
+ *  its own slice of the field so the days slide under it with no seam. */
 @Composable
-private fun JournalMonthHeader(label: String, dayCount: Int, open: Boolean, onClick: () -> Unit) {
+private fun JournalMonthHeader(
+    label: String,
+    dayCount: Int,
+    open: Boolean,
+    onClick: () -> Unit,
+    pageBounds: () -> Rect
+) {
     val turn by animateFloatAsState(if (open) 0f else -90f, label = "monthChevron")
     Row(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .fieldBackdrop(LocalBeeExtras.current, pageBounds)
             .clickable(
                 onClick = onClick,
                 onClickLabel = if (open) "Collapse $label" else "Expand $label"
@@ -778,11 +822,27 @@ private fun JournalDayItem(
         topStart = if (first) corner else 0.dp, topEnd = if (first) corner else 0.dp,
         bottomStart = if (last) corner else 0.dp, bottomEnd = if (last) corner else 0.dp
     )
+    val glassLine = LocalBeeExtras.current.glassLine
     Column(
         Modifier
             .fillMaxWidth()
             .clip(shape)
             .background(BeeCardDefaults.colors().containerColor)
+            // The month's glass edge, drawn row by row: the sides always, the top
+            // only on its first day, the bottom only on its last, so the joins
+            // between days get the hairline divider, not a second edge.
+            .drawWithContent {
+                drawContent()
+                val w = 1.dp.toPx()
+                val topCut = if (first) 0f else w
+                val bottomCut = if (last) 0f else w
+                clipRect(w, 0f, size.width - w, topCut, ClipOp.Difference) {
+                    clipRect(w, size.height - bottomCut, size.width - w, size.height, ClipOp.Difference) {
+                        // Twice the width: the outer half falls outside the clip
+                        drawOutline(shape.createOutline(size, layoutDirection, this), glassLine, style = Stroke(2 * w))
+                    }
+                }
+            }
     ) {
         if (!first) HorizontalDivider(
             Modifier.padding(horizontal = 16.dp),
@@ -1158,6 +1218,14 @@ private fun TrendsView(
     // How the next view change should animate — set by the action that triggers it.
     var navKind by remember { mutableStateOf(PastNav.None) }
 
+    // The bar the stats, insight and tags are scoped to (an index into this
+    // view's units), or null for the whole span. Stepping the period or switching
+    // Month/Year clears it, as do a second tap on the bar, a tap on the chart's
+    // empty space and the scope chip's ✕.
+    var selected by remember { mutableStateOf<Int?>(null) }
+    val units = remember(zoom, monthOffset, yearOffset) { buildUnits(zoom, monthOffset, yearOffset) }
+    val selectedUnit = selected?.let { units.getOrNull(it) }
+
     // Kept at the top only for the control bar's range label. All the per-view
     // data (stats, avgs, grid cells, tags) is computed inside the animated
     // region so the outgoing and incoming levels each render their own.
@@ -1175,6 +1243,7 @@ private fun TrendsView(
 
     fun goEarlier() {
         navKind = PastNav.StepPrev
+        selected = null
         when (zoom) {
             Zoom.W -> monthOffset++
             Zoom.M -> yearOffset++
@@ -1183,6 +1252,7 @@ private fun TrendsView(
 
     fun goLater() {
         navKind = PastNav.StepNext
+        selected = null
         when (zoom) {
             Zoom.W -> if (monthOffset > 0) monthOffset--
             Zoom.M -> if (yearOffset > 0) yearOffset--
@@ -1190,7 +1260,7 @@ private fun TrendsView(
     }
 
     Column(Modifier.fillMaxSize()) {
-        // A deep-dive, not a stage: no band, a large title on the page.
+        // A deep-dive: a large title over one glass panel on the field.
         PageHeader("Trends", onBack = onBack, backLabel = "Back to the journal")
 
         Column(
@@ -1213,7 +1283,9 @@ private fun TrendsView(
                     .onGloballyPositioned { onChartYPosition(it.positionInParent().y) },
                 shape = RoundedCornerShape(20.dp),
                 colors = BeeCardDefaults.colors(),
-                elevation = BeeCardDefaults.elevation()
+                elevation = BeeCardDefaults.elevation(),
+                // Glass on the field: the fill comes from FieldColors, the edge here
+                border = BorderStroke(1.dp, LocalBeeExtras.current.glassLine)
             ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     // Control bar (never animates): arrows + range label + D/W/M
@@ -1230,7 +1302,32 @@ private fun TrendsView(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Text(
+                        if (selectedUnit != null) {
+                            // The scope of every number below, in the range label's
+                            // place; the ✕ goes back to the whole span.
+                            val x = LocalBeeExtras.current
+                            Row(
+                                Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(x.accentFill.copy(alpha = 0.18f))
+                                    .clickable(onClickLabel = "Show all of $rangeLabel") { selected = null }
+                                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    spanLabel(selectedUnit.startMs, selectedUnit.endMs, monthly = zoom == Zoom.M),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = x.accentText,
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.Close, contentDescription = null,
+                                    tint = x.accentText, modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else Text(
                             rangeLabel,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp,
@@ -1254,6 +1351,7 @@ private fun TrendsView(
                                 if (target != zoom) {
                                     navKind = if (target.rank() < zoom.rank())
                                         PastNav.ZoomIn else PastNav.ZoomOut
+                                    selected = null
                                     zoom = target
                                 }
                             }
@@ -1303,14 +1401,25 @@ private fun TrendsView(
                                 if (key.zoom == Zoom.M) key.yearOffset + 1 else key.yearOffset
                             )
                         }
-                        val kStats = remember(key, allRatings, window, refresh) {
-                            computePeriodStats(allRatings, kRange.first, kRange.second, window)
+                        // A selected bar narrows the numbers, not the charts, to its
+                        // span; its tag changes compare with the span just before it.
+                        // Only the current view honours it (an outgoing one is whole).
+                        val kSel = if (key == viewKey) selected?.takeIf { it in kUnits.indices } else null
+                        val kScope = remember(kRange, kSel) {
+                            kSel?.let { kUnits[it].startMs to kUnits[it].endMs } ?: kRange
                         }
-                        val kRestDays = remember(key, allRatings, refresh) {
+                        val kPrevScope = remember(kPrevRange, kSel) {
+                            kSel?.let { previousSpan(kUnits[it].startMs, kUnits[it].endMs, monthly = key.zoom == Zoom.M) }
+                                ?: kPrevRange
+                        }
+                        val kStats = remember(kScope, allRatings, window, refresh) {
+                            computePeriodStats(allRatings, kScope.first, kScope.second, window)
+                        }
+                        val kRestDays = remember(kScope, allRatings, refresh) {
                             // Mode events re-read on refresh (a toggle bumps it),
                             // so this replays under the same rules as the meter.
                             computeStreakEvents(allRatings, emptyList(), loadModeEvents(context))
-                                .count { it.type == StreakEventType.SAVER_USED && it.timestamp in kRange.first until kRange.second }
+                                .count { it.type == StreakEventType.SAVER_USED && it.timestamp in kScope.first until kScope.second }
                         }
                         val kUnitAvgs = remember(key, allRatings, refresh) {
                             kUnits.map { u ->
@@ -1331,11 +1440,13 @@ private fun TrendsView(
                             val cal = Calendar.getInstance()
                             kPeriodEntries.count { cal.timeInMillis = it.timestamp; cal.get(Calendar.HOUR_OF_DAY) > window.last }
                         }
-                        val kTagStats = remember(key, allRatings, sortByScore, refresh) {
-                            computeTagStats(allRatings, kRange.first, kRange.second, kPrevRange.first, kPrevRange.second, sortByScore)
+                        val kTagStats = remember(kScope, kPrevScope, allRatings, sortByScore, refresh) {
+                            computeTagStats(allRatings, kScope.first, kScope.second, kPrevScope.first, kPrevScope.second, sortByScore)
                         }
-                        val kInsight = remember(kPeriodEntries, kStats) {
-                            buildInsight(kPeriodEntries, kStats.ratedHours)
+                        // The insight speaks for the scope; its 20-hour floor keeps a
+                        // thin week silent rather than confidently wrong.
+                        val kInsight = remember(kScope, kPeriodEntries, kStats) {
+                            buildInsight(kPeriodEntries.filter { it.timestamp in kScope.first until kScope.second }, kStats.ratedHours)
                         }
 
                         Column(Modifier.fillMaxWidth()) {
@@ -1386,15 +1497,32 @@ private fun TrendsView(
                             )
                             Spacer(Modifier.height(16.dp))
 
-                            // Scores chart
-                            SectionLabel(
-                                when (key.zoom) {
-                                    Zoom.W -> "WEEK SCORES"
-                                    Zoom.M -> "MONTH SCORES"
-                                }
-                            )
+                            // Scores chart; its bars are the way into a single span
+                            val unitNoun = if (key.zoom == Zoom.W) "week" else "month"
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SectionLabel(
+                                    when (key.zoom) {
+                                        Zoom.W -> "WEEK SCORES"
+                                        Zoom.M -> "MONTH SCORES"
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                // Says the bars do something until one is chosen;
+                                // then the scope chip up top says what's shown
+                                if (kSel == null) Text(
+                                    "Tap a $unitNoun",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Spacer(Modifier.height(10.dp))
-                            ScoreBarChart(units = kUnits, avgs = kUnitAvgs)
+                            ScoreBarChart(
+                                units = kUnits,
+                                avgs = kUnitAvgs,
+                                selected = kSel,
+                                monthly = key.zoom == Zoom.M,
+                                onSelect = { selected = it }
+                            )
 
                             // Hour-by-hour pattern grid. Only at the year scale:
                             // a month's worth of weeks leaves cells averaging a
@@ -1438,7 +1566,8 @@ private fun TrendsView(
                                     PatternGrid(
                                         units = kUnits,
                                         ratings = kPeriodEntries,
-                                        hourRange = if (gridExpanded) 0..23 else window
+                                        hourRange = if (gridExpanded) 0..23 else window,
+                                        selected = kSel
                                     )
                                     if (!gridExpanded && kLate > 0) {
                                         Spacer(Modifier.height(6.dp))
@@ -1529,13 +1658,15 @@ private fun segmentSelectedColor(): Color =
     if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
     else MaterialTheme.colorScheme.surface
 
+/** The span you're looking at, like the "October 2026" / "2026" beside it, not
+ *  the bars' unit: "Weeks" read as "show me a week", which it never did. */
 private fun Zoom.fullLabel(): String = when (this) {
-    Zoom.W -> "Weeks"
-    Zoom.M -> "Months"
+    Zoom.W -> "Month"
+    Zoom.M -> "Year"
 }
 
 /**
- * The Weeks/Months zoom selector: a segmented stadium, both words always shown,
+ * The Month/Year span selector: a segmented stadium, both words always shown,
  * the active one a raised neutral segment ([segmentSelectedColor]).
  */
 @Composable
@@ -1611,14 +1742,20 @@ private fun CapPill(text: String, onClick: () -> Unit) {
 @Composable
 private fun ScoreBarChart(
     units: List<PeriodUnit>,
-    avgs: List<Double?>
+    avgs: List<Double?>,
+    /** The bar the numbers above and below are scoped to, or null. */
+    selected: Int?,
+    monthly: Boolean,
+    onSelect: (Int?) -> Unit
 ) {
     val plotHeight = 150.dp
     val labelZone = 18.dp
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
-    val goalPaint = remember {
+    // Muted ink, not a fixed grey: grey read ~3.5:1 on white and dead on the field
+    val goalColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val goalPaint = remember(goalColor) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.GRAY
+            color = goalColor.toArgb()
             textSize = 26f
             isFakeBoldText = true
             isAntiAlias = true
@@ -1631,7 +1768,18 @@ private fun ScoreBarChart(
         best
     }
 
-    Column(Modifier.fillMaxWidth()) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            // Any tap on the chart that isn't on a bar (the axis, the gaps, a future
+            // week, the labels) goes back to the whole span
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = selected != null,
+                onClickLabel = "Show the whole span"
+            ) { onSelect(null) }
+    ) {
         Row(Modifier.fillMaxWidth()) {
             // y-axis: 10 / 5 / 0
             Column(
@@ -1666,7 +1814,7 @@ private fun ScoreBarChart(
                     // goal line + in-plot label (never clipped)
                     val goalY = size.height * (1f - 0.7f)
                     drawLine(
-                        color = Color(0xFF9E9E9E),
+                        color = goalColor.copy(alpha = 0.6f),
                         start = Offset(0f, goalY), end = Offset(size.width, goalY),
                         strokeWidth = 3f,
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
@@ -1689,12 +1837,41 @@ private fun ScoreBarChart(
                         )
                         // Bars are neutral; the band lives in the value above
                         // each one. A month of solid red slabs read as an alarm.
-                        val barColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                        // The one selected bar is the exception: it takes its band
+                        // fill, and the rest step back.
+                        val isSelected = i == selected
+                        val dimmed = selected != null && !isSelected
+                        val barColor by animateColorAsState(
+                            when {
+                                isSelected && avg != null -> getScoreColor(avg)
+                                dimmed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                            },
+                            animationSpec = tween(220),
+                            label = "bar$i"
+                        )
                         val barShape = RoundedCornerShape(
                             topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp
                         )
+                        val canSelect = !u.future && avg != null
+                        val span = spanLabel(u.startMs, u.endMs, monthly)
                         Column(
-                            Modifier.weight(1f),
+                            Modifier
+                                .weight(1f)
+                                // The whole column is the target, not just a short bar
+                                .fillMaxHeight()
+                                .selectable(
+                                    selected = isSelected,
+                                    enabled = canSelect,
+                                    role = Role.Button,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { onSelect(if (isSelected) null else i) }
+                                .semantics {
+                                    contentDescription = if (avg != null)
+                                        "$span, average ${String.format(Locale.getDefault(), "%.1f", avg)}"
+                                    else "$span, no ratings"
+                                },
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Bottom
                         ) {
@@ -1702,9 +1879,13 @@ private fun ScoreBarChart(
                                 Text(
                                     String.format(Locale.getDefault(), "%.1f", avg),
                                     fontSize = 10.sp,
-                                    fontWeight = if (i == maxIdx) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontWeight = if (i == maxIdx || isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                     color = scoreTextColor(avg),
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    // The column already says it; don't read the number twice
+                                    modifier = Modifier
+                                        .clearAndSetSemantics {}
+                                        .graphicsLayer { alpha = if (dimmed) 0.45f else 1f }
                                 )
                                 Spacer(Modifier.height(2.dp))
                             } else if (!u.future) {
@@ -1741,14 +1922,16 @@ private fun ScoreBarChart(
         }
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth().padding(start = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            units.forEach { u ->
+            units.forEachIndexed { i, u ->
                 Text(
                     u.label,
                     fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (i == selected) FontWeight.Bold else null,
+                    color = if (i == selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).clearAndSetSemantics {}
                 )
             }
         }
@@ -1764,8 +1947,17 @@ private fun ScoreBarChart(
 private fun PatternGrid(
     units: List<PeriodUnit>,
     ratings: List<RatingEntry>,
-    hourRange: IntRange
+    hourRange: IntRange,
+    /** A bar selected in the chart above: the grid stays whole, other columns step back. */
+    selected: Int? = null
 ) {
+    val colAlpha = units.indices.map { col ->
+        animateFloatAsState(
+            if (selected == null || selected == col) 1f else 0.3f,
+            animationSpec = tween(220),
+            label = "gridCol$col"
+        ).value
+    }
     // hour -> per-column average
     val cellAvgs = remember(units, ratings, hourRange) {
         val cal = Calendar.getInstance()
@@ -1803,13 +1995,13 @@ private fun PatternGrid(
             // column headers
             Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                 Spacer(Modifier.width(gutter))
-                units.forEach { u ->
+                units.forEachIndexed { col, u ->
                     Box(Modifier.width(cell), contentAlignment = Alignment.Center) {
                         Text(
                             u.colLabel,
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (u.isCurrent) MaterialTheme.colorScheme.onSurface
+                            fontWeight = if (col == selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            color = if (u.isCurrent || col == selected) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             maxLines = 1
@@ -1855,6 +2047,7 @@ private fun PatternGrid(
                         Box(
                             Modifier
                                 .size(cell)
+                                .graphicsLayer { alpha = colAlpha[col] }
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(cellColor)
                         )
@@ -1998,7 +2191,8 @@ private fun TagStatRow(stat: TagStat) {
                     (if (delta > 0) "▲ " else "▼ ") + String.format(Locale.getDefault(), "%.1f", kotlin.math.abs(delta)),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (delta > 0) Color(0xFF66BB6A) else Color(0xFFC62828)
+                    // The score TEXT tints: the fill green was ~2:1 as type
+                    color = if (delta > 0) scoreTextColor(10.0) else scoreTextColor(1.0)
                 )
                 Spacer(Modifier.width(8.dp))
             }
@@ -2051,16 +2245,16 @@ fun onScoreColor(score: Double): Color =
     if (score >= 5.0) Color(0xFF1B1B1B) else Color.White
 
 /**
- * A score's band as TEXT on a card or the page. The fill hues are too dark (red)
- * or too pale (amber on white) to read as type, so each mode gets its own tint.
+ * A score's band as TEXT, on glass over the field (the ScoreText* palette tints,
+ * held to 4.5:1 there by PaletteContrastTest; never bare on the field).
  */
 @Composable
 fun scoreTextColor(score: Double): Color {
     val dark = isSystemInDarkTheme()
     return when {
-        score >= 8.0 -> if (dark) Color(0xFF81C784) else Color(0xFF2E7D32)
-        score >= 5.0 -> if (dark) Color(0xFFFFCA28) else Color(0xFF9A6000)
-        score > 0.0 -> if (dark) Color(0xFFFF8A80) else Color(0xFFC62828)
+        score >= 8.0 -> if (dark) ScoreTextGreenDark else ScoreTextGreenLight
+        score >= 5.0 -> if (dark) ScoreTextAmberDark else ScoreTextAmberLight
+        score > 0.0 -> if (dark) ScoreTextRedDark else ScoreTextRedLight
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }

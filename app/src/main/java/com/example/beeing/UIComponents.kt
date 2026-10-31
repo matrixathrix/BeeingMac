@@ -14,6 +14,7 @@ import com.example.beeing.ui.glass
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.icons.tagChipText
 import com.example.beeing.ui.icons.tagDisplayText
 import com.example.beeing.ui.icons.tagLabelOf
 import com.example.beeing.ui.icons.tagSym
@@ -549,7 +550,7 @@ internal fun TagChipContent(
 ) {
     val sym = tagSym(tag)
     if (sym == null) {
-        Text(tag, fontSize = fontSize, fontWeight = fontWeight)
+        Text(tagChipText(tag), fontSize = fontSize, fontWeight = fontWeight)
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BeeIcon(sym, size = 15.dp, contentDescription = null)
@@ -676,6 +677,8 @@ fun NotesSection(
     if (!expanded && noteText.isEmpty()) {
         Row(
             modifier = Modifier
+                // On the field the "+" stroke (not its tap row) sits on the 16dp edge
+                .then(if (field) Modifier.offset(x = (-7).dp) else Modifier)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(enabled = enabled) { expanded = true; wantFocus = true }
                 .padding(horizontal = 4.dp, vertical = 4.dp),

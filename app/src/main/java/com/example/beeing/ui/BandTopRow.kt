@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,7 +32,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -64,11 +64,11 @@ class BandChrome(
     val onMenuClick: () -> Unit,
     val onTopRowHidden: (Boolean) -> Unit = {},
     /**
-     * How much of the night field is under the row right now, 0…1, off the pager's
-     * continuous position: Streak and Now sit on it, Past doesn't (it opens on the
-     * plain page under a large title). The row crossfades its ink with the swipe.
+     * How much of the "Beeing" wordmark shows, 0…1, off the pager's continuous
+     * position: all three tabs sit on the field, but Past has its own large
+     * "Journal" title, so the wordmark fades out as the swipe reaches it.
      */
-    val bandUnder: () -> Float = { 1f },
+    val wordmarkShown: () -> Float = { 1f },
     /** How much of the Now tab is showing, 0…1: the status strip lives there only. */
     val nowShown: () -> Float = { 1f },
     /** Hours still to go to a Super day, while 12 is reachable today (else null). */
@@ -88,18 +88,18 @@ fun BandTopRow(
         state = chrome.state, unread = chrome.unread,
         onStreakClick = chrome.onStreakClick, onBellClick = chrome.onBellClick,
         onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle,
-        bandUnder = chrome.bandUnder(), nowShown = chrome.nowShown(),
+        wordmarkShown = chrome.wordmarkShown(), nowShown = chrome.nowShown(),
         superHoursLeft = chrome.superHoursLeft
     )
 }
 
 /**
- * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. The ⋮ has no
- * circle so the bell reads as the actionable one.
+ * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. Bell and ⋮
+ * are both bare icons; the badge is what sets the bell apart.
  *
  * The strip shows on Now only: the Streak tab's hero says the same thing in large
- * type, and Past is the record. Over the plain page (Past) the wordmark fades out
- * under the tab's own large title and the ink turns from white to onBackground.
+ * type, and Past is the record. All three tabs sit on the field, so the ink is
+ * always field ink; over Past the wordmark fades out under its own large title.
  */
 @Composable
 fun BandTopRow(
@@ -110,16 +110,15 @@ fun BandTopRow(
     onMenuClick: () -> Unit,
     titleModifier: Modifier = Modifier,
     titleStyle: TextStyle = MaterialTheme.typography.headlineSmall,
-    bandUnder: Float = 1f,
+    wordmarkShown: Float = 1f,
     nowShown: Float = 1f,
     superHoursLeft: Int? = null
 ) {
-    val ink = lerp(MaterialTheme.colorScheme.onBackground, LocalBeeExtras.current.fieldInk, bandUnder)
-    CompositionLocalProvider(LocalContentColor provides ink) {
+    CompositionLocalProvider(LocalContentColor provides LocalBeeExtras.current.fieldInk) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (bandUnder > 0.01f) Text(
+            if (wordmarkShown > 0.01f) Text(
                 "Beeing", style = titleStyle, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Clip,
-                modifier = titleModifier.graphicsLayer { alpha = bandUnder }
+                modifier = titleModifier.graphicsLayer { alpha = wordmarkShown }
             )
             Spacer(Modifier.weight(1f))
             if (nowShown > 0.01f) {
@@ -129,38 +128,38 @@ fun BandTopRow(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            BellButton(unread, onBellClick, bandUnder)
-            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
+            BellButton(unread, onBellClick)
+            // The row runs to the screen's right edge (HourlyPulseApp), so this 36dp
+            // target ends there and the dots, at its centre, end on the 16dp edge
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 36.dp, height = 40.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(24.dp))
             }
         }
     }
 }
 
 @Composable
-private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) {
+private fun BellButton(unread: Int, onClick: () -> Unit) {
     val extras = LocalBeeExtras.current
     val ink = LocalContentColor.current
-    // On the field: glass. On the page: a faint ink wash with no line.
-    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), extras.glassFill, bandUnder)
-    val line = extras.glassLine.copy(alpha = extras.glassLine.alpha * bandUnder)
-    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.fieldTop, bandUnder)
+    val ringBehindBadge = extras.fieldTop
     val description = if (unread > 0) "Warnings, $unread unread" else "Warnings"
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(fill)
-            .border(1.dp, line, CircleShape)
-            .clickable(onClickLabel = "Open warnings", onClick = onClick)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = ink)
+    // A bare icon like the ⋮ beside it; the honey unread badge is what makes it
+    // stand out when it matters. The tap target is its own clipped circle so the
+    // badge, which rides the bell's shoulder past that circle, is never cut off.
+    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .clip(CircleShape)
+                .clickable(onClickLabel = "Open warnings", onClick = onClick)
+                .semantics { contentDescription = description }
+        )
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(24.dp), tint = ink)
         if (unread > 0) {
             Box(
                 Modifier
-                    .align(Alignment.TopEnd)
+                    .offset(x = 9.dp, y = (-13).dp)
                     .size(18.dp)
                     .border(2.dp, ringBehindBadge, CircleShape)
                     .padding(2.dp)
@@ -226,15 +225,16 @@ internal fun StatusStrip(
                 // The leaf replaces the flame while beginner mode is on: the mode has
                 // to be visible from the main screen, and the paused count beside it
                 // reads as held, not lost.
+                // 22dp box: the glyph inside draws about as tall as the 20dp ring
                 if (state.beginnerMode && !atRisk) {
-                    BeeIcon(Sym.Beginner, size = 17.dp, contentDescription = null)
+                    BeeIcon(Sym.Beginner, size = 22.dp, contentDescription = null)
                 } else {
                     BeeIcon(
-                        Sym.Fire, size = 17.dp, contentDescription = null,
+                        Sym.Fire, size = 22.dp, contentDescription = null,
                         tint = if (atRisk) riskColor else x.fieldHoney
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "$shownStreak",
                     fontWeight = FontWeight.Bold,
@@ -247,14 +247,14 @@ internal fun StatusStrip(
                     color = riskColor, modifier = Modifier.padding(start = 2.dp)
                 )
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
             MiniHourRing(
                 hours = state.todayHours,
                 hoursRequired = state.hoursRequired,
                 qualified = state.todayQualified,
                 superLap = state.todayQualified && !state.beginnerMode
             )
-            Spacer(Modifier.width(7.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
                 "${state.todayHours}/$countTarget",
                 fontWeight = FontWeight.Bold,
@@ -274,8 +274,9 @@ private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, sup
     // Hours past the goal, as a share of the Super day lap (hours 9–12)
     val lapFraction = ((hours - hoursRequired).toFloat() / (SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED))
         .coerceIn(0f, 1f)
-    Canvas(Modifier.size(24.dp)) {
-        val stroke = 4.dp.toPx()
+    // 20dp, the flame's optical size, so the streak and the hours read as equals
+    Canvas(Modifier.size(20.dp)) {
+        val stroke = 3.5.dp.toPx()
         val inset = stroke / 2
         // The Super day lap here is the brief's fallback, a single 1.5dp SuperGold arc
         // sweeping extra/4, not the four-segment drawSuperLap: at this size its 4° gaps
@@ -283,8 +284,8 @@ private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, sup
         // "/12" count beside the ring already says what the lap is for. It sits 1dp
         // outside the ring, spilling 2.5dp past the canvas into the strip's 8dp padding,
         // so neither the ring nor the strip's width changes. (Not yet checked on device.)
-        // Since the strip lost its pill there is no padding to spill into; the 14dp gap
-        // before the ring and the 7dp after it leave the arc its room.
+        // Since the strip lost its pill there is no padding to spill into; the 16dp gap
+        // before the ring and the 6dp after it leave the arc its room.
         if (superLap && lapFraction > 0f) {
             val lapStroke = 1.5.dp.toPx()
             val r = size.minDimension / 2f + 1.dp.toPx() + lapStroke / 2f

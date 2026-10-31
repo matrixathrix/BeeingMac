@@ -32,10 +32,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +64,7 @@ import com.example.beeing.ui.PillShape
 import com.example.beeing.ui.fieldChipBorder
 import com.example.beeing.ui.fieldChipColors
 import com.example.beeing.ui.fieldEmptyCellColor
+import com.example.beeing.ui.glass
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagGlyphOf
@@ -82,9 +83,10 @@ import kotlinx.coroutines.launch
  * The whole tab is the NIGHT FIELD: one surface, no band and no card, with
  * everything on it either glass or honey (spec 2026-10-31-night-field-design).
  *
- *  - rating (1–2 hours pending): the question, one hour line (‹ range › ·
- *    countdown), the dial, the tags, "+ Add a note", and Save pinned above the
- *    nav bar. A fixed frame: only the tags scroll, and only when they can't fit.
+ *  - rating (1–2 hours pending): the question, the hour pill (‹ range ›) and
+ *    its countdown, the dial, the tags, "+ Add a note", and Save pinned above
+ *    the nav bar. A fixed frame (RatingFrame): only the tags scroll, and only
+ *    when they can't fit.
  *  - caught up (none pending): today's ring with "All caught up", the today
  *    strip in a glass panel, then the bee flying in the remaining height over
  *    the Lock button — the ONLY place lock exists.
@@ -326,7 +328,6 @@ fun NowTab(
     // or a screen too short for the collapsed picker). On a short screen the
     // commit action is therefore always on screen — which is the whole point.
     val tagsScroll = rememberScrollState()
-    var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
     val field = LocalBeeExtras.current
     // Picker range in the app's one time format: "8pm – 9pm" (same as the
@@ -370,18 +371,21 @@ fun NowTab(
             Box(Modifier.padding(horizontal = 16.dp)) { BandTopRowSpacer() }
             if (!allCaughtUp) {
                 // ---- RATING: a fixed frame, ordered the way you act ----
-                Spacer(Modifier.height(18.dp))
+                // The words and Save share the 16dp edge of the top row and the other
+                // tabs; the dial and the tags share the centre line.
+                Spacer(Modifier.height(14.dp))
                 Text(
                     "How was your hour?",
                     style = MaterialTheme.typography.headlineSmall.copy(fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = (-0.8).sp),
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 20.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                // One hour line, no container: ‹ range › then the countdown. A tap
-                // on the countdown explains why only these hours can be rated.
+                Spacer(Modifier.height(4.dp))
+                // The hour and its ‹ › in one glass pill, then the countdown. A tap on
+                // the countdown explains why only these hours can be rated.
                 val mins = minutesFor(targetedHourOffset)
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 10.dp, end = 16.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HourWindowPicker(
@@ -391,9 +395,10 @@ fun NowTab(
                         onEarlier = { onTargetedHourOffsetChange(1) },
                         onLater = { onTargetedHourOffsetChange(0) }
                     )
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         // "2h left" / "1h 5m left" / "40m left", never "120m left"
-                        "· " + when {
+                        when {
                             mins < 60 -> "${mins}m left"
                             mins % 60 == 0 -> "${mins / 60}h left"
                             else -> "${mins / 60}h ${mins % 60}m left"
@@ -407,81 +412,78 @@ fun NowTab(
                             .weight(1f, fill = false)
                             .clip(PillShape)
                             .clickable(onClickLabel = "Why only these hours?") { showWindowInfo = true }
-                            .padding(horizontal = 4.dp, vertical = 8.dp)
+                            .padding(horizontal = 4.dp, vertical = 6.dp)
                     )
                 }
 
-                DecagonCombDial(
-                    rating = selectedScore,
-                    onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
-                    // The hero keeps the width it had inside the old card. Its art
-                    // is square but not its box: the notch tops out 6.3% below the
-                    // box and the lowest cell ends 10.6% above its bottom, so both
-                    // are trimmed (the top by placing at a negative offset) and
-                    // neither the hour line nor the tags pay for empty rim.
-                    modifier = Modifier
-                        .padding(horizontal = 32.dp)
-                        .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) }
-                        .layout { measurable, constraints ->
-                            val p = measurable.measure(constraints)
-                            val top = (p.height * 0.063f).roundToInt()
-                            val bottom = (p.height * 0.106f).roundToInt()
-                            layout(p.width, p.height - top - bottom) { p.place(0, -top) }
-                        }
-                )
-
-                // The tags own all the height the rest of the frame leaves.
-                // Collapsed, they show as many chips as fit and fold the rest into
-                // "+N more"; expanded, they scroll here with the hairline thumb.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(horizontal = 16.dp)
-                        .onSizeChanged { tagsViewportHeightPx = it.height }
-                ) {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .then(if (tagsExpanded) Modifier.verticalScroll(tagsScroll) else Modifier),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        TagPickerSection(
-                            allRatings = allRatings,
-                            availableTags = availableTags,
-                            selectedTags = selectedTags,
-                            expanded = tagsExpanded,
-                            onExpandedChange = { tagsExpanded = it },
-                            onTagsUpdate = {
-                                availableTags = it
-                                viewModel.triggerRefresh()
-                            },
-                            onManageTags = onOpenTags
+                RatingFrame(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    dial = {
+                        DecagonCombDial(
+                            rating = selectedScore,
+                            onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
+                            // The hero keeps the width it had inside the old card. Its art
+                            // is square but not its box: the notch tops out 6.3% below the
+                            // box and the lowest cell ends 10.6% above its bottom, so both
+                            // are trimmed (the top by placing at a negative offset) and
+                            // neither the hour line nor the tags pay for empty rim.
+                            modifier = Modifier
+                                .padding(horizontal = 32.dp)
+                                .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) }
+                                .layout { measurable, constraints ->
+                                    val p = measurable.measure(constraints)
+                                    val top = (p.height * 0.063f).roundToInt()
+                                    val bottom = (p.height * 0.106f).roundToInt()
+                                    layout(p.width, p.height - top - bottom) { p.place(0, -top) }
+                                }
                         )
-                    }
-                    FadingScrollbar(
-                        scrollState = tagsScroll,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            // Read in the layout phase, not composition: a composition
-                            // read would rebuild every tag chip when the viewport resizes.
-                            .layout { m, c ->
-                                val h = tagsViewportHeightPx
-                                val p = m.measure(c.copy(minHeight = h, maxHeight = h))
-                                layout(p.width, h) { p.place(0, 0) }
+                    },
+                    // Collapsed, the tags show as many chips as fit and fold the rest
+                    // into "+N more"; expanded, they scroll here with the hairline thumb.
+                    tags = {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .then(if (tagsExpanded) Modifier.verticalScroll(tagsScroll) else Modifier),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                TagPickerSection(
+                                    allRatings = allRatings,
+                                    availableTags = availableTags,
+                                    selectedTags = selectedTags,
+                                    expanded = tagsExpanded,
+                                    onExpandedChange = { tagsExpanded = it },
+                                    onTagsUpdate = {
+                                        availableTags = it
+                                        viewModel.triggerRefresh()
+                                    },
+                                    onManageTags = onOpenTags
+                                )
                             }
-                            .padding(vertical = 10.dp, horizontal = 4.dp)
-                    )
-                }
-
-                Box(Modifier.padding(horizontal = 20.dp).padding(top = 4.dp)) {
-                    NotesSection(
-                        noteText = currentNote,
-                        onNoteChange = { currentNote = it },
-                        enabled = true,
-                        field = true
-                    )
-                }
+                            // matchParentSize: the thumb takes the tags' height without
+                            // adding to it, so the box still wraps the chips.
+                            Box(Modifier.matchParentSize(), contentAlignment = Alignment.CenterEnd) {
+                                FadingScrollbar(
+                                    scrollState = tagsScroll,
+                                    modifier = Modifier.fillMaxHeight().padding(vertical = 10.dp, horizontal = 4.dp)
+                                )
+                            }
+                        }
+                    },
+                    note = {
+                        // The "+" glyph's stroke, not its 4dp-padded tap row, sits on
+                        // the 16dp edge (NotesSection nudges it in field mode).
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            NotesSection(
+                                noteText = currentNote,
+                                onNoteChange = { currentNote = it },
+                                enabled = true,
+                                field = true
+                            )
+                        }
+                    }
+                )
 
                 // Save: a full-width honey pill pinned just above the nav bar, so
                 // the commit action is on screen at any height. The label IS the
@@ -530,7 +532,8 @@ fun NowTab(
                     },
                     enabled = canSave,
                     modifier = Modifier
-                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
+                        // 16dp on all three sides; the gap above it is the frame's last
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                         .fillMaxWidth()
                         .heightIn(min = 64.dp)
                         // The soft honey glow, only while it can act
@@ -853,7 +856,56 @@ private fun CaughtUpRing(state: StreakState, superHoursLeft: Int?) {
 }
 
 // ============================================================
-// TAG PICKER  (fills its height; the overflow folds into "+N more")
+// RATING FRAME  (dial · tags · note between the hour pill and Save)
+// ============================================================
+
+/** The chips' 48dp touch rows reach this far above the first chip and below the last. */
+private val TagTouchInset = 8.dp
+
+/** The collapsed "+ Add a note" row's tap padding above and below its text. */
+private val NoteTapInset = 4.dp
+
+/**
+ * The height between the hour pill and Save, shared by the dial, the tags and the
+ * note. The dial and the note keep their size; the tags get as many rows as fit
+ * with every gap at its minimum, and whatever is left is spread over the four
+ * gaps by [shareRatingGaps], so the rhythm holds at any zoom or aspect ratio
+ * instead of one gap swallowing the leftover. Gaps are measured between what you
+ * see, so the chips' touch padding and the note's tap padding are taken out.
+ */
+@Composable
+private fun RatingFrame(
+    modifier: Modifier,
+    dial: @Composable () -> Unit,
+    tags: @Composable () -> Unit,
+    note: @Composable () -> Unit
+) {
+    Layout(contents = listOf(dial, tags, note), modifier = modifier) { (dialM, tagsM, noteM), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val touch = TagTouchInset.roundToPx()
+        val tap = NoteTapInset.roundToPx()
+        val dialP = dialM.first().measure(loose)
+        val noteP = noteM.first().measure(loose)
+        val noteSeen = noteP.height - 2 * tap
+        val minGaps = RATING_GAP_MIN.sumOf { it.dp.roundToPx() }
+        val tagsRoom = constraints.maxHeight - dialP.height - noteSeen - minGaps + 2 * touch
+        val tagsP = tagsM.first().measure(loose.copy(maxHeight = tagsRoom.coerceAtLeast(0)))
+        val tagsSeen = (tagsP.height - 2 * touch).coerceAtLeast(0)
+        val spare = constraints.maxHeight - dialP.height - tagsSeen - noteSeen
+        val gaps = shareRatingGaps(spare.toDp().value).map { it.dp.roundToPx() }
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            var y = gaps[0]
+            dialP.place((constraints.maxWidth - dialP.width) / 2, y)
+            y += dialP.height + gaps[1] - touch
+            tagsP.place(0, y)
+            y += tagsP.height - touch + gaps[2] - tap
+            noteP.place(0, y)
+        }
+    }
+}
+
+// ============================================================
+// TAG PICKER  (as many rows as fit; the overflow folds into "+N more")
 // ============================================================
 
 /**
@@ -898,7 +950,8 @@ private fun TagPickerSection(
     // Items are the tags, then "Edit tags" last.
     ContextualFlowRow(
         itemCount = availableTags.size + 1,
-        modifier = Modifier.fillMaxSize(),
+        // Wraps its rows: the frame's height limit decides how many fit
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy((-8).dp, Alignment.Top),
         overflow = ContextualFlowRowOverflow.expandIndicator {
@@ -987,10 +1040,10 @@ private fun TagFoldButton(text: String, onClick: () -> Unit) {
 }
 
 /**
- * The hour being rated, flanked by ‹ › carets, with no container: it is one
- * line on the field under the question. A caret is enabled only when the
- * neighbouring hour is itself still pending, so the user can only step to a
- * window that actually needs a rating.
+ * The hour being rated and its ‹ › carets in one glass pill, so the arrows read
+ * as part of the time they change (on this screen glass already means "tap me":
+ * the tags). A caret is enabled only when the neighbouring hour is itself still
+ * pending, so the user can only step to a window that actually needs a rating.
  */
 @Composable
 private fun HourWindowPicker(
@@ -1001,8 +1054,9 @@ private fun HourWindowPicker(
     onLater: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val ink = LocalBeeExtras.current.fieldInk
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    val x = LocalBeeExtras.current
+    val ink = x.fieldInk
+    Row(modifier.height(36.dp).glass(x, PillShape), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onEarlier, enabled = canGoEarlier, modifier = Modifier.size(36.dp)) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowLeft,

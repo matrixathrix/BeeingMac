@@ -203,7 +203,7 @@ fun HourlyPulseApp(
         onBellClick = { showWarnings = true },
         onMenuClick = { showSettings = true },
         onTopRowHidden = { topRowHidden = it },
-        bandUnder = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        wordmarkShown = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
         nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) },
         superHoursLeft = superHoursLeft
     )
@@ -211,7 +211,7 @@ fun HourlyPulseApp(
     // Status-bar icons are BeeingTheme's job: the field and the page are both dark in
     // dark mode and light in light mode, so nothing here depends on the tab.
     // derivedStateOf: the root must not recompose on every swipe frame
-    val overPlainPage by remember { derivedStateOf { pagerPosition() > 1.5f } }
+    val overPast by remember { derivedStateOf { pagerPosition() > 1.5f } }
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
     // as shown the moment it appears, so declining is not re-asked.
@@ -586,14 +586,15 @@ fun HourlyPulseApp(
     // alone would leave Now without its top row. ----
     // Scaled like the tabs under it (designDensity), padding and height included, so
     // it lines up with the BandTopRowSpacer each tab reserves in its own scaled dp.
-    if (!(topRowHidden && overPlainPage)) CompositionLocalProvider(LocalDensity provides designDensity()) {
+    if (!(topRowHidden && overPast)) CompositionLocalProvider(LocalDensity provides designDensity()) {
         Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal))
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                // No end padding: the ⋮'s target runs to the edge so its dots sit on the 16dp edge
+                .padding(start = 16.dp, top = 8.dp)
                 .height(BandTopRowHeight)
         ) { BandTopRow() }
     }
@@ -732,10 +733,9 @@ private fun InfoSection(sym: Sym, title: String) {
  * Inactive tabs wear the outline icon; the active one switches to the filled
  * icon and a bold honey label. No pill.
  *
- * Over the night field (Streak, Now) the bar is the field's own bottom colour
- * with a hairline of field ink, so the field runs into it; over Past it is the
- * card-coloured bar. Everything lerps on the pager's continuous position, the
- * same way the top row does, so it crossfades with the swipe.
+ * All three tabs sit on the night field, so the bar is always the field's own
+ * bottom colour with a hairline of field ink, and the field runs into it. Only
+ * the active tab's honey follows the pager's continuous position.
  */
 @Composable
 private fun BottomNavBar(
@@ -744,24 +744,19 @@ private fun BottomNavBar(
     modifier: Modifier = Modifier
 ) {
     val x = LocalBeeExtras.current
-    val scheme = MaterialTheme.colorScheme
     // Continuous pager position: whole part = page, fraction = swipe progress
     val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
-    // 1 over Streak and Now, 0 over Past
-    val onField = (2f - progress).coerceIn(0f, 1f)
-    val accent = lerp(x.accentText, x.fieldHoney, onField)
-    val idle = lerp(scheme.onSurfaceVariant, x.fieldInkMuted, onField)
+    // All three tabs sit on the field, so the bar never changes surface
+    val accent = x.fieldHoney
+    val idle = x.fieldInkMuted
     Surface(
-        color = lerp(scheme.surface, x.navOnField, onField),
+        color = x.navOnField,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = lerp(scheme.outlineVariant, x.fieldInk.copy(alpha = 0.10f), onField)
-            )
+            HorizontalDivider(thickness = 0.5.dp, color = x.fieldInk.copy(alpha = 0.10f))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
                 bottomNavItems.forEachIndexed { index, item ->
                     val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)

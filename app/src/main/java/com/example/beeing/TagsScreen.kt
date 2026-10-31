@@ -75,8 +75,7 @@ import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.PageHeader
 import com.example.beeing.ui.icons.BeeIcon
-import com.example.beeing.ui.icons.tagGlyphOf
-import com.example.beeing.ui.icons.tagLabelOf
+import com.example.beeing.ui.icons.tagParts
 import com.example.beeing.ui.icons.tagSym
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -84,21 +83,6 @@ import kotlinx.coroutines.launch
 private const val MAX_TAGS = 30
 private const val TAG_NAME_MAX = 20
 
-/**
- * A tag split for this list: (glyph, name). Built-ins and leading emoji come from
- * tagGlyphOf/tagLabelOf; a TRAILING emoji ("FeelGood😇") is lifted into the tile
- * too, so every row reads tile · name. Display only: the stored string is the
- * tag's identity and is never rewritten.
- */
-private fun tagParts(tag: String): Pair<String?, String> {
-    val label = tagLabelOf(tag)
-    tagGlyphOf(tag)?.let { return it to label }
-    val lastWord = label.indexOfLast { it.isLetterOrDigit() }
-    val tail = if (lastWord >= 0) label.substring(lastWord + 1).trim() else ""
-    return if (tail.isNotEmpty() && tail.none { it.isLetterOrDigit() })
-        tail to label.substring(0, lastWord + 1).trim()
-    else null to label
-}
 
 /** Tags must never carry the storage separators (`,` `|` `;`). */
 private fun sanitizeTag(raw: String) = raw.replace(Regex("[,;|]"), " ").trim()

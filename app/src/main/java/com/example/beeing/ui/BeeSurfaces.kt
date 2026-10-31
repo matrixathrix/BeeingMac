@@ -38,6 +38,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import com.example.beeing.ui.theme.FieldBrush
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -46,9 +59,10 @@ import com.example.beeing.ui.theme.BeeExtras
 import com.example.beeing.ui.theme.LocalBeeExtras
 
 /**
- * The top of a page with no field: status-bar inset, an optional back arrow, and
- * a large title on the plain page, with an optional trailing slot (Past's
- * "Trends ›"). [reserveTopRow] leaves room for the fixed app top row that
+ * The top of a titled page: status-bar inset, an optional back arrow, and a
+ * large title in the ambient ink (field ink on Past and Trends, page ink on
+ * Settings and Tags), with an optional trailing slot (Past's "Trends ›").
+ * [reserveTopRow] leaves room for the fixed app top row that
  * HourlyPulseApp draws over the pager (Past needs it; Trends/Settings hide it).
  */
 @Composable
@@ -89,13 +103,80 @@ fun PageHeader(
 }
 
 // ============================================================
-// THE NIGHT FIELD  (Now and Streak: one surface, glass in it)
+// THE NIGHT FIELD  (Now, Streak and Past: one surface, glass in it)
 // ============================================================
 //
-// Now and Streak paint `LocalBeeExtras.current.fieldBrush` edge to edge and put
+// The three tabs paint `LocalBeeExtras.current.fieldBrush` edge to edge and put
 // everything on it as GLASS — a faint fill with a hairline, never a shadow, so
 // nothing reads as a card sitting on the field. One shape family: panels are
 // 20dp, everything smaller is a circle or a full pill.
+
+private class PageTheme(val scheme: ColorScheme, val extras: BeeExtras, val content: Color)
+private val LocalPageTheme = staticCompositionLocalOf<PageTheme?> { null }
+
+/**
+ * [content] sits on the night field but was written against the PAGE's colour
+ * roles (the Past tab's journal and Trends, ~60 role reads). They are remapped to
+ * the field's here, in one place: ink and muted ink to field ink, `surface` (what
+ * BeeCardDefaults fills with) to glass, `primary` and `accentText` to field honey,
+ * no card shadow. Score colours are untouched: their text tints clear 4.5:1 on
+ * glass over the field in both modes, so score text must always sit on glass.
+ * A dialog opened from inside goes back to the page with [PageColors].
+ */
+@Composable
+fun FieldColors(content: @Composable () -> Unit) {
+    val page = MaterialTheme.colorScheme
+    val x = LocalBeeExtras.current
+    val saved = PageTheme(page, x, LocalContentColor.current)
+    MaterialTheme(
+        colorScheme = page.copy(
+            background = x.fieldBottom,
+            onBackground = x.fieldInk,
+            surface = x.glassFill,
+            onSurface = x.fieldInk,
+            surfaceVariant = x.fieldInk.copy(alpha = 0.08f),
+            onSurfaceVariant = x.fieldInkMuted,
+            outlineVariant = x.fieldInk.copy(alpha = 0.10f),
+            primary = x.fieldHoney
+        )
+    ) {
+        CompositionLocalProvider(
+            LocalPageTheme provides saved,
+            LocalBeeExtras provides x.copy(accentText = x.fieldHoney, cardShadow = false),
+            LocalContentColor provides x.fieldInk,
+            content = content
+        )
+    }
+}
+
+/** The page's own colours again, for a dialog opened from inside [FieldColors]. */
+@Composable
+fun PageColors(content: @Composable () -> Unit) {
+    val saved = LocalPageTheme.current ?: return content()
+    MaterialTheme(colorScheme = saved.scheme) {
+        CompositionLocalProvider(
+            LocalBeeExtras provides saved.extras,
+            LocalContentColor provides saved.content,
+            content = content
+        )
+    }
+}
+
+/**
+ * Paints the field under a piece of a page exactly as the page shows it, so a
+ * sticky header hides what scrolls beneath it without a visible band. [page] is
+ * the bounds, in the root, of the surface the field fills.
+ */
+fun Modifier.fieldBackdrop(x: BeeExtras, page: () -> Rect): Modifier = composed {
+    var at by remember { mutableStateOf(Offset.Zero) }
+    onGloballyPositioned { at = it.positionInRoot() }
+        .drawBehind {
+            val p = page()
+            val brush = (x.fieldBrush as? FieldBrush)?.takeIf { p.width > 0f }
+                ?.at(p.size, at - p.topLeft) ?: SolidColor(x.fieldBottom)
+            drawRect(brush)
+        }
+}
 
 /** Every panel on the field. Anything smaller is a circle or a full pill. */
 val GlassPanelShape = RoundedCornerShape(20.dp)
@@ -191,7 +272,7 @@ fun fieldEmptyCellColor(x: BeeExtras, future: Boolean): Color =
     x.fieldInk.copy(alpha = if (future) 0.07f else 0.16f)
 
 // ============================================================
-// THE PLAIN PAGE  (Past, Trends, Settings, dialogs, sheets)
+// THE PLAIN PAGE  (Settings, Tags, dialogs, sheets)
 // ============================================================
 
 /** One card style for the whole app: `surface` fill, 20dp, shadow in light mode only. */

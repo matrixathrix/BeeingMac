@@ -124,6 +124,20 @@ class PaletteContrastTest {
         assertContrast(4.5, x.fieldInkMuted.over(x.navOnField), x.navOnField, "$n nav idle")
     }
 
+    // Score text on the Past tab (averages, chart values, tag scores, ▲ ▼) sits on
+    // glass over the field. Bare on the light glow, red would drop to ~3.8:1, which
+    // is why score text must never sit on the field without glass behind it.
+    @Test
+    fun score_text_reads_on_field_glass() = mapOf(
+        "light" to listOf(ScoreTextGreenLight, ScoreTextAmberLight, ScoreTextRedLight),
+        "dark" to listOf(ScoreTextGreenDark, ScoreTextAmberDark, ScoreTextRedDark)
+    ).forEach { (n, tints) ->
+        val x = extras.getValue(n)
+        listOf(x.glassFill.over(x.fieldTop), x.glassFill.over(x.fieldBottom)).forEach { bg ->
+            tints.forEach { assertContrast(4.5, it, bg, "$n score text $it on glass $bg") }
+        }
+    }
+
     // Captions on the field: at-risk / missed red, "Super day", "Day secured".
     @Test
     fun field_status_text_is_readable() = extras.forEach { (n, x) ->
