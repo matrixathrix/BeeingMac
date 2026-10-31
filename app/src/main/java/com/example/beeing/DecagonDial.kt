@@ -278,13 +278,14 @@ fun DecagonCombDial(
     // The app's typeface, not the phone's system bold: the dial is drawn on a
     // native canvas, which doesn't inherit Compose's font family.
     val faces = remember {
-        fun face(id: Int) = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
+        fun load(id: Int) = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
             ?: android.graphics.Typeface.DEFAULT_BOLD
+        val sans = load(R.font.instrument_sans)
         DialFaces(
-            cell = face(R.font.plus_jakarta_sans_600),
-            numeral = face(R.font.plus_jakarta_sans_800),
-            word = face(R.font.plus_jakarta_sans_600),
-            hint = face(R.font.plus_jakarta_sans_500)
+            cell = DialFace(sans, "'wght' 600"),
+            numeral = DialFace(sans, "'wght' 700"),
+            word = DialFace(load(R.font.instrument_serif_italic), null),
+            hint = DialFace(sans, "'wght' 500")
         )
     }
     val colors = DialColors(
@@ -540,16 +541,26 @@ private class DialColors(
     val faces: DialFaces
 )
 
+/** A typeface plus, for the variable Instrument Sans, the weight to dial it to. */
+private class DialFace(val typeface: android.graphics.Typeface, val variation: String?)
+
+/** Points [this] paint at [face]: a static face just clears the variation. */
+private fun android.graphics.Paint.use(face: DialFace) {
+    typeface = face.typeface
+    fontVariationSettings = face.variation
+}
+
 /**
- * Plus Jakarta Sans cuts for the dial's text, on the app's weight scale: the cell
- * digits are values (SemiBold), the core's numeral is a hero numeral (ExtraBold),
- * the score word SemiBold, and the "Pick a rating" prompt Medium.
+ * The dial's text on the app's type scale: the cell digits are values (Instrument
+ * Sans 600), the core's numeral a hero numeral (700, the face's heaviest), the
+ * "Pick a rating" prompt 500, and the score word a reflective line, so it is the
+ * display serif (Instrument Serif Italic), sized up like every serif call site.
  */
 private class DialFaces(
-    val cell: android.graphics.Typeface,
-    val numeral: android.graphics.Typeface,
-    val word: android.graphics.Typeface,
-    val hint: android.graphics.Typeface
+    val cell: DialFace,
+    val numeral: DialFace,
+    val word: DialFace,
+    val hint: DialFace
 )
 
 private fun DrawScope.drawDial(
@@ -612,7 +623,7 @@ private fun DrawScope.drawDial(
             // (dark on amber/green, white on the deep 1-4 red, where dark ink fails).
             if (blur < 0.2f) {
                 val digit = if (isSelected) dialDigitColor(sc) else colors.ink.copy(alpha = 0.85f)
-                digitPaint.typeface = colors.faces.cell
+                digitPaint.use(colors.faces.cell)
                 digitPaint.color = digit.copy(alpha = digit.alpha * (1f - blur * 5f)).toArgbInt()
                 digitPaint.textSize = rc * 0.73f
                 drawContext.canvas.nativeCanvas.drawText(
@@ -641,7 +652,7 @@ private fun DrawScope.drawDial(
             style = Stroke(width = colors.lineWidth)
         )
         digitPaint.color = colors.ink.toArgbInt()
-        digitPaint.typeface = colors.faces.hint
+        digitPaint.use(colors.faces.hint)
         digitPaint.textSize = rd * 0.24f
         drawContext.canvas.nativeCanvas.apply {
             drawText("Pick a", cx, cy - rd * 0.04f, digitPaint)
@@ -656,7 +667,7 @@ private fun DrawScope.drawDial(
         )
         drawCircle(band, radius = rd, center = Offset(cx, cy))
         digitPaint.color = dialDigitColor(rating).toArgbInt()
-        digitPaint.typeface = colors.faces.numeral
+        digitPaint.use(colors.faces.numeral)
         digitPaint.textSize = rd * 0.80f
         drawContext.canvas.nativeCanvas.drawText(
             rating.toString(), cx, cy + rd * 0.15f, digitPaint
@@ -664,8 +675,9 @@ private fun DrawScope.drawDial(
         val word = DIAL_WORDS[rating].orEmpty()
             .split(' ')
             .joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
-        digitPaint.typeface = colors.faces.word
-        digitPaint.textSize = rd * 0.21f
+        digitPaint.use(colors.faces.word)
+        // The serif reads smaller than the sans it replaced, so it's set larger
+        digitPaint.textSize = rd * 0.27f
         drawContext.canvas.nativeCanvas.drawText(
             word, cx, cy + rd * 0.50f, digitPaint
         )

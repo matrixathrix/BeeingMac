@@ -70,7 +70,8 @@ import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagGlyphOf
 import com.example.beeing.ui.icons.tagLabelOf
 import com.example.beeing.ui.icons.tagSym
-import com.example.beeing.ui.theme.JakartaFontFamily
+import com.example.beeing.ui.theme.DisplaySerif
+import com.example.beeing.ui.theme.InstrumentSans
 import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
@@ -373,14 +374,14 @@ fun NowTab(
                 // ---- RATING: a fixed frame, ordered the way you act ----
                 // The words and Save share the 16dp edge of the top row and the other
                 // tabs; the dial and the tags share the centre line.
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(36.dp)) // a clear breath between the quiet header and the hero
+                // The app's signature line, in the serif: a journal asking, not a form
                 Text(
                     "How was your hour?",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = (-0.8).sp),
-                    fontWeight = FontWeight.Bold,
+                    style = DisplaySerif.copy(fontSize = 42.sp, lineHeight = 46.sp),
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
                 // The hour and its ‹ › in one glass pill, then the countdown. A tap on
                 // the countdown explains why only these hours can be rated.
                 val mins = minutesFor(targetedHourOffset)
@@ -557,7 +558,7 @@ fun NowTab(
                         saveLabel,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = JakartaFontFamily,
+                        fontFamily = InstrumentSans,
                         textAlign = TextAlign.Center,
                         lineHeight = 22.sp
                     )
@@ -574,11 +575,7 @@ fun NowTab(
                     Spacer(Modifier.height(18.dp))
                     CaughtUpRing(state = streakState, superHoursLeft = LocalBandChrome.current?.superHoursLeft)
                     Spacer(Modifier.height(14.dp))
-                    Text(
-                        "All caught up",
-                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 31.sp, letterSpacing = (-0.6).sp),
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("All caught up", style = DisplaySerif.copy(fontSize = 31.sp, lineHeight = 35.sp))
                     Spacer(Modifier.height(2.dp))
                     Text(
                         "Next hour opens in ${minutesToNextHour}m",
@@ -643,7 +640,7 @@ fun NowTab(
                         "Lock phone and bee mindful",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        fontFamily = JakartaFontFamily
+                        fontFamily = InstrumentSans
                     )
                 }
             }

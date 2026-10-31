@@ -153,7 +153,7 @@ case verify by static review and say so explicitly — the user compiles locally
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`**, Swiggy-style: `surface` bar, hairline top edge, icon over label; inactive = outline `Sym.*Outline` in `onSurfaceVariant`, active = filled `Sym.Fire`/`Hourglass`/`Chart` + bold label in `accentText`, crossfaded by `currentPage + currentPageOffsetFraction`; no pill). **No Scaffold topBar** — each tab opens with its own `BrandBand`, which owns the status-bar inset. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
 | `NowTab.kt` | The rating flow. **Everything above the card is a `BrandBand`**: row 1 = hamburger (`onMenuClick`, data-options menu) · "Beeing" (`headlineSmall`) · `StatusStrip` (streak icon + count · `MiniHourRing` x/goal, a translucent white `OnBandFill` pill on the band; taps to the Streak tab; merged semantics "N-day streak · H of G hours rated today", click label "Open Streak tab"; in beginner mode the fire becomes 🌱 and the description leads with "Beginner mode · streak paused at N"). Row 2 in the **rating state** = "How was your hour?" (`titleLarge`) over `HourWindowPicker` (translucent pill, ‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + "Nm left" countdown (honey in its last 15 min) + the "why these hours" info icon; in the **caught-up state** = "All caught up" + "Next hour opens in N m". Below the band the rating card (`BeeCardDefaults`) holds dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
 | `ui/BeeSurfaces.kt` | The shared shell: `PageHeader` (plain-page title), the **night-field glass** (`GlassPanelShape`, `PillShape`, `Modifier.glass(x)`, `GlassPanel`, `fieldChipColors()`/`fieldChipBorder()`, `fieldEmptyCellColor`), and the plain page's `BeeCardDefaults`, `beeChipColors()` (`tagChipColors()` delegates to it), `BeeButtonDefaults`, `emptyCellColor`. `BrandBand`, `BandFillLayout`, `scaledLayout`, `animatedHeight`, `BandShape` and `OnBandFill` were deleted with the band (2026-10-31); `NowTab`/`StreaksTab`/`DecagonDial` rows above predate that entry |
-| `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `JakartaFontFamily` + `Typography`, `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
+| `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `InstrumentSans` / `InstrumentSerifItalic` / `DisplaySerif` + `Typography` (fonts in `res/font`, OFL licences in `assets/licenses`), `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
 | `CatchTheBee.kt` | The caught-up screen's **earned way out**: `CatchTheBee(onCatch)` — a **🐝 emoji** bee (38dp, sized in dp→sp so font scale can't grow it, in a 64dp circular tap target; the one deliberate exception to "UI emoji → Material Symbols", by owner call: the `Sym.Reclaim` icon didn't read as a bee in flight; it's mirrored when heading right since the emoji faces left) drifting slowly (`BEE_SPEED_PER_S` 70dp/s, eased legs to random points, wing wobble + bob, flips to face its heading) inside its field, under a "Catch the bee to lock the phone" prompt that drops in once then pulses. Every moving value is read in `offset {}`/`graphicsLayer {}` lambdas, so flight never recomposes; it runs on the frame clock, so it stops on its own when the tab pages away, the app is backgrounded or the screen is off. With system animations off (`ANIMATOR_DURATION_SCALE == 0`) the bee sits still and the prompt doesn't pulse |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten **round** cells docked one per edge, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
@@ -213,8 +213,12 @@ case verify by static review and say so explicitly — the user compiles locally
 - **The look: "Night bloom"** (spec `docs/superpowers/specs/2026-10-27-reskin-design.md`).
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
-  You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. **Now, Streak and Past
+  You dynamic colour. One family, **Instrument** (2026-10-31): **Instrument Sans**
+  (`InstrumentSans`, all 15 M3 type roles, so plain `Text()` inherits it) for
+  everything, and **Instrument Serif Italic** (`DisplaySerif`) for the reflective
+  lines only — the question, "All caught up", `PageHeader` titles, the two
+  celebration titles, the wordmark and the dial's score word; never numbers,
+  buttons, chips or dialogs, never under 28sp, sized ~15% up. **Now, Streak and Past
   (Journal + Trends) sit on the night field; there is no band** (2026-10-31, spec
   `docs/superpowers/specs/2026-10-31-night-field-design.md`): one radial-glow
   surface (`BeeExtras.fieldBrush`) edge to edge, each tab owning its status-bar
@@ -1329,3 +1333,38 @@ case verify by static review and say so explicitly — the user compiles locally
   2026-08-04 "every chart is a pure readout" call, which was about the deleted
   Day-zoom drill; scoping to a bar doesn't duplicate the journal.
   Not device-verified from this session (built, 134 unit tests, installed).
+- 2026-10-31 (**portrait, selection motion, Instrument type**):
+  (1) `MainActivity` is `screenOrientation="portrait"` (owner). Android 16
+  ignores this on large screens (≥600dp wide), so it holds on phones only.
+  (2) Choosing or clearing a Trends bar animates on one rhythm, `SELECT_MS`
+  (260ms, FastOutSlowIn): the range label ⇄ scope chip (`AnimatedContent`, fade
+  + scale from 90%, width glides via `SizeTransform` so the › slides), the stats
+  + insight block (`ScopeSummary` as the target state) and the tag rows swap via
+  **`scopeSwap()`** — old content out in 120ms, new in 70ms later with a
+  ≤24px rise, height gliding — and the bar colours, value alphas, x-labels and
+  grid columns animate on the same tween. "Tap a week" fades with
+  `AnimatedVisibility`.
+  (3) **Typeface: Instrument** (owner's pick from the "Beeing Typefaces" mockup:
+  Jakarta vs Instrument vs Geist vs Bricolage). `res/font/instrument_sans.ttf` is
+  the variable font (wght 400–700; Compose dials `wght` from each `FontWeight`,
+  so ExtraBold/Black render at 700) and `instrument_serif_italic.ttf` the one
+  serif cut; both from google/fonts, OFL texts in `assets/licenses`. Jakarta's
+  five files are deleted. Role tracking was lightened (headlines −0.2/−0.3), the
+  narrower face needing less. **`DisplaySerif`** call sites and sizes: "How was
+  your hour?" 42/46sp, "All caught up" 31/35, `PageHeader` 33/38 (Journal,
+  Trends, Settings, Tags), wordmark 30/34 (`WordmarkStyle`), Super day and
+  streak-recovered titles 34/38. The dial draws on a native canvas, so
+  `DialFaces` now holds `DialFace(typeface, variation)` and `Paint.use()` sets
+  `fontVariationSettings` ('wght' 600 digits, 700 numeral, 500 prompt); the
+  score word is the serif at `rd * 0.27`. This brings back a second face, which
+  the 2026-10-27 reskin removed: that was a "fun" display face used everywhere;
+  this is its own family's serif in about six places.
+  Not device-verified from this session (built, 134 unit tests, installed).
+- 2026-10-31 (**quiet header, clear gap**): owner pointed back at the
+  night-field mockup's proportions (header reads as one quiet line, a distinct
+  gap before the hero). Measured at 450dp: the top row shrank — wordmark serif
+  30→26sp, counts 18→16sp, flame 22→18dp, ring 20→17dp (stroke 3), spacers
+  5/14/5, bell and ⋮ 24→22dp — and the gap above "How was your hour?" went
+  14→36dp (the mockup's ~39), with the hour pill 6dp under it. RatingFrame
+  absorbs the extra header height by shrinking its four gaps in proportion, so on
+  a short screen a tag row may fold sooner. Not device-verified.

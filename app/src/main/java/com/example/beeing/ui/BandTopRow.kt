@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -47,6 +46,7 @@ import com.example.beeing.SUPER_DAY_HOURS
 import com.example.beeing.StreakState
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.theme.DisplaySerif
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
@@ -77,11 +77,14 @@ class BandChrome(
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
 
+/** The "Beeing" wordmark: the display serif, sized up to the sans it replaced. */
+private val WordmarkStyle = DisplaySerif.copy(fontSize = 26.sp, lineHeight = 30.sp)
+
 /** The row at the top of every tab, reading [LocalBandChrome]. */
 @Composable
 fun BandTopRow(
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall
+    titleStyle: TextStyle = WordmarkStyle
 ) {
     val chrome = LocalBandChrome.current ?: return
     BandTopRow(
@@ -109,7 +112,7 @@ fun BandTopRow(
     onBellClick: () -> Unit,
     onMenuClick: () -> Unit,
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall,
+    titleStyle: TextStyle = WordmarkStyle,
     wordmarkShown: Float = 1f,
     nowShown: Float = 1f,
     superHoursLeft: Int? = null
@@ -117,7 +120,7 @@ fun BandTopRow(
     CompositionLocalProvider(LocalContentColor provides LocalBeeExtras.current.fieldInk) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (wordmarkShown > 0.01f) Text(
-                "Beeing", style = titleStyle, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Clip,
+                "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
                 modifier = titleModifier.graphicsLayer { alpha = wordmarkShown }
             )
             Spacer(Modifier.weight(1f))
@@ -132,7 +135,7 @@ fun BandTopRow(
             // The row runs to the screen's right edge (HourlyPulseApp), so this 36dp
             // target ends there and the dots, at its centre, end on the 16dp edge
             IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 36.dp, height = 40.dp)) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(24.dp))
+                Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
             }
         }
     }
@@ -155,7 +158,7 @@ private fun BellButton(unread: Int, onClick: () -> Unit) {
                 .clickable(onClickLabel = "Open warnings", onClick = onClick)
                 .semantics { contentDescription = description }
         )
-        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(24.dp), tint = ink)
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(22.dp), tint = ink)
         if (unread > 0) {
             Box(
                 Modifier
@@ -225,20 +228,20 @@ internal fun StatusStrip(
                 // The leaf replaces the flame while beginner mode is on: the mode has
                 // to be visible from the main screen, and the paused count beside it
                 // reads as held, not lost.
-                // 22dp box: the glyph inside draws about as tall as the 20dp ring
+                // 18dp box: the glyph draws about as tall as the 17dp ring and the 16sp count
                 if (state.beginnerMode && !atRisk) {
-                    BeeIcon(Sym.Beginner, size = 22.dp, contentDescription = null)
+                    BeeIcon(Sym.Beginner, size = 18.dp, contentDescription = null)
                 } else {
                     BeeIcon(
-                        Sym.Fire, size = 22.dp, contentDescription = null,
+                        Sym.Fire, size = 18.dp, contentDescription = null,
                         tint = if (atRisk) riskColor else x.fieldHoney
                     )
                 }
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
                     "$shownStreak",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     color = if (atRisk) riskColor else Color.Unspecified
                 )
                 // Colour never travels alone: the mark says "at risk" too.
@@ -247,18 +250,18 @@ internal fun StatusStrip(
                     color = riskColor, modifier = Modifier.padding(start = 2.dp)
                 )
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(14.dp))
             MiniHourRing(
                 hours = state.todayHours,
                 hoursRequired = state.hoursRequired,
                 qualified = state.todayQualified,
                 superLap = state.todayQualified && !state.beginnerMode
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(5.dp))
             Text(
                 "${state.todayHours}/$countTarget",
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
+                fontSize = 16.sp
             )
         }
     }
@@ -274,9 +277,9 @@ private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, sup
     // Hours past the goal, as a share of the Super day lap (hours 9–12)
     val lapFraction = ((hours - hoursRequired).toFloat() / (SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED))
         .coerceIn(0f, 1f)
-    // 20dp, the flame's optical size, so the streak and the hours read as equals
-    Canvas(Modifier.size(20.dp)) {
-        val stroke = 3.5.dp.toPx()
+    // 17dp, the flame's optical size: a quiet row, no taller than its text
+    Canvas(Modifier.size(17.dp)) {
+        val stroke = 3.dp.toPx()
         val inset = stroke / 2
         // The Super day lap here is the brief's fallback, a single 1.5dp SuperGold arc
         // sweeping extra/4, not the four-segment drawSuperLap: at this size its 4° gaps

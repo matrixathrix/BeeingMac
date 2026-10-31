@@ -42,6 +42,7 @@ import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.theme.BandBottomDark
 import com.example.beeing.ui.theme.BandTopLight
+import com.example.beeing.ui.theme.DisplaySerif
 import com.example.beeing.ui.theme.HoneyGold
 import kotlin.math.PI
 import kotlin.math.cos
@@ -118,7 +119,7 @@ fun StreakMomentCelebration(moment: StreakMoment.Recovered, onDone: () -> Unit) 
             Spacer(Modifier.height(24.dp))
             Text("STREAK RECOVERED", fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp, color = HoneyGold)
             Spacer(Modifier.height(6.dp))
-            Text(title, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
+            Text(title, style = DisplaySerif.copy(fontSize = 34.sp, lineHeight = 38.sp), color = Color.White, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Text(
                 "You won it back. Keep it going.",

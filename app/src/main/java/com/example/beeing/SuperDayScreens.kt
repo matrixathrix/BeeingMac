@@ -57,6 +57,7 @@ import com.example.beeing.ui.SaverSlots
 import com.example.beeing.ui.drawSuperLap
 import com.example.beeing.ui.theme.BandBottomLight
 import com.example.beeing.ui.theme.BeeingTheme
+import com.example.beeing.ui.theme.DisplaySerif
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.SuperGold
 import java.util.Calendar
@@ -132,7 +133,7 @@ private fun Overline(text: String, color: Color) {
 
 @Composable
 private fun TitleAndBody(title: String, body: String) {
-    Text(title, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, textAlign = TextAlign.Center)
+    Text(title, style = DisplaySerif.copy(fontSize = 34.sp, lineHeight = 38.sp), color = Color.White, textAlign = TextAlign.Center)
     Spacer(Modifier.height(8.dp))
     Text(body, fontSize = 15.sp, color = Color.White.copy(alpha = 0.8f), textAlign = TextAlign.Center)
 }

@@ -20,7 +20,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -55,7 +54,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.theme.BeeExtras
+import com.example.beeing.ui.theme.DisplaySerif
 import com.example.beeing.ui.theme.LocalBeeExtras
 
 /**
@@ -90,10 +91,10 @@ fun PageHeader(
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = backLabel)
                 }
             }
+            // Large page titles are reflective lines too: the serif, sized up
             Text(
                 title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                style = DisplaySerif.copy(fontSize = 33.sp, lineHeight = 38.sp),
                 maxLines = 1,
                 modifier = Modifier.weight(1f).offset(x = if (onBack != null) (-12).dp else 0.dp)
             )

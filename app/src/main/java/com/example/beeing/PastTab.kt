@@ -2,7 +2,11 @@ package com.example.beeing
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -127,6 +131,25 @@ private data class PastViewKey(
 /** How the current view change should animate. Zoom-in/out fly toward/away from
  *  the tapped bar; the steps slide the whole region left or right. */
 private enum class PastNav { StepPrev, StepNext, ZoomIn, ZoomOut, None }
+
+/** One rhythm for a bar being chosen or let go: the chip, the numbers, the tag
+ *  rows, the bars and the grid all move on it, so the card changes as one. */
+private const val SELECT_MS = 260
+
+/** What the summary shows for a scope, so a change swaps it as one block. */
+private data class ScopeSummary(val stats: PeriodStats, val saversUsed: Int, val insight: String?)
+
+/**
+ * Numbers swapping when the scope changes: the old ones leave quickly, the new
+ * ones rise a few px a beat later (never both legible at once), and the block's
+ * height glides, since the insight line and tag rows come and go.
+ */
+private fun <S> scopeSwap(): AnimatedContentTransitionScope<S>.() -> ContentTransform = {
+    val enter = tween<Float>(SELECT_MS, delayMillis = 70, easing = FastOutSlowInEasing)
+    (fadeIn(enter) + slideInVertically(tween(SELECT_MS, delayMillis = 70, easing = FastOutSlowInEasing)) { minOf(it / 10, 24) }) togetherWith
+        fadeOut(tween(120)) using
+        SizeTransform(clip = false) { _, _ -> tween(SELECT_MS, easing = FastOutSlowInEasing) }
+}
 
 private data class PeriodUnit(
     val label: String,        // x-axis label under the bar
@@ -1302,37 +1325,52 @@ private fun TrendsView(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (selectedUnit != null) {
-                            // The scope of every number below, in the range label's
-                            // place; the ✕ goes back to the whole span.
-                            val x = LocalBeeExtras.current
-                            Row(
-                                Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(x.accentFill.copy(alpha = 0.18f))
-                                    .clickable(onClickLabel = "Show all of $rangeLabel") { selected = null }
-                                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    spanLabel(selectedUnit.startMs, selectedUnit.endMs, monthly = zoom == Zoom.M),
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp,
-                                    color = x.accentText,
-                                    maxLines = 1
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Icon(
-                                    Icons.Default.Close, contentDescription = null,
-                                    tint = x.accentText, modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        } else Text(
-                            rangeLabel,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp,
-                            modifier = Modifier.padding(horizontal = 2.dp)
-                        )
+                        // The range label, or the chip naming the chosen bar in its
+                        // place. It scales in from 90% as the label fades, and the
+                        // row's width glides so the › arrow slides instead of jumping.
+                        AnimatedContent(
+                            targetState = selectedUnit,
+                            transitionSpec = {
+                                (fadeIn(tween(SELECT_MS, delayMillis = 60)) +
+                                    scaleIn(tween(SELECT_MS, delayMillis = 60, easing = FastOutSlowInEasing), initialScale = 0.9f)) togetherWith
+                                    (fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.9f)) using
+                                    SizeTransform(clip = false) { _, _ -> tween(SELECT_MS, easing = FastOutSlowInEasing) }
+                            },
+                            contentAlignment = Alignment.CenterStart,
+                            label = "scopeChip"
+                        ) { unit ->
+                            if (unit != null) {
+                                // The scope of every number below; the ✕ goes back to
+                                // the whole span.
+                                val x = LocalBeeExtras.current
+                                Row(
+                                    Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(x.accentFill.copy(alpha = 0.18f))
+                                        .clickable(onClickLabel = "Show all of $rangeLabel") { selected = null }
+                                        .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        spanLabel(unit.startMs, unit.endMs, monthly = zoom == Zoom.M),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 15.sp,
+                                        color = x.accentText,
+                                        maxLines = 1
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(
+                                        Icons.Default.Close, contentDescription = null,
+                                        tint = x.accentText, modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else Text(
+                                rangeLabel,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
+                        }
                         IconButton(
                             onClick = { goLater() },
                             enabled = canForward,
@@ -1450,14 +1488,21 @@ private fun TrendsView(
                         }
 
                         Column(Modifier.fillMaxWidth()) {
-                            // Summary for the selected period
+                            // Summary for the scope, swapped as one block when a bar
+                            // is chosen or let go
+                            AnimatedContent(
+                                targetState = ScopeSummary(kStats, kRestDays, kInsight),
+                                transitionSpec = scopeSwap(),
+                                label = "scopeSummary"
+                            ) { s ->
+                            Column(Modifier.fillMaxWidth()) {
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 StatCell(
-                                    value = kStats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
-                                    valueColor = kStats.avg?.let { scoreTextColor(it) } ?: Color.Unspecified,
+                                    value = s.stats.avg?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "–",
+                                    valueColor = s.stats.avg?.let { scoreTextColor(it) } ?: Color.Unspecified,
                                     label = "avg score",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1465,13 +1510,13 @@ private fun TrendsView(
                                 // A bare count: dividing by every hour in the
                                 // month (29/696) only measured sleep.
                                 StatCell(
-                                    value = "${kStats.ratedHours}",
+                                    value = "${s.stats.ratedHours}",
                                     label = "hours rated",
                                     modifier = Modifier.weight(1f)
                                 )
                                 StatDivider()
                                 StatCell(
-                                    value = "$kRestDays",
+                                    value = "${s.saversUsed}",
                                     label = "savers used",
                                     modifier = Modifier.weight(1f)
                                 )
@@ -1479,16 +1524,18 @@ private fun TrendsView(
 
                             // One auto-written line under the numbers, or nothing
                             // at all when the period is too thin to say anything.
-                            if (kInsight != null) {
+                            if (s.insight != null) {
                                 Spacer(Modifier.height(12.dp))
                                 Text(
-                                    kInsight,
+                                    s.insight,
                                     fontSize = 12.5.sp,
                                     lineHeight = 17.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                            }
+                            }
                             }
 
                             Spacer(Modifier.height(16.dp))
@@ -1509,11 +1556,17 @@ private fun TrendsView(
                                 )
                                 // Says the bars do something until one is chosen;
                                 // then the scope chip up top says what's shown
-                                if (kSel == null) Text(
-                                    "Tap a $unitNoun",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                AnimatedVisibility(
+                                    visible = kSel == null,
+                                    enter = fadeIn(tween(SELECT_MS, delayMillis = 70)),
+                                    exit = fadeOut(tween(120))
+                                ) {
+                                    Text(
+                                        "Tap a $unitNoun",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             Spacer(Modifier.height(10.dp))
                             ScoreBarChart(
@@ -1847,8 +1900,13 @@ private fun ScoreBarChart(
                                 dimmed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
                                 else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
                             },
-                            animationSpec = tween(220),
+                            animationSpec = tween(SELECT_MS, easing = FastOutSlowInEasing),
                             label = "bar$i"
+                        )
+                        val valueAlpha by animateFloatAsState(
+                            if (dimmed) 0.45f else 1f,
+                            animationSpec = tween(SELECT_MS, easing = FastOutSlowInEasing),
+                            label = "barValue$i"
                         )
                         val barShape = RoundedCornerShape(
                             topStart = 6.dp, topEnd = 6.dp, bottomStart = 2.dp, bottomEnd = 2.dp
@@ -1885,7 +1943,7 @@ private fun ScoreBarChart(
                                     // The column already says it; don't read the number twice
                                     modifier = Modifier
                                         .clearAndSetSemantics {}
-                                        .graphicsLayer { alpha = if (dimmed) 0.45f else 1f }
+                                        .graphicsLayer { alpha = valueAlpha }
                                 )
                                 Spacer(Modifier.height(2.dp))
                             } else if (!u.future) {
@@ -1923,12 +1981,17 @@ private fun ScoreBarChart(
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth().padding(start = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             units.forEachIndexed { i, u ->
+                val labelColor by animateColorAsState(
+                    if (i == selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = tween(SELECT_MS, easing = FastOutSlowInEasing),
+                    label = "barLabel$i"
+                )
                 Text(
                     u.label,
                     fontSize = 9.sp,
                     fontWeight = if (i == selected) FontWeight.Bold else null,
-                    color = if (i == selected) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = labelColor,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     modifier = Modifier.weight(1f).clearAndSetSemantics {}
@@ -1954,7 +2017,7 @@ private fun PatternGrid(
     val colAlpha = units.indices.map { col ->
         animateFloatAsState(
             if (selected == null || selected == col) 1f else 0.3f,
-            animationSpec = tween(220),
+            animationSpec = tween(SELECT_MS, easing = FastOutSlowInEasing),
             label = "gridCol$col"
         ).value
     }
@@ -2121,17 +2184,21 @@ private fun TagScoresSection(
             SortToggle(sortByScore = sortByScore, onSortChange = onSortChange)
         }
         Spacer(Modifier.height(6.dp))
-        if (tagStats.isEmpty()) {
-            Text(
-                "No tagged hours in this period.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp
-            )
-        } else {
-            // Every tag, in the page's own scroll: a short inner viewport left
-            // dead space under the card and hid rows behind a nested scroll.
-            Column(Modifier.fillMaxWidth()) {
-                tagStats.forEach { stat -> TagStatRow(stat) }
+        // The rows swap as one block when the scope or the sort changes; the
+        // header and its toggle stay put.
+        AnimatedContent(targetState = tagStats, transitionSpec = scopeSwap(), label = "tagRows") { stats ->
+            if (stats.isEmpty()) {
+                Text(
+                    "No tagged hours in this period.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            } else {
+                // Every tag, in the page's own scroll: a short inner viewport left
+                // dead space under the card and hid rows behind a nested scroll.
+                Column(Modifier.fillMaxWidth()) {
+                    stats.forEach { stat -> TagStatRow(stat) }
+                }
             }
         }
     }

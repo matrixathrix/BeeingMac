@@ -38,7 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.beeing.ui.theme.JakartaFontFamily
+import com.example.beeing.ui.theme.InstrumentSans
 import com.example.beeing.ui.theme.LocalBeeExtras
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -127,7 +127,7 @@ fun CatchTheBee(onCatch: () -> Unit, modifier: Modifier = Modifier) {
             "Catch the bee to lock the phone",
             fontSize = 17.sp,
             fontWeight = FontWeight.Medium,
-            fontFamily = JakartaFontFamily,
+            fontFamily = InstrumentSans,
             // Honey as text on the night field: the one call to action here
             color = LocalBeeExtras.current.fieldHoney,
             textAlign = TextAlign.Center,
