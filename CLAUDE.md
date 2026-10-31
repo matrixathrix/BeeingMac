@@ -1400,3 +1400,12 @@ case verify by static review and say so explicitly — the user compiles locally
   `fieldHoney` (`holdsSelection`) when a chosen tag is inside. Verified by tapping
   Hobbies on the last row. (`ChipLabel`'s bold twin stays: it keeps width stable
   now that weights really change.)
+- 2026-10-31 (**release signing**): `app/build.gradle.kts` signs release builds
+  from `~/.android-keystores/beeing-release.properties` (storeFile, storePassword,
+  keyAlias `beeing`, keyPassword) and `beeing-release.jks` (RSA 4096, ~27 years,
+  `CN=Beeing, O=athiv`, cert SHA-256 `39:5E:5E:1A…A7:71:59:F3`) — both OUTSIDE
+  the repo; without the file a release build is just unsigned. Build with
+  `./gradlew assembleRelease`; shareable copies go in `dist/` (git-ignored).
+  A release APK can't install over a debug install (different signer): the
+  phone must uninstall first, which wipes the app's data, so export a CSV
+  backup before switching a phone with real ratings.
