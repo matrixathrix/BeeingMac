@@ -217,7 +217,7 @@ case verify by static review and say so explicitly — the user compiles locally
   (`InstrumentSans`, all 15 M3 type roles, so plain `Text()` inherits it) for
   everything, and **Instrument Serif Italic** (`DisplaySerif`) for the reflective
   lines only — the question, "All caught up", `PageHeader` titles, the two
-  celebration titles, the wordmark and the dial's score word; never numbers,
+  celebration titles and the dial's score word (not the wordmark: sans 700 22sp); never numbers,
   buttons, chips or dialogs, never under 28sp, sized ~15% up. **Now, Streak and Past
   (Journal + Trends) sit on the night field; there is no band** (2026-10-31, spec
   `docs/superpowers/specs/2026-10-31-night-field-design.md`): one radial-glow
@@ -1368,3 +1368,35 @@ case verify by static review and say so explicitly — the user compiles locally
   14→36dp (the mockup's ~39), with the hour pill 6dp under it. RatingFrame
   absorbs the extra header height by shrinking its four gaps in proportion, so on
   a short screen a tag row may fold sooner. Not device-verified.
+- 2026-10-31 (**sans wordmark, centred medallion**): owner call — the "Beeing"
+  wordmark is a brand mark in the quiet header, not a reflective line, so it is
+  Instrument Sans 700 22sp (−0.4 tracking); the question below stays the
+  screen's only serif. Both Streak-tab medallions (the honey disc and the hour
+  ring) lay out their inside with one private **`MedallionStack`**: hero over
+  label with a 3dp gap, the pair centred as a block then nudged down a sixth of
+  the label's height. Pure block-centring lifted the count; pinning the count to
+  dead centre (tried first) crowded "day streak" into the disc's bottom edge.
+  Both labels are 11sp SemiBold with **`MedallionLabelLineHeight` (13sp)**: they
+  had inherited bodyLarge's 24sp line height, which made each label a 24dp box
+  and pushed the stack onto the ring's stroke. Not device-verified.
+  Same day: **choosing a tag no longer reflows the picker.** Selected chips are
+  SemiBold and so a few dp wider, which re-wrapped the row and dropped its last
+  chip into "+N more"; `TagChipContent`'s private `ChipLabel` now reserves the
+  SemiBold width with an invisible twin whenever a weight is given (field chips).
+- 2026-10-31 (**fixes found on device**, owner asked me to try them myself; adb
+  screenshots + taps this once): (1) **Instrument Sans weights never applied** —
+  a variable resource `Font` given only a `FontWeight` rendered at the file's
+  default 400 everywhere. `Type.kt` now sets `FontVariation.weight(n)` per `Font`
+  (`@OptIn(ExperimentalTextApi)`). (2) **Medallion text sat low**: Instrument's
+  tall ascender puts ~12dp of empty box above 46sp digits and their descent below,
+  so box-centring sank everything onto the ring. `MedallionStack(heroSize)` now
+  centres the visible block — digits' top (FirstBaseline − 0.72 × size, the
+  face's cap height) to the label's baseline — and hangs the label 4dp under the
+  hero's baseline; verified centred in both discs. (3) **Choosing a tag dropped
+  the last visible chip**: not chip width — `TagFoldButton`'s text grew to
+  "+N more · 1 selected" whenever a chosen tag would be folded, and
+  `ContextualFlowRow` measures the indicator for candidate fold points, so the
+  wider variant cost a chip. The text is now always "+N more"; it turns
+  `fieldHoney` (`holdsSelection`) when a chosen tag is inside. Verified by tapping
+  Hobbies on the last row. (`ChipLabel`'s bold twin stays: it keeps width stable
+  now that weights really change.)

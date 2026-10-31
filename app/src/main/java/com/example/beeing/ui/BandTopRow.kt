@@ -46,7 +46,7 @@ import com.example.beeing.SUPER_DAY_HOURS
 import com.example.beeing.StreakState
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
-import com.example.beeing.ui.theme.DisplaySerif
+import com.example.beeing.ui.theme.InstrumentSans
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
@@ -77,8 +77,8 @@ class BandChrome(
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
 
-/** The "Beeing" wordmark: the display serif, sized up to the sans it replaced. */
-private val WordmarkStyle = DisplaySerif.copy(fontSize = 26.sp, lineHeight = 30.sp)
+/** The "Beeing" wordmark: a brand mark in the header line, so the sans, not the serif (the question below is the screen's one serif). */
+private val WordmarkStyle = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.4).sp)
 
 /** The row at the top of every tab, reading [LocalBandChrome]. */
 @Composable

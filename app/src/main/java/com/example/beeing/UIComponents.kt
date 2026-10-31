@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 //import androidx.compose.ui.layout.onGloballyPositioned
@@ -550,13 +551,33 @@ internal fun TagChipContent(
 ) {
     val sym = tagSym(tag)
     if (sym == null) {
-        Text(tagChipText(tag), fontSize = fontSize, fontWeight = fontWeight)
+        ChipLabel(tagChipText(tag), fontSize, fontWeight)
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BeeIcon(sym, size = 15.dp, contentDescription = null)
             Spacer(Modifier.width(5.dp))
-            Text(tagLabelOf(tag), fontSize = fontSize, fontWeight = fontWeight)
+            ChipLabel(tagLabelOf(tag), fontSize, fontWeight)
         }
+    }
+}
+
+/**
+ * A chip's label, as wide as its SemiBold (selected) form whatever weight it shows:
+ * an invisible SemiBold twin reserves the width. Without it, choosing a tag widened
+ * its chip, the row re-wrapped, and the last visible chip fell into "+N more".
+ */
+@Composable
+private fun ChipLabel(text: String, fontSize: TextUnit, fontWeight: FontWeight?) {
+    if (fontWeight == null) {
+        Text(text, fontSize = fontSize)
+        return
+    }
+    Box(contentAlignment = Alignment.Center) {
+        Text(
+            text, fontSize = fontSize, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            modifier = Modifier.alpha(0f).clearAndSetSemantics {}
+        )
+        Text(text, fontSize = fontSize, fontWeight = fontWeight, maxLines = 1)
     }
 }
 

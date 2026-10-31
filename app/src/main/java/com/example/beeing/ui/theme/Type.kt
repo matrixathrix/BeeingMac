@@ -1,10 +1,12 @@
 package com.example.beeing.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.beeing.R
@@ -14,16 +16,23 @@ import com.example.beeing.R
  * mockups; replaced Plus Jakarta Sans). Both SIL Open Font License 1.1 from
  * google/fonts, bundled so they work offline; licences in `assets/licenses`.
  *
- * **Instrument Sans** sets everything. It is one variable file: a `Font` asks for
- * its `FontWeight` and Android dials the `wght` axis to it, so these are real
- * weights, not faked ones. The face stops at 700, so ExtraBold renders at 700.
+ * **Instrument Sans** sets everything. It is one variable file, and each `Font`
+ * dials its `wght` axis explicitly: left to the `FontWeight` alone, every weight
+ * rendered at the file's default 400 (seen on device, 2026-10-31). The face stops
+ * at 700, so ExtraBold renders at 700.
  */
+@OptIn(ExperimentalTextApi::class)
+private fun sans(weight: FontWeight, wght: Int) = Font(
+    R.font.instrument_sans, weight,
+    variationSettings = FontVariation.Settings(FontVariation.weight(wght))
+)
+
 val InstrumentSans = FontFamily(
-    Font(R.font.instrument_sans, FontWeight.Normal),
-    Font(R.font.instrument_sans, FontWeight.Medium),
-    Font(R.font.instrument_sans, FontWeight.SemiBold),
-    Font(R.font.instrument_sans, FontWeight.Bold),
-    Font(R.font.instrument_sans, FontWeight.ExtraBold)
+    sans(FontWeight.Normal, 400),
+    sans(FontWeight.Medium, 500),
+    sans(FontWeight.SemiBold, 600),
+    sans(FontWeight.Bold, 700),
+    sans(FontWeight.ExtraBold, 700)
 )
 
 /** The serif's one cut: Italic, weight 400. Never pair it with a heavier weight. */

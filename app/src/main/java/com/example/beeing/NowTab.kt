@@ -958,8 +958,13 @@ private fun TagPickerSection(
             val hidden = availableTags.size - shownTags
             if (hidden > 0) {
                 val selectedHidden = availableTags.drop(shownTags).count { it in selectedTags }
+                // The text never depends on the selection: the row measures this
+                // button for several possible fold points, and a wider "· 1 selected"
+                // variant made it drop a visible chip whenever a tag was chosen. A
+                // chosen tag inside the fold turns the label honey instead.
                 TagFoldButton(
-                    text = if (selectedHidden > 0) "+$hidden more · $selectedHidden selected" else "+$hidden more",
+                    text = "+$hidden more",
+                    holdsSelection = selectedHidden > 0,
                     onClick = { onExpandedChange(true) }
                 )
             } else {
@@ -989,7 +994,7 @@ private fun TagPickerSection(
 /** "+N more" / "Edit tags": a pill with a dashed glass outline and no fill, so
  *  it reads as a control beside the tags rather than one of them. */
 @Composable
-private fun TagFoldButton(text: String, onClick: () -> Unit) {
+private fun TagFoldButton(text: String, onClick: () -> Unit, holdsSelection: Boolean = false) {
     val x = LocalBeeExtras.current
     val dash = x.fieldInk.copy(alpha = 0.32f)
     // Laid out at the InputChips' 48dp (8dp touch padding + 32dp body) and
@@ -1030,7 +1035,7 @@ private fun TagFoldButton(text: String, onClick: () -> Unit) {
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
-                color = x.fieldInkMuted
+                color = if (holdsSelection) x.fieldHoney else x.fieldInkMuted
             )
         }
     }

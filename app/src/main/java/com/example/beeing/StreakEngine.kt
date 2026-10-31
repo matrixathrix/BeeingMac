@@ -40,12 +40,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
@@ -315,15 +320,17 @@ fun StreakMeter(
                 lapShown = { lapShown.value },
                 lapColor = x.fieldSuper
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                MedallionStack(heroSize = COUNT_SIZE, hero = {
                     Text(
                         "${state.todayHours}",
                         fontSize = COUNT_SIZE, lineHeight = COUNT_SIZE,
                         fontWeight = FontWeight.ExtraBold, color = x.fieldInk
                     )
+                }) {
+                    // SemiBold, like the streak disc's label: the two read as a pair
                     Text(
                         "of $goal hours",
-                        fontSize = 11.sp, fontWeight = FontWeight.Medium, color = soft
+                        fontSize = 11.sp, lineHeight = MedallionLabelLineHeight, fontWeight = FontWeight.SemiBold, color = soft
                     )
                 }
             }
@@ -352,6 +359,8 @@ private fun Modifier.bandTapTarget(label: String, onClick: () -> Unit) =
 
 private val MEDALLION_SIZE = 112.dp
 private val COUNT_SIZE = 46.sp
+/** The medallion labels' line height: tight to the 11sp text (see MedallionStack). */
+private val MedallionLabelLineHeight = 13.sp
 private val CAPTION_GAP = 10.dp
 private val CAPTION_HEIGHT = 28.dp
 
@@ -427,15 +436,15 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
             .semantics(mergeDescendants = true) { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Flame beside the count, not above it, so the count gets the height.
-            // Steps down with length so "123!" still fits inside the disc.
-            val countText = if (atRisk) "$count!" else "$count"
-            val countSize = when (countText.length) {
-                1, 2 -> COUNT_SIZE   // the same size as the ring's hour count
-                3 -> 38.sp
-                else -> 30.sp
-            }
+        // Flame beside the count, not above it, so the count gets the height.
+        // Steps down with length so "123!" still fits inside the disc.
+        val countText = if (atRisk) "$count!" else "$count"
+        val countSize = when (countText.length) {
+            1, 2 -> COUNT_SIZE   // the same size as the ring's hour count
+            3 -> 38.sp
+            else -> 30.sp
+        }
+        MedallionStack(heroSize = countSize, hero = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BeeIcon(
                     if (leaf) Sym.Beginner else Sym.Fire,
@@ -448,7 +457,50 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
                     color = ink
                 )
             }
-            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = ink.alpha * 0.8f))
+        }) {
+            Text(label, fontSize = 11.sp, lineHeight = MedallionLabelLineHeight, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = ink.alpha * 0.8f))
+        }
+    }
+}
+
+/**
+ * The inside of both medallions (the streak disc and the hour ring), so they match:
+ * the big [hero] over its [label], centred by what you SEE, not by text boxes.
+ * Instrument Sans digits fill only the top of their 46sp line box, leaving ~9dp
+ * and its box starts ~12dp above them; centring the boxes pushed everything low,
+ * onto the ring's stroke. So the visible block runs from the digits' top
+ * (baseline − cap height) to the label's baseline, the label hangs 4dp under the
+ * hero's baseline, and that block is centred in the disc. Labels pass [MedallionLabelLineHeight].
+ */
+@Composable
+private fun MedallionStack(
+    /** The hero numeral's font size: its cap height sets where the digits really start. */
+    heroSize: TextUnit,
+    hero: @Composable () -> Unit,
+    label: @Composable () -> Unit
+) {
+    val density = LocalDensity.current
+    val gap = with(density) { 4.dp.roundToPx() }
+    // Instrument Sans digits are cap height: 720/1000 em (OS/2 sCapHeight)
+    val cap = with(density) { (heroSize.toPx() * 0.72f).toInt() }
+    Layout(contents = listOf(hero, label)) { (heroM, labelM), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val h = heroM.first().measure(loose)
+        val l = labelM.first().measure(loose)
+        val w = constraints.maxWidth
+        val ht = constraints.maxHeight
+        layout(w, ht) {
+            fun baseline(p: androidx.compose.ui.layout.Placeable) =
+                p[FirstBaseline].takeIf { it != AlignmentLine.Unspecified } ?: p.height
+            // The visible block: the digits' top (baseline − cap height) down to the
+            // label's baseline. The hero's box starts ~12dp above its digits (the
+            // face's tall ascender), so centring boxes sat everything low.
+            val heroBase = baseline(h)
+            val seen = cap + gap + baseline(l)
+            val inkTop = (ht - seen) / 2
+            val heroY = inkTop - (heroBase - cap)
+            h.place((w - h.width) / 2, heroY)
+            l.place((w - l.width) / 2, heroY + heroBase + gap)
         }
     }
 }
