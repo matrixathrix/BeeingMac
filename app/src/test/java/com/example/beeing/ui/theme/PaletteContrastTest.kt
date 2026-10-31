@@ -44,10 +44,12 @@ class PaletteContrastTest {
         assertContrast(4.5, x.accentText, schemes.getValue(n).background, "$n accentText/background")
     }
 
+    // The full-screen celebrations still sit on the aubergine band colours.
     @Test
-    fun white_on_band_is_high_contrast() = extras.forEach { (n, x) ->
-        assertContrast(7.0, Color.White, x.bandTop, "$n white/bandTop")
-        assertContrast(7.0, Color.White, x.bandBottom, "$n white/bandBottom")
+    fun white_on_band_is_high_contrast() {
+        listOf(BandTopLight, BandBottomLight, BandTopDark, BandBottomDark).forEach { band ->
+            assertContrast(7.0, Color.White, band, "white/band $band")
+        }
     }
 
     // The journal's "Super day" label (12sp SemiBold) sits on a day card: small text, so 4.5.
@@ -86,6 +88,67 @@ class PaletteContrastTest {
         assertEquals("$n secondaryContainer", s.surfaceVariant, s.secondaryContainer)
         assertEquals("$n onSecondaryContainer", s.onSurface, s.onSecondaryContainer)
         assertEquals("$n inversePrimary", Color(0xFFF5A623), s.inversePrimary)
+    }
+
+    // ---- The night field (Now and Streak) ----
+    // Text sits on the field itself and on glass panels in it. The glow (top) is the
+    // worst case for dark ink in light mode and the best in dark mode, so every
+    // pairing is checked at both ends of the field and on glass over the glow.
+
+    private fun Color.over(bg: Color): Color = Color(
+        red = red * alpha + bg.red * (1 - alpha),
+        green = green * alpha + bg.green * (1 - alpha),
+        blue = blue * alpha + bg.blue * (1 - alpha)
+    )
+
+    /** Every opaque background text meets on the field: the glow, the bottom, glass over each. */
+    private fun fieldGrounds(x: BeeExtras) = listOf(
+        x.fieldTop, x.fieldBottom, x.glassFill.over(x.fieldTop), x.glassFill.over(x.fieldBottom)
+    )
+
+    @Test
+    fun field_ink_is_high_contrast() = extras.forEach { (n, x) ->
+        fieldGrounds(x).forEach { bg -> assertContrast(7.0, x.fieldInk, bg, "$n fieldInk/$bg") }
+    }
+
+    @Test
+    fun field_muted_ink_is_readable() = extras.forEach { (n, x) ->
+        fieldGrounds(x).forEach { bg -> assertContrast(4.5, x.fieldInkMuted.over(bg), bg, "$n fieldInkMuted/$bg") }
+    }
+
+    // The countdown, the bee prompt and the active nav label: 13-17sp, so 4.5.
+    @Test
+    fun field_honey_text_is_readable() = extras.forEach { (n, x) ->
+        fieldGrounds(x).forEach { bg -> assertContrast(4.5, x.fieldHoney, bg, "$n fieldHoney/$bg") }
+        assertContrast(4.5, x.fieldHoney, x.navOnField, "$n fieldHoney/navOnField")
+        assertContrast(4.5, x.fieldInkMuted.over(x.navOnField), x.navOnField, "$n nav idle")
+    }
+
+    // Captions on the field: at-risk / missed red, "Super day", "Day secured".
+    @Test
+    fun field_status_text_is_readable() = extras.forEach { (n, x) ->
+        fieldGrounds(x).forEach { bg ->
+            assertContrast(4.5, x.fieldRed, bg, "$n fieldRed/$bg")
+            assertContrast(4.5, x.fieldSuperText, bg, "$n fieldSuperText/$bg")
+            assertContrast(4.5, x.fieldDone, bg, "$n fieldDone/$bg")
+        }
+    }
+
+    // Disabled Save: its honey-as-text label on the low-opacity honey wash.
+    @Test
+    fun disabled_save_label_is_readable() = extras.forEach { (n, x) ->
+        listOf(x.fieldTop, x.fieldBottom).forEach { bg ->
+            val wash = x.accentFill.copy(alpha = 0.18f).over(bg)
+            assertContrast(4.5, x.fieldHoney, wash, "$n disabled Save on $bg")
+        }
+    }
+
+    // The selected dial cell and the rated core: score bands with the digit flipped on lightness.
+    @Test
+    fun dial_digits_read_on_their_score_band() {
+        (1..10).forEach { score ->
+            assertContrast(4.5, com.example.beeing.dialDigitColor(score), com.example.beeing.scoreBandColor(score), "dial $score")
+        }
     }
 
     @Test

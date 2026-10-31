@@ -50,3 +50,42 @@ val StreakAtRiskRed = Color(0xFFFF6B6B)
 // Super day: the outer lap (hours 9-12) and its accents. Lighter than HoneyGold so
 // the two laps read apart; the inner ring stays HoneyGold.
 val SuperGold = Color(0xFFFFD54F)
+
+// ============================================================
+// THE NIGHT FIELD — the one surface under the Now and Streak tabs.
+// Spec: docs/superpowers/specs/2026-10-31-night-field-design.md
+// A radial glow at the top fading down; light mode is the same field lifted to a
+// soft violet. Text and accents on it get their own values: the page's ones fail
+// contrast on the violet glow (PaletteContrastTest pins every pairing).
+// ============================================================
+
+// Field stops: glow (top) · 45% · bottom
+val FieldTopDark = Color(0xFF4A1D53)
+val FieldMidDark = Color(0xFF2E1135)
+val FieldBottomDark = Color(0xFF1A0A1E)
+val FieldTopLight = Color(0xFFDCCDF6)
+val FieldMidLight = Color(0xFFECE4FA)
+val FieldBottomLight = Color(0xFFF8F5FD)
+
+// Primary ink on the light field (violet-black); dark mode uses white.
+val FieldInkLight = Color(0xFF24123A)
+
+// Honey as TEXT on the field. Light needs #7A4A00: the page's #9A6000 is 3.5:1 on the glow.
+val FieldHoneyLight = Color(0xFF7A4A00)
+
+// Red / gold / green as text and marks on the light field (the dark-mode values,
+// StreakAtRiskRed / SuperGold / RingQualifiedGreen, all wash out on violet).
+val FieldRedLight = Color(0xFFA4161A)
+val FieldSuperLight = Color(0xFFC99A00)       // rims, sparks, the lap: a mark, not text
+val FieldSuperTextLight = Color(0xFF6E5300)   // "Super day" captions
+val FieldDoneLight = Color(0xFF1B5E20)
+
+// At-risk / missed red on the dark field: StreakAtRiskRed lifted, since #FF6B6B
+// reaches only 3.9:1 on glass over the glow.
+val FieldRedDark = Color(0xFFFF8A80)
+
+// The nav bar over the field: its bottom colour with the mockup's tint baked in
+// (dark: aubergine-black at 35%, light: white at 55%), so the bar is opaque but
+// continuous with the field above it.
+val NavOnFieldDark = Color(0xFF140818)
+val NavOnFieldLight = Color(0xFFFCFAFE)

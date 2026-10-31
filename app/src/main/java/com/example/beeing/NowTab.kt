@@ -3,9 +3,6 @@ package com.example.beeing
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
@@ -36,8 +33,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -59,25 +54,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
-import com.example.beeing.ui.BandFillLayout
-import com.example.beeing.ui.BeeButtonDefaults
-import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.BrandBand
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Size
 import com.example.beeing.ui.BandTopRowSpacer
-import com.example.beeing.ui.OnBandFill
-import com.example.beeing.ui.animatedHeight
-import com.example.beeing.ui.scaledLayout
-import com.example.beeing.ui.emptyCellColor
+import com.example.beeing.ui.GlassPanel
+import com.example.beeing.ui.designDensity
+import com.example.beeing.ui.LocalBandChrome
+import com.example.beeing.ui.PillShape
+import com.example.beeing.ui.fieldChipBorder
+import com.example.beeing.ui.fieldChipColors
+import com.example.beeing.ui.fieldEmptyCellColor
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
-import com.example.beeing.ui.icons.tagDisplayText
 import com.example.beeing.ui.icons.tagGlyphOf
 import com.example.beeing.ui.icons.tagLabelOf
 import com.example.beeing.ui.icons.tagSym
-import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.JakartaFontFamily
 import com.example.beeing.ui.theme.LocalBeeExtras
-import com.example.beeing.ui.theme.RingQualifiedGreen
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
@@ -86,16 +79,20 @@ import kotlinx.coroutines.launch
 /**
  * NOW TAB — one job: this hour.
  *
- * Three queue states (0–2 hours can be pending at any time):
- *  - two pending: hour chips (the expiring hour targeted first) + comb + tags + save
- *  - one pending: the hour moves into the card title, no chip row
- *  - none pending: caught-up hero with the next-hour countdown and the Lock
- *    phone button — the ONLY place lock exists — plus the today strip
+ * The whole tab is the NIGHT FIELD: one surface, no band and no card, with
+ * everything on it either glass or honey (spec 2026-10-31-night-field-design).
  *
- * Status (streak / ring) is a slim strip, not a hero; it expands
- * into the full meter on the Hive tab. No per-save ceremony: the state change
- * plus one haptic IS the feedback; celebrations stay reserved for the ring
- * closing (full-screen, existing) and rare milestones.
+ *  - rating (1–2 hours pending): the question, one hour line (‹ range › ·
+ *    countdown), the dial, the tags, "+ Add a note", and Save pinned above the
+ *    nav bar. A fixed frame: only the tags scroll, and only when they can't fit.
+ *  - caught up (none pending): today's ring with "All caught up", the today
+ *    strip in a glass panel, then the bee flying in the remaining height over
+ *    the Lock button — the ONLY place lock exists.
+ *
+ * Status (streak / ring) is a slim strip in the top row, not a hero; it
+ * expands into the full meter on the Streak tab. No per-save ceremony: the
+ * state change plus one haptic IS the feedback; celebrations stay reserved for
+ * the ring closing (full-screen) and rare milestones.
  */
 
 /**
@@ -271,7 +268,7 @@ fun NowTab(
         }
     }
 
-    // Today's ratings (for the best hour and the today strip)
+    // Today's ratings (for the today strip and its average)
     val todayRatings = remember(allRatings, viewModel.refreshTrigger, hourStart) {
         val today = Calendar.getInstance()
         allRatings.filter { entry ->
@@ -279,9 +276,6 @@ fun NowTab(
             cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) &&
                     cal.get(Calendar.YEAR) == today.get(Calendar.YEAR)
         }
-    }
-    val todayBest = remember(todayRatings) {
-        todayRatings.maxWithOrNull(compareBy<RatingEntry> { it.score }.thenBy { it.timestamp })
     }
     val todayByHour = remember(todayRatings) {
         todayRatings.associateBy {
@@ -334,6 +328,7 @@ fun NowTab(
     val tagsScroll = rememberScrollState()
     var tagsViewportHeightPx by remember { mutableIntStateOf(0) }
 
+    val field = LocalBeeExtras.current
     // Picker range in the app's one time format: "8pm – 9pm" (same as the
     // journal and the save button). The dash is set dimmer so the two times
     // carry the weight.
@@ -344,7 +339,7 @@ fun NowTab(
         fun clock(h: Int) = formatHour(h)
         return buildAnnotatedString {
             append(clock(startH))
-            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.6f))) {
+            withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = field.fieldInkMuted)) {
                 append(" – ")
             }
             append(clock(endH))
@@ -363,382 +358,294 @@ fun NowTab(
             showEnableAccessibility = true
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Three slots: the band, the screen's content, and the pinned bottom
-        // (Save, or the bee + Lock). Spare height goes to the BAND, never to an
-        // empty gap — see BandFillLayout.
-        BandFillLayout(
-            modifier = Modifier.fillMaxSize(),
-            // Rating: the band stays at rest and the card takes every pixel
-            // between it and Save, which is pinned just above the nav bar; the
-            // tags spend that height (see TagPickerSection). Caught-up keeps
-            // the growing band over the bee field.
-            compact = !allCaughtUp,
-            maxBandGrow = if (allCaughtUp) 160.dp else 0.dp,
-            band = { target ->
-                // Animated, so expanding or collapsing the tags slides the band
-                // up/down (and the tags into the freed room) instead of snapping.
-                // Read only at layout time (lambdas below), so the animation never
-                // recomposes the band: each frame is a relayout of a few boxes.
-                val growState = animateFloatAsState(
-                    targetValue = target,
-                    animationSpec = tween(380, easing = FastOutSlowInEasing),
-                    label = "bandGrow"
+    Box(modifier = Modifier.fillMaxSize().background(field.fieldBrush)) {
+        CompositionLocalProvider(LocalContentColor provides field.fieldInk, LocalDensity provides designDensity()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        ) {
+            // The fixed top row is drawn over this, above the pager
+            Box(Modifier.padding(horizontal = 16.dp)) { BandTopRowSpacer() }
+            if (!allCaughtUp) {
+                // ---- RATING: a fixed frame, ordered the way you act ----
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "How was your hour?",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 36.sp, lineHeight = 42.sp, letterSpacing = (-0.8).sp),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 20.dp)
                 )
-                val grow = { growState.value }
-                // Hero type for the band: 22sp at rest, up to 32sp when there is
-                // room, so a taller band reads as bigger, not emptier. Laid out once
-                // at 32sp and scaled (scaledLayout), so the text is never reshaped.
-                val heroStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 32.sp, lineHeight = 38.sp)
-                val heroScale = { (24f + 6f * grow()) / 32f }
-            // ---- The brand band: who you are (title, streak) and what this
-            // screen is asking — the question + hour picker while an hour is
-            // pending, "All caught up" + the countdown once none is.
-            BrandBand {
-                BandTopRowSpacer() // the fixed top row is drawn over this, above the pager
-                Spacer(Modifier.animatedHeight { 14.dp + (if (allCaughtUp) 56.dp else 24.dp) * grow() })
-                // Rounding slack only: keeps the question on the band's bottom edge.
-                Spacer(Modifier.weight(1f))
-                if (allCaughtUp) {
-                    // The tick spans BOTH lines: the text column is measured first
-                    // and the tick is drawn as a square exactly that tall, so the
-                    // pair reads as one block with one shared left edge. Measured in
-                    // layout, so it tracks the title's scale as the band grows.
-                    Layout(content = {
-                        Icon(
-                            painterResource(Sym.CaughtUp.res),
-                            contentDescription = null,
-                            tint = RingQualifiedGreen
-                        )
-                        Column {
-                            Text("All caught up", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "Next hour opens in ${minutesToNextHour}m",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.75f)
-                            )
+                // One hour line, no container: ‹ range › then the countdown. A tap
+                // on the countdown explains why only these hours can be rated.
+                val mins = minutesFor(targetedHourOffset)
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 10.dp, end = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HourWindowPicker(
+                        rangeLabel = hourRange(targetedHourOffset),
+                        canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
+                        canGoLater = targetedHourOffset == 1 && !isLatestHourLogged,
+                        onEarlier = { onTargetedHourOffsetChange(1) },
+                        onLater = { onTargetedHourOffsetChange(0) }
+                    )
+                    Text(
+                        // "2h left" / "1h 5m left" / "40m left", never "120m left"
+                        "· " + when {
+                            mins < 60 -> "${mins}m left"
+                            mins % 60 == 0 -> "${mins / 60}h left"
+                            else -> "${mins / 60}h ${mins % 60}m left"
+                        },
+                        fontSize = 18.sp,
+                        fontWeight = if (mins <= 15) FontWeight.Bold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = field.fieldHoney,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clip(PillShape)
+                            .clickable(onClickLabel = "Why only these hours?") { showWindowInfo = true }
+                            .padding(horizontal = 4.dp, vertical = 8.dp)
+                    )
+                }
+
+                DecagonCombDial(
+                    rating = selectedScore,
+                    onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
+                    // The hero keeps the width it had inside the old card. Its art
+                    // is square but not its box: the notch tops out 6.3% below the
+                    // box and the lowest cell ends 10.6% above its bottom, so both
+                    // are trimmed (the top by placing at a negative offset) and
+                    // neither the hour line nor the tags pay for empty rim.
+                    modifier = Modifier
+                        .padding(horizontal = 32.dp)
+                        .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) }
+                        .layout { measurable, constraints ->
+                            val p = measurable.measure(constraints)
+                            val top = (p.height * 0.063f).roundToInt()
+                            val bottom = (p.height * 0.106f).roundToInt()
+                            layout(p.width, p.height - top - bottom) { p.place(0, -top) }
                         }
-                    }) { m, c ->
-                        val gap = 12.dp.roundToPx()
-                        val reserve = 72.dp.roundToPx() // room kept for the tick
-                        val text = m[1].measure(
-                            c.copy(minWidth = 0, minHeight = 0, maxWidth = (c.maxWidth - reserve - gap).coerceAtLeast(0))
+                )
+
+                // The tags own all the height the rest of the frame leaves.
+                // Collapsed, they show as many chips as fit and fold the rest into
+                // "+N more"; expanded, they scroll here with the hairline thumb.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
+                        .onSizeChanged { tagsViewportHeightPx = it.height }
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .then(if (tagsExpanded) Modifier.verticalScroll(tagsScroll) else Modifier),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        TagPickerSection(
+                            allRatings = allRatings,
+                            availableTags = availableTags,
+                            selectedTags = selectedTags,
+                            expanded = tagsExpanded,
+                            onExpandedChange = { tagsExpanded = it },
+                            onTagsUpdate = {
+                                availableTags = it
+                                viewModel.triggerRefresh()
+                            },
+                            onManageTags = onOpenTags
                         )
-                        val side = text.height
-                        val tick = m[0].measure(Constraints.fixed(side, side))
-                        layout(side + gap + text.width, side) {
-                            tick.place(0, 0)
-                            text.place(side + gap, 0)
-                        }
                     }
-                } else {
-                    val mins = minutesFor(targetedHourOffset)
-                    Text("How was your hour?", style = heroStyle, modifier = Modifier.scaledLayout(heroScale))
-                    Spacer(Modifier.height(12.dp))
-                    // Three tiers of emphasis on one line: the picker is the control
-                    // (solid pill, 18sp), the countdown is its caption (14sp, no
-                    // container), the info icon is a quiet aside. All three share the
-                    // picker's 44dp centre line so nothing floats.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        HourWindowPicker(
-                            rangeLabel = hourRange(targetedHourOffset),
-                            canGoEarlier = targetedHourOffset == 0 && !isPreviousHourLogged,
-                            canGoLater = targetedHourOffset == 1 && !isLatestHourLogged,
-                            onEarlier = { onTargetedHourOffsetChange(1) },
-                            onLater = { onTargetedHourOffsetChange(0) }
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        // Countdown turns honey in its last 15 minutes. It takes the
-                        // leftover width (and ellipsizes in the worst case, "11 AM to
-                        // 12 PM" on a 360dp phone) so the info icon is never pushed off.
-                        val countdownColor = if (mins <= 15) HoneyGold else Color.White.copy(alpha = 0.8f)
-                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            BeeIcon(Sym.Hourglass, size = 16.dp, tint = countdownColor, contentDescription = null)
-                            Text(
-                                // "2h left" / "1h 5m left" / "40m left", never "120m left"
-                                when {
-                                    mins < 60 -> "${mins}m left"
-                                    mins % 60 == 0 -> "${mins / 60}h left"
-                                    else -> "${mins / 60}h ${mins % 60}m left"
-                                },
-                                fontSize = NowBodySize,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = countdownColor,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                        }
-                        IconButton(onClick = { showWindowInfo = true }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "Why only these hours?",
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                    FadingScrollbar(
+                        scrollState = tagsScroll,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            // Read in the layout phase, not composition: a composition
+                            // read would rebuild every tag chip when the viewport resizes.
+                            .layout { m, c ->
+                                val h = tagsViewportHeightPx
+                                val p = m.measure(c.copy(minHeight = h, maxHeight = h))
+                                layout(p.width, h) { p.place(0, 0) }
+                            }
+                            .padding(vertical = 10.dp, horizontal = 4.dp)
+                    )
+                }
+
+                Box(Modifier.padding(horizontal = 20.dp).padding(top = 4.dp)) {
+                    NotesSection(
+                        noteText = currentNote,
+                        onNoteChange = { currentNote = it },
+                        enabled = true,
+                        field = true
+                    )
+                }
+
+                // Save: a full-width honey pill pinned just above the nav bar, so
+                // the commit action is on screen at any height. The label IS the
+                // state machine — it says what's missing instead of a dead tick.
+                val saveLabel = when {
+                    // Not "Pick a rating": the dial's core already says that
+                    selectedScore == null -> "Rate and tag to save"
+                    selectedTags.isEmpty() -> "Add a tag to save"
+                    else -> {
+                        // A late hour that tips yesterday over says so
+                        val targetHourStartMs = hourStart - (targetedHourOffset + 1) * 3_600_000L
+                        "Save ${displayHourInfo.first}" +
+                            (lateHourHint(targetHourStartMs, streakState.recentDays) ?: "")
                     }
                 }
-            }
-            },
-            middle = {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-            if (allCaughtUp) {
+                val canSave = !isLoggedCurrent && selectedScore != null && selectedTags.isNotEmpty()
+                Button(
+                    onClick = {
+                        val score = selectedScore ?: return@Button
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val entry = RatingEntry(
+                            System.currentTimeMillis(),
+                            score,
+                            // timestamp = START of the rated hour (one hour before the end)
+                            Calendar.getInstance().apply {
+                                add(Calendar.HOUR_OF_DAY, -(targetedHourOffset + 1))
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.timeInMillis,
+                            displayHourInfo.third,
+                            currentNote,
+                            selectedTags.toList()
+                        )
+                        viewModel.saveRating(context, entry)
+
+                        // No ceremony: reset and swap to the next pending hour
+                        selectedScore = null
+                        selectedTags.clear()
+                        currentNote = ""
+                        if (targetedHourOffset == 0 && !isPreviousHourLogged) {
+                            onTargetedHourOffsetChange(1)
+                        } else if (targetedHourOffset == 1 && !isLatestHourLogged) {
+                            onTargetedHourOffsetChange(0)
+                        }
+                    },
+                    enabled = canSave,
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        // The soft honey glow, only while it can act
+                        .then(
+                            if (canSave) Modifier.shadow(
+                                14.dp, PillShape, ambientColor = field.accentFill, spotColor = field.accentFill
+                            ) else Modifier
+                        ),
+                    shape = PillShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = field.accentFill,
+                        contentColor = field.onAccentFill,
+                        // Disabled is honey at low opacity, never a grey slab; its
+                        // label is honey-as-text, which reads on that wash
+                        disabledContainerColor = field.accentFill.copy(alpha = 0.18f),
+                        disabledContentColor = field.fieldHoney
+                    )
+                ) {
+                    // A hint-long label wraps to two centred lines, never ellipsizes
+                    Text(
+                        saveLabel,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = JakartaFontFamily,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+                }
+            } else {
+                // ---- CAUGHT UP: today's ring, the day so far, then the bee ----
                 Column(
-                    Modifier.fillMaxWidth().verticalScroll(scrollState),
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                if (missedHoursToday.isNotEmpty()) {
-                    TextButton(onClick = onOpenStreaks) {
+                    Spacer(Modifier.height(18.dp))
+                    CaughtUpRing(state = streakState, superHoursLeft = LocalBandChrome.current?.superHoursLeft)
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "All caught up",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 31.sp, letterSpacing = (-0.6).sp),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Next hour opens in ${minutesToNextHour}m",
+                        fontSize = NowBodySize,
+                        color = field.fieldInkMuted
+                    )
+                    Spacer(Modifier.height(20.dp))
+
+                    // The day paints itself — one cell per hour of the active window
+                    TodayStripPanel(
+                        window = activeWindow,
+                        entriesByHour = todayByHour,
+                        average = todayRatings.takeIf { it.isNotEmpty() }?.map { it.score }?.average(),
+                        nowMillis = nowMillis,
+                        onCellClick = { entry -> editingEntry = entry }
+                    )
+                    if (missedHoursToday.isNotEmpty()) {
                         Text(
                             "${missedHoursToday.size} hour${if (missedHoursToday.size == 1) "" else "s"} slipped past · add a past hour from the Streak tab ›",
                             fontSize = NowCaptionSize,
                             textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = field.fieldInkMuted,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .clip(PillShape)
+                                .clickable(onClickLabel = "Open Streak tab", onClick = onOpenStreaks)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
-                } else {
-                    Spacer(Modifier.height(10.dp))
                 }
 
-                // The day paints itself — one cell per hour of the active window
-                TodayStripCard(
-                    window = activeWindow,
-                    entriesByHour = todayByHour,
-                    nowMillis = nowMillis,
-                    onCellClick = { entry -> editingEntry = entry }
-                )
-
-                // Today's single best hour, highlighted — shown only when the
-                // queue is empty: in the rating state the card must stay
-                // entirely focused on the pending hour and the pinned save
-                // button, and anything below the card would push it off the
-                // bottom of the fixed frame anyway.
-                if (todayBest != null) {
-                    Spacer(Modifier.height(16.dp))
-                    BestHourCard(bestHour = todayBest)
-                }
-                Spacer(Modifier.height(12.dp))
-                }
-            } else {
-                // ---- RATING: one card, ordered the way you act ----
-                Spacer(Modifier.height(12.dp))
-                // BandFillLayout hands this slot exactly the height between the
-                // band and Save; the card fills it (less a 12dp gap above Save).
-                Box(Modifier.weight(1f).padding(bottom = 12.dp), contentAlignment = Alignment.TopCenter) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .onGloballyPositioned { onRatingCardYPosition(it.positionInParent().y) },
-                    shape = BeeCardDefaults.Shape,
-                    colors = BeeCardDefaults.colors(),
-                    elevation = BeeCardDefaults.elevation()
-                ) {
-                    // The card is a fixed frame now — only the activity tags
-                    // scroll (see the TagPickerSection wrapper below).
-                    Box(Modifier.fillMaxSize()) {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        DecagonCombDial(
-                            rating = selectedScore,
-                            onRatingChange = { if (!isLoggedCurrent) selectedScore = it },
-                            // The dial is square, but its art is not: with the
-                            // ring tightened onto the core the notch tops out
-                            // 6.3% below the box and the lowest cell ends 10.6%
-                            // above its bottom. Trim both — the top by placing
-                            // at a negative offset — so the layout box is the
-                            // art's actual extent and neither the meta row above
-                            // nor the tags below pay for empty rim.
-                            modifier = Modifier.layout { measurable, constraints ->
-                                val p = measurable.measure(constraints)
-                                val top = (p.height * 0.063f).roundToInt()
-                                val bottom = (p.height * 0.106f).roundToInt()
-                                layout(p.width, p.height - top - bottom) { p.place(0, -top) }
-                            }
-                        )
-
-                        // The tags own all the height the dial and the note leave.
-                        // Collapsed, they show as many chips as fit it and fold
-                        // the rest into "+N more"; expanded, they scroll here
-                        // with the hairline fading thumb.
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .onSizeChanged { tagsViewportHeightPx = it.height }
-                        ) {
-                            Column(
-                                Modifier
-                                    .fillMaxSize()
-                                    .then(if (tagsExpanded) Modifier.verticalScroll(tagsScroll) else Modifier),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                TagPickerSection(
-                                    allRatings = allRatings,
-                                    availableTags = availableTags,
-                                    selectedTags = selectedTags,
-                                    expanded = tagsExpanded,
-                                    onExpandedChange = { tagsExpanded = it },
-                                    onTagsUpdate = {
-                                        availableTags = it
-                                        viewModel.triggerRefresh()
-                                    },
-                                    onManageTags = onOpenTags
-                                )
-                            }
-                            FadingScrollbar(
-                                scrollState = tagsScroll,
-                                modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    // Read in the layout phase, not composition: the viewport
-                                    // height changes every frame while the band animates, and a
-                                    // composition read would rebuild every tag chip per frame.
-                                    .layout { m, c ->
-                                        val h = tagsViewportHeightPx
-                                        val p = m.measure(c.copy(minHeight = h, maxHeight = h))
-                                        layout(p.width, h) { p.place(0, 0) }
-                                    }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp)
-                            )
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-                        NotesSection(
-                            noteText = currentNote,
-                            onNoteChange = { currentNote = it },
-                            enabled = true
-                        )
-
-                    }
-                    }
-                }
-                }
-
-            }
-            }
-            },
-            footer = {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-            if (allCaughtUp) {
-                // The earned way out: catch the bee. Its field is the lower
-                // part of the screen — reachable one-handed — with the prompt
-                // riding just above where the bee flies.
+                // The earned way out: catch the bee. It flies in whatever height
+                // is left, its prompt riding just above the Lock button.
                 CatchTheBee(
                     onCatch = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         lockPhone()
                     },
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.38f)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
                 )
 
-                // The muscle-memory way out: always in the same spot.
-                Button(
-                    onClick = lockPhone,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.inverseSurface,
-                        contentColor = MaterialTheme.colorScheme.inverseOnSurface
-                    )
+                // The muscle-memory way out, always in the same spot. Outlined
+                // glass, not honey: leaving is not the "act here" action.
+                Row(
+                    Modifier
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clip(PillShape)
+                        .border(1.5.dp, field.fieldInk.copy(alpha = 0.25f), PillShape)
+                        .clickable(onClick = lockPhone),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Both glyphs of "🔒 … 🐝" become icons; the phrase
-                    // itself is owner-chosen and stays word for word.
+                    // The 🔒 is an icon; the phrase itself is owner-chosen and stays word for word.
                     BeeIcon(Sym.Lock, size = 18.dp, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Lock phone and bee mindful",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.SemiBold,
                         fontFamily = JakartaFontFamily
                     )
-                    Spacer(Modifier.width(6.dp))
-                    BeeIcon(Sym.Hive, size = 16.dp, contentDescription = null)
                 }
-                Spacer(Modifier.height(8.dp)) // clear of the nav bar
-            } else {
-                // The save button lives OUTSIDE the rating card and outside its
-                // (tags-only) scroller — it is pinned to the bottom of the
-                // frame, right above the nav bar, so it is reachable at any
-                // screen height.
-                Spacer(Modifier.height(12.dp))
-                run {
-                    // The save button IS the state machine — its label
-                    // explains what's missing instead of a dead checkmark
-                    val saveLabel = when {
-                        // Not "Pick a rating": the dial's core already says that
-                        selectedScore == null -> "Rate and tag to save"
-                        selectedTags.isEmpty() -> "Add a tag to save"
-                        else -> {
-                            // A late hour that tips yesterday over says so
-                            val targetHourStartMs = hourStart - (targetedHourOffset + 1) * 3_600_000L
-                            "Save ${displayHourInfo.first}" +
-                                (lateHourHint(targetHourStartMs, streakState.recentDays) ?: "")
-                        }
-                    }
-                    Button(
-                            onClick = {
-                                val score = selectedScore ?: return@Button
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                val entry = RatingEntry(
-                                    System.currentTimeMillis(),
-                                    score,
-                                    // timestamp = START of the rated hour (one hour before the end)
-                                    Calendar.getInstance().apply {
-                                        add(Calendar.HOUR_OF_DAY, -(targetedHourOffset + 1))
-                                        set(Calendar.MINUTE, 0)
-                                        set(Calendar.SECOND, 0)
-                                        set(Calendar.MILLISECOND, 0)
-                                    }.timeInMillis,
-                                    displayHourInfo.third,
-                                    currentNote,
-                                    selectedTags.toList()
-                                )
-                                viewModel.saveRating(context, entry)
-
-                                // No ceremony: reset and swap to the next pending hour
-                                selectedScore = null
-                                selectedTags.clear()
-                                currentNote = ""
-                                if (targetedHourOffset == 0 && !isPreviousHourLogged) {
-                                    onTargetedHourOffsetChange(1)
-                                } else if (targetedHourOffset == 1 && !isLatestHourLogged) {
-                                    onTargetedHourOffsetChange(0)
-                                }
-                            },
-                            enabled = !isLoggedCurrent && selectedScore != null && selectedTags.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = LocalBeeExtras.current.accentFill,
-                                contentColor = LocalBeeExtras.current.onAccentFill
-                            )
-                        ) {
-                            // A hint-long label wraps to two centred lines, never ellipsizes
-                            Text(
-                                saveLabel,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = JakartaFontFamily,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 19.sp
-                            )
-                        }
-                    }
-                Spacer(Modifier.height(8.dp)) // clear of the nav bar
             }
-            }
-            }
-        )
+        }
+        }
 
         // First-run: locking needs the accessibility service turned on once
         if (showEnableAccessibility) {
@@ -830,81 +737,116 @@ fun NowTab(
 // ============================================================
 
 @Composable
-private fun TodayStripCard(
+private fun TodayStripPanel(
     window: IntRange,
     entriesByHour: Map<Int, RatingEntry>,
+    average: Double?,
     nowMillis: Long,
     onCellClick: (RatingEntry) -> Unit
 ) {
+    val x = LocalBeeExtras.current
     val currentHour = remember(nowMillis) {
         Calendar.getInstance().apply { timeInMillis = nowMillis }.get(Calendar.HOUR_OF_DAY)
     }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = BeeCardDefaults.colors(),
-        elevation = BeeCardDefaults.elevation()
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+    GlassPanel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "TODAY SO FAR",
+                "TODAY",
                 fontSize = NowMicroSize,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.4.sp,
+                color = x.fieldInkMuted,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                for (h in window) {
-                    val entry = entriesByHour[h]
-                    val isFuture = h >= currentHour && entry == null
-                    val editable = entry != null &&
-                            nowMillis - entry.timestamp <= EDIT_WINDOW_MS
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(26.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                when {
-                                    entry != null -> scoreBandColor(entry.score)
-                                    isFuture -> emptyCellColor(future = true)
-                                    else -> emptyCellColor(future = false)
-                                }
-                            )
-                            .then(
-                                if (editable) Modifier.clickable { onCellClick(entry!!) }
-                                else Modifier
-                            )
-                    )
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (average != null) {
                 Text(
-                    formatHour(window.first),
-                    fontSize = NowMicroSize,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    formatHour((window.first + window.last) / 2),
-                    fontSize = NowMicroSize,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    formatHour((window.last + 1) % 24),
-                    fontSize = NowMicroSize,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "avg ${String.format(Locale.getDefault(), "%.1f", average)}",
+                    fontSize = NowCaptionSize,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
-            Spacer(Modifier.height(4.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            for (h in window) {
+                val entry = entriesByHour[h]
+                val isFuture = h >= currentHour && entry == null
+                val editable = entry != null &&
+                        nowMillis - entry.timestamp <= EDIT_WINDOW_MS
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(26.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            when {
+                                entry != null -> scoreBandColor(entry.score)
+                                else -> fieldEmptyCellColor(x, future = isFuture)
+                            }
+                        )
+                        .then(
+                            if (editable) Modifier.clickable { onCellClick(entry!!) }
+                            else Modifier
+                        )
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatHour(window.first), fontSize = NowMicroSize, color = x.fieldInkMuted)
+            Text(formatHour((window.first + window.last) / 2), fontSize = NowMicroSize, color = x.fieldInkMuted)
+            Text(formatHour((window.last + 1) % 24), fontSize = NowMicroSize, color = x.fieldInkMuted)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Tap a colored hour to edit it (up to 10 h back)",
+            fontSize = NowMicroSize,
+            color = x.fieldInkMuted
+        )
+    }
+}
+
+/**
+ * Today's hours against the goal, on a glass track: the Streak tab's ring at
+ * hero size, so it follows `hoursRequired` (4 segments in beginner mode) and
+ * draws the Super day lap once a Master ring closes. The count inside aims at
+ * 12 while a Super day is still in reach, like the status strip.
+ */
+@Composable
+private fun CaughtUpRing(state: StreakState, superHoursLeft: Int?) {
+    val x = LocalBeeExtras.current
+    val goal = state.hoursRequired
+    val filled = state.todayHours.coerceAtMost(goal).toFloat()
+    val extra = (state.todayHours - goal).coerceAtLeast(0).toFloat()
+    val superLap = !state.beginnerMode
+    val lap = if (superLap && state.todayQualified) 1f else 0f
+    val superReached = superLap && state.todayHours >= SUPER_DAY_HOURS
+    val target = if (superHoursLeft != null || superReached) SUPER_DAY_HOURS else goal
+    Box(
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "${state.todayHours} of $target hours rated today"
+        }
+    ) {
+        StreakRing(
+            animatedFill = { filled },
+            animatedExtra = { extra },
+            ringColor = x.accentFill,
+            trackColor = x.fieldInk.copy(alpha = 0.12f),
+            hoursRequired = goal,
+            ringSize = 112.dp,
+            strokeWidth = 9.dp,
+            scale = { 1f },
+            superLap = superLap,
+            lapShown = { lap },
+            lapColor = x.fieldSuper
+        ) {
             Text(
-                "Tap a colored hour to edit it (up to 10 h back)",
-                fontSize = NowMicroSize,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                "${state.todayHours}/$target",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold
             )
         }
     }
@@ -915,9 +857,10 @@ private fun TodayStripCard(
 // ============================================================
 
 /**
- * Collapsed, the chips fill whatever height the card gives them, in the user's
- * order, and only the ones that don't fit fold into a "+N more" button, a
- * rounded RECTANGLE so it never reads as one more tag pill. The FlowRow decides
+ * Collapsed, the chips (glass pills, honey when selected) fill whatever height
+ * the frame gives them, in the user's order, and only the ones that don't fit
+ * fold into a "+N more" button: a pill with a DASHED outline and no fill, so it
+ * never reads as one more tag. The FlowRow decides
  * what fits (ContextualFlowRow's overflow indicator), so the count is always true for this
  * screen, font scale and tag names. The last item is "Edit tags", which opens
  * the Tags page; when only it would spill, the indicator itself becomes
@@ -944,7 +887,8 @@ private fun TagPickerSection(
                 isEnabled = true,
                 onTagsUpdate = onTagsUpdate,
                 onManageTags = onManageTags,
-                onCollapse = { onExpandedChange(false) }
+                onCollapse = { onExpandedChange(false) },
+                field = true
             )
         }
         return
@@ -975,15 +919,16 @@ private fun TagPickerSection(
     ) { index ->
         if (index < availableTags.size) {
             val tag = availableTags[index]
+            val selected = tag in selectedTags
             InputChip(
-                selected = tag in selectedTags,
+                selected = selected,
                 onClick = {
                     if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                 },
-                label = { TagChipContent(tag) },
+                label = { TagChipContent(tag, fontSize = FieldChipTextSize, fontWeight = fieldChipWeight(selected)) },
                 shape = TagChipShape,
-                colors = tagChipColors(),
-                border = null
+                colors = fieldChipColors(),
+                border = fieldChipBorder(selected)
             )
         } else {
             TagFoldButton(text = "Edit tags", onClick = onManageTags)
@@ -991,10 +936,12 @@ private fun TagPickerSection(
     }
 }
 
-/** "+N more" / "Edit tags": an outlined rounded rectangle, not a pill, so it
- *  reads as a control beside the tags rather than one of them. */
+/** "+N more" / "Edit tags": a pill with a dashed glass outline and no fill, so
+ *  it reads as a control beside the tags rather than one of them. */
 @Composable
 private fun TagFoldButton(text: String, onClick: () -> Unit) {
+    val x = LocalBeeExtras.current
+    val dash = x.fieldInk.copy(alpha = 0.32f)
     // Laid out at the InputChips' 48dp (8dp touch padding + 32dp body) and
     // pinned to the TOP of its slot, so it lines up with the chips beside it.
     // The flow row hands its trailing items a squeezed height: honouring it
@@ -1009,8 +956,20 @@ private fun TagFoldButton(text: String, onClick: () -> Unit) {
             Modifier
                 .padding(vertical = 8.dp)
                 .height(32.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                .clip(PillShape)
+                .drawBehind {
+                    val w = 1.dp.toPx()
+                    drawRoundRect(
+                        color = dash,
+                        topLeft = Offset(w / 2f, w / 2f),
+                        size = Size(size.width - w, size.height - w),
+                        cornerRadius = CornerRadius(size.height / 2f),
+                        style = Stroke(
+                            width = w,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+                        )
+                    )
+                }
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center
@@ -1018,21 +977,20 @@ private fun TagFoldButton(text: String, onClick: () -> Unit) {
             Text(
                 text,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = x.fieldInkMuted
             )
         }
     }
 }
 
 /**
- * Compact, single-line hour-window picker that sits on the "How was your" line:
- * the targeted hour range flanked by ‹ › carets. A caret is enabled only when
- * the neighbouring hour is itself still pending, so the user can only step to a
- * window that actually needs a rating. The countdown lives beside the chip, not
- * inside it, so the pill holds only the one thing it controls.
+ * The hour being rated, flanked by ‹ › carets, with no container: it is one
+ * line on the field under the question. A caret is enabled only when the
+ * neighbouring hour is itself still pending, so the user can only step to a
+ * window that actually needs a rating.
  */
 @Composable
 private fun HourWindowPicker(
@@ -1043,102 +1001,24 @@ private fun HourWindowPicker(
     onLater: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Lives on the brand band: the band's pill language (OnBandFill, like the
-    // StatusStrip) but a step louder — 44dp tall, a hairline white edge and an
-    // 18sp ExtraBold range matching the strip's numerals — so the hour being
-    // rated is the first thing read under the question.
-    val onContainer = Color.White
-    Card(
-        modifier = modifier.height(44.dp),
-        shape = RoundedCornerShape(50),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
-        colors = CardDefaults.cardColors(
-            containerColor = OnBandFill,
-            contentColor = Color.White
-        )
-    ) {
-        Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = onEarlier,
-                enabled = canGoEarlier,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = "Earlier hour",
-                    tint = onContainer.copy(alpha = if (canGoEarlier) 1f else 0.25f),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Text(
-                rangeLabel,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp,
-                maxLines = 1,
-                color = onContainer
+    val ink = LocalBeeExtras.current.fieldInk
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onEarlier, enabled = canGoEarlier, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = "Earlier hour",
+                tint = ink.copy(alpha = if (canGoEarlier) 1f else 0.3f),
+                modifier = Modifier.size(24.dp)
             )
-            IconButton(
-                onClick = onLater,
-                enabled = canGoLater,
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Later hour",
-                    tint = onContainer.copy(alpha = if (canGoLater) 1f else 0.25f),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
         }
-    }
-}
-
-/**
- * Today's single best hour, highlighted.
- */
-@Composable
-fun BestHourCard(bestHour: RatingEntry, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = BeeCardDefaults.colors(),
-        elevation = BeeCardDefaults.elevation()
-    ) {
-        val cal = Calendar.getInstance().apply { timeInMillis = bestHour.timestamp }
-        val startH = cal.get(Calendar.HOUR_OF_DAY)
-        val endH = if (startH == 23) 0 else startH + 1
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(getScoreColor(bestHour.score.toDouble())),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "${bestHour.score}",
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (bestHour.score >= 5) Color.Black else Color.White,
-                    fontSize = 18.sp
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BeeIcon(
-                        Sym.Star, size = 14.dp, contentDescription = null, tint = HoneyGold
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text("Today's best hour", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-                Text(
-                    "${formatHour(startH)} - ${formatHour(endH)}" +
-                            bestHour.visibleTags().let { if (it.isEmpty()) "" else " · ${it.joinToString(", ") { t -> tagDisplayText(t) }}" },
-                    fontSize = NowCaptionSize,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
-            }
+        Text(rangeLabel, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 1, color = ink)
+        IconButton(onClick = onLater, enabled = canGoLater, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Later hour",
+                tint = ink.copy(alpha = if (canGoLater) 1f else 0.3f),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

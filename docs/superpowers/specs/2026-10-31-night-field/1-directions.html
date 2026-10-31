@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --honey: #F5A623; --ink: #2A0F31; --aub1: #3F1947; --aub2: #2A0F31;
+    --red: #EF6F6C; --amber: #F2B54A; --green: #6CCB8A; --gold: #FFD54F;
+    --page: #121014; --card: #1D1A20; --line: rgba(255,255,255,.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0A0C; color: #EDE9F0; font-family: 'Plus Jakarta Sans', sans-serif; padding: 32px 28px 80px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .lede { color: #A9A3AE; margin: 6px 0 28px; max-width: 760px; line-height: 1.5; font-size: 14px; }
+  .dir { display: grid; grid-template-columns: 300px 300px 1fr; gap: 26px; align-items: start; padding: 26px; border: 1px solid #241f27; border-radius: 22px; margin-bottom: 26px; cursor: pointer; transition: border-color .2s; }
+  .dir:hover { border-color: #4a3d52; }
+  .dir.selected { border-color: var(--honey); box-shadow: 0 0 0 1px var(--honey); }
+  .notes h2 { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+  .notes .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--honey); margin-bottom: 8px; }
+  .notes p { color: #B9B3BE; font-size: 13.5px; line-height: 1.55; margin-top: 10px; }
+  .notes ul { margin: 12px 0 0 16px; color: #B9B3BE; font-size: 13px; line-height: 1.6; }
+  .cap { font-size: 11px; color: #7d7682; text-align: center; margin-top: 8px; letter-spacing: .06em; text-transform: uppercase; }
+
+  /* phone */
+  .phone { width: 300px; height: 640px; border-radius: 34px; overflow: hidden; position: relative; background: var(--page); border: 6px solid #000; box-shadow: 0 18px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .sb { height: 22px; flex: none; }
+  .nav { height: 54px; flex: none; display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: #8d8692; border-top: 1px solid var(--line); }
+  .nav div { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .nav i { width: 18px; height: 18px; border-radius: 5px; border: 1.6px solid currentColor; display: block; }
+  .nav .on { color: var(--honey); font-weight: 700; }
+  .nav .on i { background: currentColor; }
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 0; }
+  .brand { font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
+  .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+  .stat .flame { color: var(--honey); }
+  .mini { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); display: inline-block; }
+  .dots { width: 18px; text-align: center; opacity: .8; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 11px; font-weight: 600; padding: 6px 10px; border-radius: 999px; white-space: nowrap; }
+  .save { margin: 0 16px 12px; height: 46px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; }
+  svg text { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+  /* ---------- A: Night field ---------- */
+  .A { background: radial-gradient(120% 70% at 50% 0%, #4A1D53 0%, #2E1135 45%, #1A0A1E 100%); color: #fff; }
+  .A .nav { border-top-color: rgba(255,255,255,.08); color: rgba(255,255,255,.55); background: rgba(10,4,12,.35); }
+  .A .q { padding: 22px 20px 0; }
+  .A .q small { display: block; font-size: 11px; letter-spacing: .14em; font-weight: 700; color: rgba(255,255,255,.55); }
+  .A .q h3 { font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin-top: 4px; }
+  .A .q .when { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 13px; color: rgba(255,255,255,.75); }
+  .A .q .when b { color: #fff; }
+  .A .q .when .left { color: var(--honey); font-weight: 700; }
+  .A .chip { background: rgba(255,255,255,.07); color: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.08); }
+  .A .chip.sel { background: var(--honey); color: var(--ink); border-color: var(--honey); }
+  .A .chip.more { background: transparent; border-style: dashed; color: rgba(255,255,255,.6); }
+  .A .note { font-size: 12px; color: rgba(255,255,255,.5); padding: 10px 20px 0; }
+  .A .save { background: var(--honey); color: var(--ink); box-shadow: 0 8px 24px rgba(245,166,35,.25); }
+  .A .done { text-align: center; padding: 34px 20px 0; }
+  .A .done h3 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin-top: 14px; }
+  .A .done p { font-size: 13px; color: rgba(255,255,255,.65); margin-top: 4px; }
+  .A .strip { margin: 22px 20px 0; padding: 14px; border-radius: 18px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.07); }
+  .A .strip .lbl { font-size: 10.5px; letter-spacing: .14em; font-weight: 700; color: rgba(255,255,255,.5); display: flex; justify-content: space-between; }
+  .ticks { display: flex; gap: 3px; margin-top: 10px; }
+  .ticks span { flex: 1; height: 22px; border-radius: 5px; }
+  .A .lock { margin: 0 16px 12px; height: 46px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px; }
+
+  /* ---------- B: Paper & ink ---------- */
+  .B { background: #131115; color: #EEE9F1; }
+  .B .hdr { padding: 12px 18px 0; }
+  .B .hour { margin: 14px 16px 0; padding: 14px 16px; border-radius: 20px; background: linear-gradient(135deg, #4A1D53, #2A0F31); color: #fff; display: flex; align-items: center; justify-content: space-between; }
+  .B .hour .t small { display: block; font-size: 10.5px; letter-spacing: .14em; font-weight: 700; color: rgba(255,255,255,.6); }
+  .B .hour .t b { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+  .B .hour .ring { width: 44px; height: 44px; }
+  .B .arrows { display: flex; gap: 6px; }
+  .B .arrows span { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .B .arrows span.off { opacity: .35; }
+  .B .lab { font-size: 10.5px; letter-spacing: .14em; font-weight: 700; color: #8C8591; padding: 16px 20px 8px; }
+  .B .chip { background: transparent; border: 1px solid #39333D; color: #D6D0DA; }
+  .B .chip.sel { background: var(--honey); color: var(--ink); border-color: var(--honey); }
+  .B .chip.more { color: #8C8591; }
+  .B .save { background: var(--honey); color: var(--ink); }
+  .B .note { font-size: 12px; color: #77707C; padding: 12px 20px 0; }
+  .B .bigdone { margin: 14px 16px 0; padding: 22px 18px; border-radius: 20px; background: linear-gradient(135deg, #4A1D53, #2A0F31); color: #fff; }
+  .B .bigdone h3 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+  .B .bigdone p { font-size: 12.5px; color: rgba(255,255,255,.7); margin-top: 3px; }
+  .B .card { margin: 12px 16px 0; padding: 14px; border-radius: 20px; background: #1C191F; }
+  .B .card .lbl { font-size: 10.5px; letter-spacing: .14em; font-weight: 700; color: #8C8591; display: flex; justify-content: space-between; }
+  .B .lock { margin: 0 16px 12px; height: 46px; border-radius: 999px; background: #241F27; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px; }
+
+  /* ---------- C: Stage & sheet ---------- */
+  .C { background: linear-gradient(180deg, #4A1D53 0%, #2A0F31 60%); color: #fff; }
+  .C .stage { text-align: center; padding-top: 10px; }
+  .C .stage .hourline { display: inline-flex; align-items: center; gap: 12px; font-size: 13px; color: rgba(255,255,255,.75); margin-top: 8px; }
+  .C .stage .hourline b { color: #fff; font-size: 15px; }
+  .C .stage h3 { font-size: 21px; font-weight: 800; letter-spacing: -.02em; margin-top: 10px; }
+  .C .sheet { flex: 1; margin-top: 10px; background: #161318; border-radius: 26px 26px 0 0; display: flex; flex-direction: column; position: relative; }
+  .C .sheet:before { content: ''; position: absolute; top: 8px; left: 50%; width: 34px; height: 4px; border-radius: 3px; background: rgba(255,255,255,.18); transform: translateX(-50%); }
+  .C .sheet .lab { font-size: 10.5px; letter-spacing: .14em; font-weight: 700; color: #8C8591; padding: 22px 18px 8px; display: flex; justify-content: space-between; }
+  .C .chip { background: #241F27; color: #DCD6E0; }
+  .C .chip.sel { background: var(--honey); color: var(--ink); }
+  .C .chip.more { background: transparent; border: 1px solid #39333D; color: #8C8591; }
+  .C .save { background: var(--honey); color: var(--ink); }
+  .C .nav { background: #161318; }
+  .C .lock { margin: 0 16px 12px; height: 46px; border-radius: 999px; background: #241F27; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Three directions for the Now tab</h1>
+<p class="lede">Same dial mechanics in all three (spin, detents, fling). What changes is the surface everything sits on, the shape family, and how the two states relate. Each row shows the rating state and the caught-up state. Click a row to pick it, and tell me in the chat what you'd steal from the others.</p>
+
+<!-- ======================= A ======================= -->
+<div class="dir" data-choice="a" onclick="toggleSelect(this)">
+  <div>
+    <div class="phone A">
+      <div class="sb"></div>
+      <div class="top"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini"></span>3/8<span class="dots">⋮</span></span></div>
+      <div class="q">
+        <small>12AM – 1AM</small>
+        <h3>How was your hour?</h3>
+        <div class="when"><span>‹</span><b>12am – 1am</b><span style="opacity:.35">›</span><span class="left">· 1h 46m left</span></div>
+      </div>
+      <svg class="dial" data-style="glass" data-sel="8" viewBox="0 0 300 262" style="width:100%;height:232px;margin-top:4px"></svg>
+      <div style="padding:2px 16px 0" class="chips">
+        <span class="chip sel">Family</span><span class="chip">Work</span><span class="chip">Learning</span><span class="chip">Exercise</span><span class="chip">Food</span><span class="chip">Rest</span><span class="chip sel">Social</span><span class="chip">Scrolling</span><span class="chip more">+18</span>
+      </div>
+      <div class="note">＋ Add a note</div>
+      <div style="flex:1"></div>
+      <div class="save">Save 12am – 1am</div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Rating</div>
+  </div>
+  <div>
+    <div class="phone A">
+      <div class="sb"></div>
+      <div class="top"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini" style="border-color:var(--honey)"></span>8/8<span class="dots">⋮</span></span></div>
+      <div class="done">
+        <svg viewBox="0 0 120 120" width="112" height="112"><circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="8"/><circle cx="60" cy="60" r="50" fill="none" stroke="#F5A623" stroke-width="8" stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="0" transform="rotate(-90 60 60)"/><text x="60" y="68" text-anchor="middle" fill="#fff" font-size="26" font-weight="800">8/8</text></svg>
+        <h3>All caught up</h3>
+        <p>Next hour opens in 34m</p>
+      </div>
+      <div class="strip"><div class="lbl"><span>TODAY</span><span style="color:#fff">avg 7.4</span></div><div class="ticks" data-ticks="dark"></div></div>
+      <div style="flex:1;position:relative"><span style="position:absolute;left:58%;top:30%;font-size:26px">🐝</span><div style="position:absolute;bottom:6px;width:100%;text-align:center;font-size:13px;color:rgba(255,255,255,.7)">Catch the bee to lock your phone</div></div>
+      <div class="lock">🔒 Lock phone and bee mindful</div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Caught up</div>
+  </div>
+  <div class="notes">
+    <span class="tag">A · NIGHT FIELD</span>
+    <h2>One surface, no seams</h2>
+    <p>The aubergine stops being a header and becomes the whole tab: a night sky with a soft glow at the top. With no band edge and no card edge, the band, the card and the button can't look like three apps any more.</p>
+    <ul>
+      <li>Glass shapes only (white at 7%), and one radius family: circles and pills.</li>
+      <li>The dial cells are frosted glass. The chosen one floods with its score colour and so does the core.</li>
+      <li>The one honey thing on screen is the Save button, which honey is for anyway.</li>
+      <li>In the caught-up state the same sky holds a big closed ring, and the bee flies in it.</li>
+    </ul>
+    <p><b style="color:#fff">Trade-off:</b> the Now tab is always dark, even in light mode. That's bold and very on-brand, but it's a deliberate break from the calm-page rule.</p>
+  </div>
+</div>
+
+<!-- ======================= B ======================= -->
+<div class="dir" data-choice="b" onclick="toggleSelect(this)">
+  <div>
+    <div class="phone B">
+      <div class="sb"></div>
+      <div class="top hdr"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini"></span>3/8<span class="dots">⋮</span></span></div>
+      <div class="hour">
+        <div class="t"><small>RATE · 1H 46M LEFT</small><b>12am – 1am</b></div>
+        <div class="arrows"><span>‹</span><span class="off">›</span></div>
+      </div>
+      <svg class="dial" data-style="segments" data-sel="8" viewBox="0 0 300 250" style="width:100%;height:196px;margin-top:4px"></svg>
+      <div class="lab">WHAT WERE YOU DOING?</div>
+      <div style="padding:0 16px" class="chips">
+        <span class="chip sel">Family</span><span class="chip">Work</span><span class="chip">Learning</span><span class="chip">Exercise</span><span class="chip">Food</span><span class="chip">Rest</span><span class="chip sel">Social</span><span class="chip more">+19 more</span>
+      </div>
+      <div class="note">＋ Add a note</div>
+      <div style="flex:1"></div>
+      <div class="save">Save 12am – 1am</div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Rating</div>
+  </div>
+  <div>
+    <div class="phone B">
+      <div class="sb"></div>
+      <div class="top hdr"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini" style="border-color:var(--honey)"></span>8/8<span class="dots">⋮</span></span></div>
+      <div class="bigdone"><h3>✓ All caught up</h3><p>Next hour opens in 34m</p></div>
+      <div class="card"><div class="lbl"><span>TODAY</span><span style="color:#EEE9F1">avg 7.4</span></div><div class="ticks" data-ticks="dark"></div></div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><div><div class="lbl">BEST HOUR</div><div style="font-weight:700;margin-top:4px;font-size:13px">7pm – 8pm · Family</div></div><span style="width:34px;height:34px;border-radius:50%;background:var(--green);color:#10200F;font-weight:800;display:flex;align-items:center;justify-content:center">9</span></div>
+      <div style="flex:1;position:relative"><span style="position:absolute;left:30%;top:28%;font-size:26px">🐝</span><div style="position:absolute;bottom:6px;width:100%;text-align:center;font-size:13px;color:#A49DA9">Catch the bee to lock your phone</div></div>
+      <div class="lock">🔒 Lock phone and bee mindful</div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Caught up</div>
+  </div>
+  <div class="notes">
+    <span class="tag">B · PAPER &amp; INK</span>
+    <h2>Calm page, one purple object</h2>
+    <p>The band shrinks into a single purple tile, the "hour ticket", that sits on the page like any other card. That puts it in the same family as everything around it. The page is calm, and the ticket is the one jewel.</p>
+    <ul>
+      <li>The dial becomes one ring of ten arc segments, tinted red, amber and green with low to high going round. It reads as a scale, not a keypad. The chosen segment glows and the core shows the number.</li>
+      <li>Small labels ("WHAT WERE YOU DOING?") give the screen a reading order.</li>
+      <li>Tags are outlined and left-aligned, so they're quieter than the dial.</li>
+      <li>The caught-up state reuses the ticket as "All caught up", with the same cards below it.</li>
+    </ul>
+    <p><b style="color:#fff">Trade-off:</b> it's the most restrained of the three and fits the Past and Settings look best, but it's the least dramatic.</p>
+  </div>
+</div>
+
+<!-- ======================= C ======================= -->
+<div class="dir" data-choice="c" onclick="toggleSelect(this)">
+  <div>
+    <div class="phone C">
+      <div class="sb"></div>
+      <div class="top"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini"></span>3/8<span class="dots">⋮</span></span></div>
+      <div class="stage">
+        <h3>How was your hour?</h3>
+        <div class="hourline"><span>‹</span><b>12am – 1am</b><span style="opacity:.35">›</span></div>
+        <svg class="dial" data-style="segments-light" data-sel="8" viewBox="0 0 300 250" style="width:100%;height:200px;margin-top:2px"></svg>
+      </div>
+      <div class="sheet">
+        <div class="lab"><span>TAG IT</span><span style="color:var(--honey)">1h 46m left</span></div>
+        <div style="padding:0 16px" class="chips">
+          <span class="chip sel">Family</span><span class="chip">Work</span><span class="chip">Learning</span><span class="chip">Exercise</span><span class="chip">Food</span><span class="chip">Rest</span><span class="chip sel">Social</span><span class="chip more">+19</span>
+        </div>
+        <div style="font-size:12px;color:#77707C;padding:12px 18px 0">＋ Add a note</div>
+        <div style="flex:1"></div>
+        <div class="save">Save 12am – 1am</div>
+      </div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Rating</div>
+  </div>
+  <div>
+    <div class="phone C">
+      <div class="sb"></div>
+      <div class="top"><span class="brand">Beeing</span><span class="stat"><span class="flame">🔥 4</span><span class="mini" style="border-color:var(--honey)"></span>8/8<span class="dots">⋮</span></span></div>
+      <div class="stage" style="padding-top:18px">
+        <svg viewBox="0 0 120 120" width="120" height="120"><circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="8"/><circle cx="60" cy="60" r="50" fill="none" stroke="#F5A623" stroke-width="8" stroke-linecap="round" stroke-dasharray="314" transform="rotate(-90 60 60)"/><text x="60" y="57" text-anchor="middle" fill="#fff" font-size="22" font-weight="800">✓</text><text x="60" y="78" text-anchor="middle" fill="rgba(255,255,255,.7)" font-size="11">34m to next</text></svg>
+        <h3 style="margin-top:8px">All caught up</h3>
+      </div>
+      <div class="sheet">
+        <div class="lab"><span>TODAY</span><span style="color:#EEE9F1">avg 7.4</span></div>
+        <div class="ticks" data-ticks="dark" style="margin:0 18px"></div>
+        <div style="flex:1;position:relative"><span style="position:absolute;left:62%;top:26%;font-size:26px">🐝</span><div style="position:absolute;bottom:6px;width:100%;text-align:center;font-size:13px;color:#A49DA9">Catch the bee to lock your phone</div></div>
+        <div class="lock">🔒 Lock phone and bee mindful</div>
+      </div>
+      <div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>
+    </div>
+    <div class="cap">Caught up</div>
+  </div>
+  <div class="notes">
+    <span class="tag">C · STAGE &amp; SHEET</span>
+    <h2>The dial goes on stage</h2>
+    <p>Two zones, each with one job. The purple stage holds the question and the dial, the moment itself. A sheet rises from the bottom holding everything that follows: tags, note and Save. The sheet's grabber and curved top say "this is attached", so the two zones look made for each other.</p>
+    <ul>
+      <li>The dial lives in the purple as white arc segments. Only the chosen one takes its score colour.</li>
+      <li>The countdown moves into the sheet header, next to the action it's counting down to.</li>
+      <li>In the caught-up state the stage holds the closed ring and the sheet holds today's strip and the bee.</li>
+    </ul>
+    <p><b style="color:#fff">Trade-off:</b> the dial gets less height, and expanding the tags needs the sheet to grow over the stage. It's a known pattern, but it's motion work.</p>
+  </div>
+</div>
+
+<script>
+const COL = s => s <= 4 ? '#EF6F6C' : s <= 7 ? '#F2B54A' : '#6CCB8A';
+const WORD = ['', 'Awful', 'Bad', 'Rough', 'Meh', 'Okay', 'Fine', 'Good', 'Great', 'Lovely', 'Perfect'];
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; parent.appendChild(e); return e; }
+function arc(cx, cy, r1, r2, a0, a1) {
+  const p = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const [x0, y0] = p(r2, a0), [x1, y1] = p(r2, a1), [x2, y2] = p(r1, a1), [x3, y3] = p(r1, a0);
+  return `M${x0} ${y0} A${r2} ${r2} 0 0 1 ${x1} ${y1} L${x2} ${y2} A${r1} ${r1} 0 0 0 ${x3} ${y3}Z`;
+}
+document.querySelectorAll('svg.dial').forEach(svg => {
+  const style = svg.dataset.style, sel = +svg.dataset.sel, cx = 150, cy = style === 'glass' ? 138 : 128;
+  // Score at the notch (top) is sel; scores run clockwise like today's wheel
+  const angOf = s => -Math.PI / 2 + (s - sel) * (2 * Math.PI / 10);
+  if (style === 'glass') {
+    el('path', { d: 'M144 6 L156 6 L150 14Z', fill: '#fff', opacity: .9 }, svg);
+    for (let s = 1; s <= 10; s++) {
+      const a = angOf(s), x = cx + 92 * Math.cos(a), y = cy + 92 * Math.sin(a), on = s === sel;
+      el('circle', { cx: x, cy: y, r: 23, fill: on ? COL(s) : 'rgba(255,255,255,.07)', stroke: on ? '#fff' : 'rgba(255,255,255,.10)', 'stroke-width': on ? 2 : 1 }, svg);
+      el('text', { x, y: y + 6, 'text-anchor': 'middle', 'font-size': 17, 'font-weight': 800, fill: on ? '#10200F' : 'rgba(255,255,255,.85)' }, svg, s);
+    }
+    el('circle', { cx, cy, r: 54, fill: COL(sel) }, svg);
+    el('circle', { cx, cy, r: 62, fill: 'none', stroke: COL(sel), 'stroke-opacity': .25, 'stroke-width': 6 }, svg);
+    el('text', { x: cx, y: cy + 8, 'text-anchor': 'middle', 'font-size': 40, 'font-weight': 800, fill: '#10200F' }, svg, sel);
+    el('text', { x: cx, y: cy + 28, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#10200F', opacity: .75 }, svg, WORD[sel]);
+  } else {
+    const light = style === 'segments-light', step = 2 * Math.PI / 10, gap = 0.05;
+    el('path', { d: 'M144 4 L156 4 L150 12Z', fill: light ? '#fff' : '#EEE9F1', opacity: .9 }, svg);
+    for (let s = 1; s <= 10; s++) {
+      const a = angOf(s), on = s === sel;
+      const fill = on ? COL(s) : light ? 'rgba(255,255,255,.10)' : COL(s);
+      const op = on ? 1 : light ? 1 : .16;
+      el('path', { d: arc(cx, cy, 70, 112, a - step / 2 + gap, a + step / 2 - gap), fill, 'fill-opacity': op }, svg);
+      const tx = cx + 91 * Math.cos(a), ty = cy + 91 * Math.sin(a);
+      el('text', { x: tx, y: ty + 6, 'text-anchor': 'middle', 'font-size': on ? 19 : 15, 'font-weight': 800, fill: on ? '#10200F' : light ? 'rgba(255,255,255,.75)' : COL(s) }, svg, s);
+    }
+    el('circle', { cx, cy, r: 60, fill: light ? 'rgba(255,255,255,.06)' : '#1C191F' }, svg);
+    el('text', { x: cx, y: cy + 10, 'text-anchor': 'middle', 'font-size': 42, 'font-weight': 800, fill: COL(sel) }, svg, sel);
+    el('text', { x: cx, y: cy + 30, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: light ? 'rgba(255,255,255,.7)' : '#A49DA9' }, svg, WORD[sel]);
+  }
+});
+const today = [0,0,0,0,0,0,0,7,8,6,0,9,7,8,5,0,7,9,8,0,0,0,0,0];
+document.querySelectorAll('.ticks').forEach(t => {
+  today.slice(6).forEach(s => { const sp = document.createElement('span'); sp.style.background = s ? COL(s) : 'rgba(255,255,255,.07)'; t.appendChild(sp); });
+});
+</script>
+</body>
+</html>

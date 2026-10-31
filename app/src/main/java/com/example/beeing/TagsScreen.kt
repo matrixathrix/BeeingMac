@@ -181,7 +181,7 @@ fun TagsScreen(context: android.content.Context, onChanged: () -> Unit, onBack: 
             TextButton(onClick = { adding = true }, enabled = canAdd) {
                 Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("New", fontWeight = FontWeight.Bold)
+                Text("New", fontWeight = FontWeight.SemiBold)
             }
         }
         Text(

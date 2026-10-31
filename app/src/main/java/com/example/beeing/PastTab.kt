@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeCardDefaults
 import com.example.beeing.ui.PageHeader
 import com.example.beeing.ui.emptyCellColor
+import com.example.beeing.ui.designDensity
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
@@ -449,6 +450,9 @@ fun PastTab(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
+        // The journal and Trends keep fixed proportions, like Now and Streak;
+        // the edit sheet and date jump below stay on the system font size
+        CompositionLocalProvider(LocalDensity provides designDensity()) {
         AnimatedContent(
             targetState = showTrends,
             modifier = Modifier.padding(padding).fillMaxSize(),
@@ -489,6 +493,7 @@ fun PastTab(
                     onEdit = { editingEntry = it }
                 )
             }
+        }
         }
     }
 
@@ -615,7 +620,7 @@ private fun JournalView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val accent = LocalBeeExtras.current.accentText
-                Text("Trends", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accent)
+                Text("Trends", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = accent)
                 Icon(
                     Icons.Default.KeyboardArrowRight, contentDescription = null,
                     tint = accent, modifier = Modifier.size(20.dp)
@@ -732,7 +737,7 @@ private fun JournalMonthHeader(label: String, dayCount: Int, open: Boolean, onCl
         Text(
             label.uppercase(Locale.getDefault()),
             fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.8.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -797,7 +802,7 @@ private fun JournalDayItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     journalDayLabel(day.dayStartMs),
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                     maxLines = 1
                 )
@@ -832,7 +837,7 @@ private fun JournalDayItem(
                     Text(
                         String.format(Locale.getDefault(), "%.1f", day.avg),
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Bold,
                         color = onScoreColor(day.avg)
                     )
                 }
@@ -954,7 +959,7 @@ private fun HourEntryRow(
             Text(
                 "${entry.score}",
                 fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 color = if (entry.score >= 5) Color.Black else Color.White
             )
         }
@@ -1035,7 +1040,7 @@ private fun DateJumpDialog(
                     }
                     Text(
                         SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(monthStart)),
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f)
@@ -1060,7 +1065,7 @@ private fun DateJumpDialog(
                         Text(
                             letters[(firstDayOfWeek - 1 + i) % 7],
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.weight(1f)
@@ -1102,7 +1107,7 @@ private fun DateJumpDialog(
                                     Text(
                                         "$d",
                                         fontSize = 12.sp,
-                                        fontWeight = if (avg != null) FontWeight.ExtraBold
+                                        fontWeight = if (avg != null) FontWeight.SemiBold
                                         else FontWeight.Normal,
                                         color = if (avg != null) Color.White
                                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
@@ -1227,7 +1232,7 @@ private fun TrendsView(
                         }
                         Text(
                             rangeLabel,
-                            fontWeight = FontWeight.ExtraBold,
+                            fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp,
                             modifier = Modifier.padding(horizontal = 2.dp)
                         )
@@ -1414,7 +1419,7 @@ private fun TrendsView(
                                     Text(
                                         if (hourByHourExpanded) "hide" else "show",
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -1475,7 +1480,7 @@ private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.8.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
@@ -1496,7 +1501,7 @@ private fun StatCell(
         Text(
             value,
             fontSize = 17.sp,
-            fontWeight = FontWeight.ExtraBold,
+            fontWeight = FontWeight.Bold,
             color = valueColor,
             maxLines = 1
         )
@@ -1567,7 +1572,7 @@ private fun ZoomPicker(zoom: Zoom, onSelect: (Zoom) -> Unit) {
                 Text(
                     z.fullLabel(),
                     fontSize = 13.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     color = if (selected) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1592,7 +1597,7 @@ private fun CapPill(text: String, onClick: () -> Unit) {
         Text(
             text,
             fontSize = 10.5.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -1697,7 +1702,7 @@ private fun ScoreBarChart(
                                 Text(
                                     String.format(Locale.getDefault(), "%.1f", avg),
                                     fontSize = 10.sp,
-                                    fontWeight = if (i == maxIdx) FontWeight.ExtraBold else FontWeight.Bold,
+                                    fontWeight = if (i == maxIdx) FontWeight.Bold else FontWeight.SemiBold,
                                     color = scoreTextColor(avg),
                                     maxLines = 1
                                 )
@@ -1803,7 +1808,7 @@ private fun PatternGrid(
                         Text(
                             u.colLabel,
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = if (u.isCurrent) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -1897,7 +1902,7 @@ private fun SortToggle(sortByScore: Boolean, onSortChange: (Boolean) -> Unit) {
                 Text(
                     label,
                     fontSize = 11.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     color = if (selected) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1992,7 +1997,7 @@ private fun TagStatRow(stat: TagStat) {
                 Text(
                     (if (delta > 0) "▲ " else "▼ ") + String.format(Locale.getDefault(), "%.1f", kotlin.math.abs(delta)),
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Bold,
                     color = if (delta > 0) Color(0xFF66BB6A) else Color(0xFFC62828)
                 )
                 Spacer(Modifier.width(8.dp))
@@ -2000,7 +2005,7 @@ private fun TagStatRow(stat: TagStat) {
             Text(
                 String.format(Locale.getDefault(), "%.1f", stat.avg),
                 color = scoreTextColor(stat.avg),
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.width(6.dp))
             Text(

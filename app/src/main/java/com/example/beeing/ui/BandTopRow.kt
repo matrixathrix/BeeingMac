@@ -14,12 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -53,8 +50,6 @@ import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
-import com.example.beeing.ui.theme.StreakAtRiskRed
-import com.example.beeing.ui.theme.SuperGold
 
 /**
  * What the shared top row needs from the app root. Provided once above the pager
@@ -69,8 +64,8 @@ class BandChrome(
     val onMenuClick: () -> Unit,
     val onTopRowHidden: (Boolean) -> Unit = {},
     /**
-     * How much of a band is under the row right now, 0…1, off the pager's
-     * continuous position: Streak and Now have one, Past doesn't (it opens on the
+     * How much of the night field is under the row right now, 0…1, off the pager's
+     * continuous position: Streak and Now sit on it, Past doesn't (it opens on the
      * plain page under a large title). The row crossfades its ink with the swipe.
      */
     val bandUnder: () -> Float = { 1f },
@@ -82,7 +77,7 @@ class BandChrome(
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
 
-/** The row at the top of every tab's band, reading [LocalBandChrome]. */
+/** The row at the top of every tab, reading [LocalBandChrome]. */
 @Composable
 fun BandTopRow(
     titleModifier: Modifier = Modifier,
@@ -119,11 +114,11 @@ fun BandTopRow(
     nowShown: Float = 1f,
     superHoursLeft: Int? = null
 ) {
-    val ink = lerp(MaterialTheme.colorScheme.onBackground, Color.White, bandUnder)
+    val ink = lerp(MaterialTheme.colorScheme.onBackground, LocalBeeExtras.current.fieldInk, bandUnder)
     CompositionLocalProvider(LocalContentColor provides ink) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (bandUnder > 0.01f) Text(
-                "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
+                "Beeing", style = titleStyle, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Clip,
                 modifier = titleModifier.graphicsLayer { alpha = bandUnder }
             )
             Spacer(Modifier.weight(1f))
@@ -146,15 +141,17 @@ fun BandTopRow(
 private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) {
     val extras = LocalBeeExtras.current
     val ink = LocalContentColor.current
-    // On the band: translucent white. On the page: a faint ink wash.
-    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), OnBandFill, bandUnder)
-    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.bandTop, bandUnder)
+    // On the field: glass. On the page: a faint ink wash with no line.
+    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), extras.glassFill, bandUnder)
+    val line = extras.glassLine.copy(alpha = extras.glassLine.alpha * bandUnder)
+    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.fieldTop, bandUnder)
     val description = if (unread > 0) "Warnings, $unread unread" else "Warnings"
     Box(
         Modifier
             .size(36.dp)
             .clip(CircleShape)
             .background(fill)
+            .border(1.dp, line, CircleShape)
             .clickable(onClickLabel = "Open warnings", onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -172,7 +169,7 @@ private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) 
             ) {
                 Text(
                     if (unread > 9) "9+" else "$unread",
-                    fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = extras.onAccentFill
+                    fontSize = 8.sp, fontWeight = FontWeight.Bold, color = extras.onAccentFill
                 )
             }
         }
@@ -190,11 +187,13 @@ internal fun StatusStrip(
     modifier: Modifier = Modifier,
     superHoursLeft: Int? = null
 ) {
-    // Sits on the brand band: a translucent white pill, white content.
-    val stripBg = OnBandFill
+    // Sits straight on the night field, no container: two inline items in field
+    // ink (flame + count, ring + hours), like the wordmark beside them. Only the
+    // ripple shows the pill-shaped tap target.
+    val x = LocalBeeExtras.current
     val atRisk = state.recoveryOpen
     val shownStreak = state.displayStreak
-    val riskColor = StreakAtRiskRed
+    val riskColor = x.fieldRed
     // Screen readers would otherwise announce only the bare numbers ("5", "3/8"),
     // so the strip speaks as one labelled target instead of its two children.
     val streakLabel = when {
@@ -214,17 +213,14 @@ internal fun StatusStrip(
     val stripDescription =
         "$streakLabel · ${state.todayHours} of $countTarget hours rated today" +
             (superHoursLeft?.let { " · $it more for a Super day" } ?: "")
-    Card(
-        modifier = modifier
-            .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = stripDescription },
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(containerColor = stripBg, contentColor = Color.White)
-    ) {
+    CompositionLocalProvider(LocalContentColor provides x.fieldInk) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            modifier
+                .clip(PillShape)
+                .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
+                .semantics(mergeDescendants = true) { contentDescription = stripDescription }
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The leaf replaces the flame while beginner mode is on: the mode has
@@ -235,32 +231,33 @@ internal fun StatusStrip(
                 } else {
                     BeeIcon(
                         Sym.Fire, size = 17.dp, contentDescription = null,
-                        tint = if (atRisk) riskColor else HoneyGold
+                        tint = if (atRisk) riskColor else x.fieldHoney
                     )
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "$shownStreak",
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = if (atRisk) riskColor else Color.Unspecified
                 )
                 // Colour never travels alone: the mark says "at risk" too.
                 if (atRisk) Text(
-                    "!", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    "!", fontWeight = FontWeight.Bold, fontSize = 16.sp,
                     color = riskColor, modifier = Modifier.padding(start = 2.dp)
                 )
             }
-            StripDivider()
+            Spacer(Modifier.width(14.dp))
             MiniHourRing(
                 hours = state.todayHours,
                 hoursRequired = state.hoursRequired,
                 qualified = state.todayQualified,
                 superLap = state.todayQualified && !state.beginnerMode
             )
+            Spacer(Modifier.width(7.dp))
             Text(
                 "${state.todayHours}/$countTarget",
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
         }
@@ -268,18 +265,11 @@ internal fun StatusStrip(
 }
 
 @Composable
-private fun StripDivider() {
-    Box(
-        Modifier
-            .size(width = 1.dp, height = 18.dp)
-            .background(Color.White.copy(alpha = 0.3f))
-    )
-}
-
-@Composable
 private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, superLap: Boolean) {
-    val track = Color.White.copy(alpha = 0.22f)   // on the band
+    val x = LocalBeeExtras.current
+    val track = x.fieldInk.copy(alpha = 0.22f)   // straight on the field
     val fill = if (qualified) RingQualifiedGreen else HoneyGold
+    val lapColor = x.fieldSuper
     val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
     // Hours past the goal, as a share of the Super day lap (hours 9–12)
     val lapFraction = ((hours - hoursRequired).toFloat() / (SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED))
@@ -293,11 +283,13 @@ private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, sup
         // "/12" count beside the ring already says what the lap is for. It sits 1dp
         // outside the ring, spilling 2.5dp past the canvas into the strip's 8dp padding,
         // so neither the ring nor the strip's width changes. (Not yet checked on device.)
+        // Since the strip lost its pill there is no padding to spill into; the 14dp gap
+        // before the ring and the 7dp after it leave the arc its room.
         if (superLap && lapFraction > 0f) {
             val lapStroke = 1.5.dp.toPx()
             val r = size.minDimension / 2f + 1.dp.toPx() + lapStroke / 2f
             drawArc(
-                color = SuperGold,
+                color = lapColor,
                 startAngle = -90f, sweepAngle = 360f * lapFraction, useCenter = false,
                 topLeft = Offset(center.x - r, center.y - r),
                 size = androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
@@ -353,10 +345,10 @@ private fun BandTopRowSuperLapPreview() {
     )
 }
 
-/** The row's height: the overlay draws it once; each tab reserves exactly this much under its band. */
+/** The row's height: the overlay draws it once; each tab reserves exactly this much under it. */
 val BandTopRowHeight = 40.dp
 
-/** Placeholder under a tab's band where the (fixed) top row is drawn over it. */
+/** Placeholder at the top of a tab where the (fixed) top row is drawn over it. */
 @Composable
 fun BandTopRowSpacer() {
     Spacer(Modifier.height(BandTopRowHeight))

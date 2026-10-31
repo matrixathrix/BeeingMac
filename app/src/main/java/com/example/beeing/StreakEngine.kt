@@ -11,6 +11,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,16 +23,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -147,7 +156,7 @@ fun reclaimsUsedToday(spends: List<Long>): Int {
 
 
 // ============================================================
-// STREAK METER  (today's hour ring + the streak count, on the Streak tab's brand band)
+// STREAK METER  (today's hour ring + the streak count, on the Streak tab's night field)
 // ============================================================
 
 @Composable
@@ -209,15 +218,16 @@ fun StreakMeter(
         }
         lastHours = state.todayHours
     }
-    // One honey on the band: the disc, the ring and the shields all share it
-    val honey = LocalBeeExtras.current.accentFill
+    // One honey on the field: the disc, the ring and the shields all share it
+    val x = LocalBeeExtras.current
+    val honey = x.accentFill
     val done = com.example.beeing.ui.theme.RingQualifiedGreen
-    val track = Color.White.copy(alpha = 0.14f)   // drawn on the brand band
+    val track = x.fieldInk.copy(alpha = 0.14f)   // drawn straight on the field
     val ringColor = if (state.todayQualified) done else honey
 
     val atRisk = state.recoveryOpen
-    val riskColor = com.example.beeing.ui.theme.StreakAtRiskRed
-    val soft = Color.White.copy(alpha = 0.72f)
+    val riskColor = x.fieldRed
+    val soft = x.fieldInkMuted
     val remaining = (goal - state.todayHours).coerceAtLeast(0)
     val toRecover = (RECOVERY_HOURS - state.todayHours).coerceAtLeast(0)
     // Each caption belongs to the object above it, so both stay short
@@ -232,12 +242,12 @@ fun StreakMeter(
     }
     val todayCaptionColor = when {
         atRisk -> riskColor
-        superHoursLeft != null || superToday -> SuperGold
-        state.todayQualified -> done
+        superHoursLeft != null || superToday -> x.fieldSuperText
+        state.todayQualified -> x.fieldDone
         else -> soft
     }
 
-    // Two equal columns on the band — the streak first (this tab's headline),
+    // Two equal columns floating on the field — the streak first (this tab's headline),
     // today beside it — each an object over one caption, split by a hairline.
     // Each whole column is one tap target: streak + savers, and the ring.
     Row(
@@ -262,31 +272,31 @@ fun StreakMeter(
                     val d = state.recoveryDaysLeft
                     Text(
                         "$d ${if (d == 1) "day" else "days"} to win it back",
-                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = riskColor
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = riskColor
                     )
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         SaverSlots(
                             state.savers, fullColor = honey,
-                            emptyColor = Color.White.copy(alpha = 0.20f),
+                            emptyColor = x.fieldInk.copy(alpha = 0.20f),
                             iconSize = 15.dp, spacing = 3.dp
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "${state.savers}/$SAVER_CAP",
-                            fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = soft
+                            fontSize = 12.sp, fontWeight = FontWeight.Medium, color = soft
                         )
                     }
                 }
             }
         }
-        // Hairline split, inset so it never touches the band's edges
+        // Hairline split, inset top and bottom
         Box(
             Modifier
                 .padding(vertical = 12.dp)
                 .width(0.5.dp)
                 .fillMaxHeight()
-                .background(Color.White.copy(alpha = 0.14f))
+                .background(x.fieldInk.copy(alpha = 0.12f))
         )
         Column(
             Modifier.weight(1f).bandTapTarget("Today's goal", onGoalClick),
@@ -302,17 +312,18 @@ fun StreakMeter(
                 strokeWidth = 11.dp,
                 scale = { ringScale.value },
                 superLap = superLap,
-                lapShown = { lapShown.value }
+                lapShown = { lapShown.value },
+                lapColor = x.fieldSuper
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "${state.todayHours}",
                         fontSize = COUNT_SIZE, lineHeight = COUNT_SIZE,
-                        fontWeight = FontWeight.ExtraBold, color = Color.White
+                        fontWeight = FontWeight.ExtraBold, color = x.fieldInk
                     )
                     Text(
                         "of $goal hours",
-                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = soft
+                        fontSize = 11.sp, fontWeight = FontWeight.Medium, color = soft
                     )
                 }
             }
@@ -320,12 +331,12 @@ fun StreakMeter(
             Box(Modifier.height(CAPTION_HEIGHT), contentAlignment = Alignment.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!atRisk && superHoursLeft == null && superToday) {
-                        BeeIcon(Sym.Sparkle, size = 14.dp, tint = SuperGold, contentDescription = null)
+                        BeeIcon(Sym.Sparkle, size = 14.dp, tint = x.fieldSuperText, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
                         todayCaption,
-                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = todayCaptionColor
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = todayCaptionColor
                     )
                 }
             }
@@ -333,7 +344,7 @@ fun StreakMeter(
     }
 }
 
-/** A band column as one pressable area, rounded so its ripple reads as a tile. */
+/** A hero column as one pressable area, rounded so its ripple reads as a tile. */
 private fun Modifier.bandTapTarget(label: String, onClick: () -> Unit) =
     clip(RoundedCornerShape(20.dp))
         .clickable(onClickLabel = label, onClick = onClick)
@@ -345,7 +356,7 @@ private val CAPTION_GAP = 10.dp
 private val CAPTION_HEIGHT = 28.dp
 
 // 10 of 12: the ring closed, two of the four lap segments gold, the Super day caption.
-@Preview(widthDp = 360, backgroundColor = 0xFF4A1D4F, showBackground = true)
+@Preview(widthDp = 360, backgroundColor = 0xFF4A1D53, showBackground = true)
 @Composable
 private fun StreakMeterSuperLapPreview() = com.example.beeing.ui.theme.BeeingTheme {
     StreakMeter(
@@ -360,12 +371,14 @@ private fun StreakMeterSuperLapPreview() = com.example.beeing.ui.theme.BeeingThe
 
 /**
  * The streak's own object, the same size as the hour ring beside it: a solid honey disc
- * with the flame over the count. Paused / beginner swap the flame for the leaf,
- * an open recovery window turns it red with a "!", and no streak dims it.
+ * with the flame over the count and a soft honey glow. Paused / beginner swap the flame
+ * for the leaf, an open recovery window turns it red with a "!", and no streak dims it
+ * to a faint glass disc.
  */
 @Composable
 private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
-    val honey = LocalBeeExtras.current.accentFill
+    val x = LocalBeeExtras.current
+    val honey = x.accentFill
     val atRisk = state.recoveryOpen
     val leaf = !atRisk && (state.streakPaused || state.beginnerMode)
     val count = when {
@@ -382,16 +395,17 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
     }
     val live = count > 0
     // A solid disc beside the open ring: the two weigh the same without the disc
-    // reading as a second progress ring. No streak = a faint white disc.
+    // reading as a second progress ring. No streak = a faint glass disc.
     val fill = when {
         atRisk -> riskColor
         live -> honey
-        else -> Color.White.copy(alpha = 0.10f)
+        else -> x.fieldInk.copy(alpha = 0.10f)
     }
     val ink = when {
-        atRisk -> Color.White
-        live -> LocalBeeExtras.current.onAccentFill
-        else -> Color.White.copy(alpha = 0.55f)
+        // The field's red is light in dark mode and deep in light mode: ink flips with it
+        atRisk -> if (riskColor.luminance() > 0.4f) x.onAccentFill else Color.White
+        live -> x.onAccentFill
+        else -> x.fieldInkMuted
     }
     val description = when {
         atRisk -> "$count-day streak at risk"
@@ -403,6 +417,11 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
     Box(
         Modifier
             .size(size)
+            .then(
+                // The honey glow: the streak is honey's identity on the field
+                if (live && !atRisk) Modifier.shadow(18.dp, CircleShape, ambientColor = honey, spotColor = honey)
+                else Modifier
+            )
             .clip(CircleShape)
             .background(fill)
             .semantics(mergeDescendants = true) { contentDescription = description },
@@ -437,7 +456,8 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
 /**
  * The hour ring: one continuous arc that fills toward the goal (8 hours in Master,
  * 4 in beginner mode), with a thin tick at each hour so the count is still legible
- * without chunky segments. Once closed it becomes a solid circle.
+ * without chunky segments. Once closed it becomes a solid circle. Shared by the
+ * Streak hero and the Now tab's caught-up ring.
  *
  * Hours beyond the goal: in Master mode ([superLap]) they fill the Super day lap, four
  * segments just outside the ring. The lap fades in over [lapShown] (0…1) as the ring
@@ -448,7 +468,7 @@ private fun StreakMedallion(state: StreakState, size: Dp, riskColor: Color) {
  * The animated inputs are lambdas, read only in the draw / layer phase.
  */
 @Composable
-private fun StreakRing(
+internal fun StreakRing(
     animatedFill: () -> Float,
     animatedExtra: () -> Float,
     ringColor: Color,
@@ -459,6 +479,7 @@ private fun StreakRing(
     scale: () -> Float,
     superLap: Boolean,
     lapShown: () -> Float,
+    lapColor: Color = SuperGold,
     centerContent: @Composable () -> Unit
 ) {
     Box(
@@ -537,11 +558,11 @@ private fun StreakRing(
                     stroke = lapStroke,
                     filled = extra.coerceAtMost(4f),
                     track = trackColor.copy(alpha = trackColor.alpha * lap),
-                    fill = SuperGold.copy(alpha = lap)
+                    fill = lapColor.copy(alpha = lap)
                 )
             }
 
-            // One hairline tick per hour, in the band's own dark, across the stroke
+            // One hairline tick per hour, in the field's own dark, across the stroke
             val tickColor = Color(0xFF1C0920).copy(alpha = 0.55f)
             val half = stroke / 2f + 0.5f
             for (i in 0 until hoursRequired) {
@@ -618,13 +639,22 @@ internal fun StreakEvent.logDetail(earnedSaver: Boolean = false): String {
     }
 }
 
+/**
+ * History on the Streak tab: a glass panel, collapsed by default to a peek at the
+ * latest event (or the empty-state line), so it never reads as empty. The whole
+ * panel toggles it. Expanded, it opens in place into rows grouped by recency
+ * ("THIS WEEK", "EARLIER IN OCTOBER", then month names): the last 3 months,
+ * capped at 60 rows. Each row is a round tile (colour and icon together), the
+ * title over its one-line detail, and the date on the right.
+ */
 @Composable
-fun StreakLogContent(
+fun StreakHistoryPanel(
     ratings: List<RatingEntry>,
     modeEvents: List<ModeEvent>,
     refreshKey: Int = 0
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val x = LocalBeeExtras.current
     val events = remember(ratings, modeEvents, refreshKey) {
         // Only the last 3 months of history
         val cutoff = Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis
@@ -632,39 +662,155 @@ fun StreakLogContent(
             .filter { it.timestamp >= cutoff }
     }
     val rows = remember(events) { logRows(events) }
-    val fmt = remember { SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()) }
+    val dateFmt = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
     val goal = hoursRequiredFor(isBeginnerMode(modeEvents))
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, label = "historyChevron")
 
-    if (events.isEmpty()) {
-        Text("Nothing in the last 3 months — rate $goal hours in a day to begin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    } else {
-        Column {
-            rows.take(60).forEach { (ev, earnedSaver) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    BeeIcon(
-                        ev.type.sym(), size = 20.dp,
-                        modifier = Modifier.padding(end = 12.dp, top = 2.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(ev.logTitle(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(ev.logDetail(earnedSaver), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            fmt.format(java.util.Date(ev.timestamp)),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
-            }
-            if (rows.size > 60) {
-                Spacer(Modifier.height(8.dp))
+    com.example.beeing.ui.GlassPanel(
+        modifier = Modifier.animateContentSize(),
+        onClick = { expanded = !expanded },
+        onClickLabel = if (expanded) "Collapse history" else "Expand history"
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "History",
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = x.fieldInkMuted,
+                modifier = Modifier.rotate(chevron)
+            )
+        }
+        val latest = rows.firstOrNull()
+        when {
+            latest == null -> {
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    "Showing latest 60 of ${rows.size} events",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "Nothing in the last 3 months — rate $goal hours in a day to begin.",
+                    fontSize = 13.sp, color = x.fieldInkMuted
                 )
             }
+            !expanded -> {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    EventTile(latest.first.type, size = 26.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, color = x.fieldInk)) {
+                                append(latest.first.logTitle())
+                            }
+                            append(" · ${dateFmt.format(Date(latest.first.timestamp))}")
+                        },
+                        fontSize = 13.sp, color = x.fieldInkMuted,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+            else -> {
+                val now = remember(refreshKey) { Calendar.getInstance() }
+                var lastGroup: String? = null
+                rows.take(60).forEach { (ev, earnedSaver) ->
+                    val group = historyGroup(ev.timestamp, now)
+                    if (group != lastGroup) {
+                        lastGroup = group
+                        Text(
+                            group,
+                            fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp,
+                            color = x.fieldInkMuted,
+                            modifier = Modifier.padding(top = 14.dp, bottom = 2.dp)
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        EventTile(ev.type, size = 30.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                ev.logTitle(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            Text(
+                                ev.logDetail(earnedSaver), fontSize = 12.sp, color = x.fieldInkMuted,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(dateFmt.format(Date(ev.timestamp)), fontSize = 11.sp, color = x.fieldInkMuted)
+                    }
+                }
+                if (rows.size > 60) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Showing latest 60 of ${rows.size} events",
+                        fontSize = 11.sp,
+                        color = x.fieldInkMuted
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The History group an event falls in, relative to [now]: "THIS WEEK" (since the
+ * locale's first day of this week), "EARLIER IN OCTOBER" (the rest of this month),
+ * then the month's name, with the year once it isn't this year's.
+ */
+internal fun historyGroup(timestamp: Long, now: Calendar): String {
+    val weekStart = (now.clone() as Calendar).apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        while (get(Calendar.DAY_OF_WEEK) != firstDayOfWeek) add(Calendar.DAY_OF_YEAR, -1)
+    }
+    val c = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val sameYear = c.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+    val month = SimpleDateFormat(if (sameYear) "MMMM" else "MMMM yyyy", Locale.getDefault())
+        .format(c.time).uppercase(Locale.getDefault())
+    return when {
+        timestamp >= weekStart.timeInMillis -> "THIS WEEK"
+        sameYear && c.get(Calendar.MONTH) == now.get(Calendar.MONTH) -> "EARLIER IN $month"
+        else -> month
+    }
+}
+
+/**
+ * An event's round tile: colour and icon together, from the field palette. Honey =
+ * the streak grew (complete, recovered), SuperGold = a Super day, honey wash = a
+ * saver moving, red wash = a break or its countdown, glass = everything quieter.
+ */
+@Composable
+private fun EventTile(type: StreakEventType, size: Dp) {
+    val x = LocalBeeExtras.current
+    val honeyWash = x.accentFill.copy(alpha = 0.22f)
+    val redWash = x.fieldRed.copy(alpha = 0.18f)
+    val glass = x.fieldInk.copy(alpha = 0.08f)
+    val (fill, tint) = when (type) {
+        StreakEventType.COMPLETED, StreakEventType.RECOVERED -> x.accentFill to x.onAccentFill
+        StreakEventType.SUPER_DAY -> SuperGold to x.onAccentFill
+        StreakEventType.SAVER_USED, StreakEventType.SAVER_EARNED, StreakEventType.COMEBACK_GIFT,
+        StreakEventType.LOW_SAVERS -> honeyWash to x.fieldHoney
+        StreakEventType.STREAK_BROKE, StreakEventType.RECOVERY_DAYS_LEFT -> redWash to x.fieldRed
+        StreakEventType.BEGINNER, StreakEventType.PAST_HOUR_ADDED,
+        StreakEventType.SAVER_FADED -> glass to x.fieldInkMuted
+    }
+    Box(
+        Modifier.size(size).clip(CircleShape).background(fill),
+        contentAlignment = Alignment.Center
+    ) {
+        if (type == StreakEventType.STREAK_BROKE) {
+            Icon(
+                Icons.Default.Close, contentDescription = null,
+                tint = tint, modifier = Modifier.size(size * 0.5f)
+            )
+        } else {
+            BeeIcon(type.sym(), size = size * 0.52f, contentDescription = null, tint = tint)
         }
     }
 }

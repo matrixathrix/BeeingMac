@@ -1,7 +1,6 @@
 package com.example.beeing
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -19,29 +18,30 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.beeing.ui.BeeButtonDefaults
-import com.example.beeing.ui.BeeCardDefaults
-import com.example.beeing.ui.BrandBand
 import com.example.beeing.ui.BandTopRowSpacer
+import com.example.beeing.ui.GlassPanel
+import com.example.beeing.ui.designDensity
+import com.example.beeing.ui.PillShape
 import com.example.beeing.ui.DailyGoalDialog
 import com.example.beeing.ui.LocalBandChrome
 import com.example.beeing.ui.SaverExplainerDialog
@@ -95,14 +95,6 @@ fun StreaksTab(
     val superDays = remember(allRatings, modeEvents, viewModel.refreshTrigger, spendsVersion, todayStart) {
         computeSuperDays(allRatings, modeEvents)
     }
-    // Per-day average score — tints the calendar dots
-    val dayAvgs = remember(allRatings, viewModel.refreshTrigger) {
-        val cal = Calendar.getInstance()
-        allRatings.groupBy { entry ->
-            cal.timeInMillis = entry.timestamp
-            cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
-        }.mapValues { (_, entries) -> entries.map { it.score }.average() }
-    }
 
     var monthOffset by remember { mutableIntStateOf(0) } // 0 = current month
     var showPickHour by remember { mutableStateOf(false) }
@@ -132,11 +124,19 @@ fun StreaksTab(
         (RECLAIM_PER_DAY - reclaimsUsedToday(reclaimSpends)).coerceAtLeast(0)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // ---- Hero on the brand band: streak + today ring. Pinned above the
-        // scroller: the band owns the status-bar area (light icons), so it
-        // must never scroll away and leave them over the light page. ----
-        BrandBand {
+    val x = LocalBeeExtras.current
+    CompositionLocalProvider(LocalContentColor provides x.fieldInk, LocalDensity provides designDensity()) {
+    // The whole tab sits on the night field, the same surface as Now, so the two
+    // "you, right now" tabs swipe as one place. Containers on it are glass.
+    Column(modifier = Modifier.fillMaxSize().background(x.fieldBrush)) {
+        // ---- Hero: streak + today ring, floating on the field. Pinned above the
+        // scroller, so nothing scrolls up under the fixed top row. ----
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+        ) {
             BandTopRowSpacer()
             Spacer(Modifier.height(14.dp))
             // Savers ride under the streak they protect: streak + savers is one tap
@@ -155,177 +155,114 @@ fun StreaksTab(
                 .weight(1f)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-        // ---- ACTION: add a past hour — the one action on this tab,
-        // right under the goal it protects; hidden when nothing to recover ----
+        // ---- ACTION: add a past hour — the one action on this tab, right under
+        // the goal it protects; hidden when nothing to recover. The whole panel
+        // is the tap target. Spent: faded and inert, the copy says why. ----
         if (reclaimableHours.isNotEmpty()) {
             val reclaimEnabled = beesLeftToday > 0
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                // Enabled: an ordinary card whose honey icon marks the action.
-                // Spent: a dashed-feel outline only, so it reads as unavailable.
-                colors = if (reclaimEnabled) BeeCardDefaults.colors()
-                else CardDefaults.cardColors(containerColor = Color.Transparent),
-                elevation = if (reclaimEnabled) BeeCardDefaults.elevation() else CardDefaults.cardElevation(),
-                border = if (reclaimEnabled) null
-                else BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)),
-                modifier = Modifier.clickable(enabled = reclaimEnabled) { showPickHour = true }
+            GlassPanel(
+                modifier = Modifier.alpha(if (reclaimEnabled) 1f else 0.55f),
+                onClick = if (reclaimEnabled) ({ showPickHour = true }) else null,
+                onClickLabel = "Pick an hour"
             ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .alpha(if (reclaimEnabled) 1f else 0.55f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BeeIcon(
-                        Sym.AddPast, size = 26.dp, contentDescription = null,
-                        tint = if (reclaimEnabled) LocalBeeExtras.current.accentText
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(x.accentFill.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BeeIcon(Sym.AddPast, size = 22.dp, tint = x.fieldHoney, contentDescription = null)
+                    }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             "Missed an hour?",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            if (reclaimEnabled)
-                                "Add a past hour · ${reclaimableHours.size} available"
+                            if (reclaimEnabled) "Add a past hour"
                             else "You've added $RECLAIM_PER_DAY past hours today. More tomorrow.",
                             fontSize = 13.sp,
-                            color = if (reclaimEnabled) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = x.fieldInkMuted
                         )
                     }
-                    if (reclaimEnabled) {
-                        Icon(
-                            Icons.Default.KeyboardArrowRight,
-                            contentDescription = "Pick an hour",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                }
+            }
+        }
+
+        // ---- Monthly calendar, with its legend under a hairline ----
+        GlassPanel(contentPadding = PaddingValues(12.dp)) {
+            MonthHeader(
+                monthOffset = monthOffset,
+                onPrev = { monthOffset++ },
+                onNext = { if (monthOffset > 0) monthOffset-- }
+            )
+            Spacer(Modifier.height(4.dp))
+            // Slide toward the direction of travel: earlier months enter
+            // from the left, later months from the right
+            AnimatedContent(
+                targetState = monthOffset,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally { -it } + fadeIn()) togetherWith
+                                (slideOutHorizontally { it } + fadeOut())
                     } else {
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = "Unavailable",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        (slideInHorizontally { it } + fadeIn()) togetherWith
+                                (slideOutHorizontally { -it } + fadeOut())
                     }
-                }
-            }
-        }
-
-        // ---- Monthly calendar (info) ----
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = BeeCardDefaults.colors(),
-            elevation = BeeCardDefaults.elevation()
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                MonthHeader(
-                    monthOffset = monthOffset,
-                    onPrev = { monthOffset++ },
-                    onNext = { if (monthOffset > 0) monthOffset-- }
+                },
+                label = "monthSlide"
+            ) { offset ->
+                MonthGrid(
+                    monthOffset = offset,
+                    outcomes = outcomes,
+                    superDays = superDays,
+                    onDayClick = { statsDayMillis = it }
                 )
-                Spacer(Modifier.height(8.dp))
-                // Slide toward the direction of travel: earlier months enter
-                // from the left, later months from the right
-                AnimatedContent(
-                    targetState = monthOffset,
-                    transitionSpec = {
-                        if (targetState > initialState) {
-                            (slideInHorizontally { -it } + fadeIn()) togetherWith
-                                    (slideOutHorizontally { it } + fadeOut())
-                        } else {
-                            (slideInHorizontally { it } + fadeIn()) togetherWith
-                                    (slideOutHorizontally { -it } + fadeOut())
-                        }
-                    },
-                    label = "monthSlide"
-                ) { offset ->
-                    MonthGrid(
-                        monthOffset = offset,
-                        outcomes = outcomes,
-                        superDays = superDays,
-                        dayAvgs = dayAvgs,
-                        onDayClick = { statsDayMillis = it }
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                // Four keys plus the info button no longer fit one line on a
-                // narrow phone, so the legend flows onto a second row instead
-                // of clipping.
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
-                ) {
-                    LegendDot(color = LocalBeeExtras.current.accentFill, hollow = false, label = "complete")
-                    LegendSuperDay()
-                    LegendItem(Sym.Beginner, "beginner day")
-                    LegendItem(Sym.Saver, "saver used")
-                    LegendDot(color = Color(0xFFE57373), hollow = true, label = "missed")
-                    IconButton(onClick = { showRules = true }, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = "How streaks work",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+            }
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(thickness = 1.dp, color = x.fieldInk.copy(alpha = 0.08f))
+            Spacer(Modifier.height(10.dp))
+            CalendarLegend(beginner = streakState.beginnerMode)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(PillShape)
+                    .clickable(onClickLabel = "How streaks work") { showRules = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Info, contentDescription = null,
+                    tint = x.fieldInkMuted, modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    if (streakState.beginnerMode) "How beginner mode works" else "How streaks work",
+                    fontSize = 12.sp, fontWeight = FontWeight.Medium, color = x.fieldInkMuted
+                )
             }
         }
 
-        // ---- Streak log (collapsed by default) ----
-        var logExpanded by remember { mutableStateOf(false) }
-        val logChevron by animateFloatAsState(if (logExpanded) 180f else 0f, label = "logChevron")
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = BeeCardDefaults.colors(),
-            elevation = BeeCardDefaults.elevation()
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { logExpanded = !logExpanded },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "History",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (logExpanded) "Collapse" else "Expand",
-                        modifier = Modifier.rotate(logChevron)
-                    )
-                }
-                if (logExpanded) {
-                    Spacer(Modifier.height(8.dp))
-                    StreakLogContent(
-                        ratings = allRatings,
-                        modeEvents = modeEvents,
-                        refreshKey = viewModel.refreshTrigger + spendsVersion
-                    )
-                }
-            }
-        }
+        // ---- History (collapsed to a peek by default) ----
+        StreakHistoryPanel(
+            ratings = allRatings,
+            modeEvents = modeEvents,
+            refreshKey = viewModel.refreshTrigger + spendsVersion
+        )
 
         Spacer(Modifier.height(24.dp)) // trailing breathing room (nav is a bottomBar)
         } // page column
+    }
     }
 
     // ---- Pick which missed hour to add ----
@@ -469,6 +406,7 @@ fun StreaksTab(
 
 @Composable
 private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit) {
+    val x = LocalBeeExtras.current
     val cal = Calendar.getInstance().apply {
         add(Calendar.MONTH, -monthOffset)
         set(Calendar.DAY_OF_MONTH, 1)
@@ -479,12 +417,12 @@ private fun MonthHeader(monthOffset: Int, onPrev: () -> Unit, onNext: () -> Unit
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onPrev) { Icon(Icons.Default.KeyboardArrowLeft, "Earlier month") }
-        Text(fmt.format(cal.time), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        IconButton(onClick = onPrev) { Icon(Icons.Default.KeyboardArrowLeft, "Earlier month", tint = x.fieldInk) }
+        Text(fmt.format(cal.time), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
         IconButton(onClick = onNext, enabled = monthOffset > 0) {
             Icon(
                 Icons.Default.KeyboardArrowRight, "Later month",
-                tint = if (monthOffset > 0) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                tint = if (monthOffset > 0) x.fieldInk else x.fieldInk.copy(alpha = 0.3f)
             )
         }
     }
@@ -495,7 +433,6 @@ private fun MonthGrid(
     monthOffset: Int,
     outcomes: Map<Long, DayOutcome>,
     superDays: Set<Long>,
-    dayAvgs: Map<Long, Double>,
     onDayClick: (Long) -> Unit
 ) {
     val monthStart = Calendar.getInstance().apply {
@@ -515,8 +452,8 @@ private fun MonthGrid(
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = FontWeight.Medium,
+                    color = LocalBeeExtras.current.fieldInkMuted
                 )
             }
         }
@@ -537,7 +474,6 @@ private fun MonthGrid(
                         DayCell(
                             dayNumber = day,
                             outcome = outcomes[key],
-                            avgScore = dayAvgs[key],
                             superDay = key in superDays,
                             isToday = key == todayKey,
                             enabled = key <= todayKey,
@@ -552,80 +488,162 @@ private fun MonthGrid(
     }
 }
 
+/** What a calendar tile shows. The legend draws the same kinds, so it matches exactly. */
+private enum class TileKind { Complete, Super, Saved, Missed, Beginner, Plain, Future }
+
+private fun tileKind(outcome: DayOutcome?, superDay: Boolean, enabled: Boolean): TileKind = when {
+    outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED ->
+        if (superDay) TileKind.Super else TileKind.Complete
+    outcome == DayOutcome.SAVED -> TileKind.Saved
+    outcome == DayOutcome.MISSED || outcome == DayOutcome.BROKEN -> TileKind.Missed
+    outcome == DayOutcome.BEGINNER_COMPLETE -> TileKind.Beginner
+    enabled -> TileKind.Plain
+    else -> TileKind.Future
+}
+
 /**
- * A calendar day as a tile. A complete day is a FILLED honey tile (the streak's
- * colour, never the score bands: a complete 4.5 day must not read as a red
- * alarm next to the hollow red missed tile), so a run reads as one block. A
- * saved day is a honey-washed tile with the
- * saver glyph, a beginner day carries the leaf, a Super day keeps the complete
- * fill and adds a sparkle in the same slot (no outline or halo), a missed day is a hollow red
- * tile, and any other past day a faint one, so the grid has structure even when
- * empty. Today gets an ink outline. Colour never travels alone: fill vs. outline
- * vs. glyph carry the outcome, and tapping opens the stats dialog with digits.
+ * One calendar tile, shared by the grid and the legend. A complete day is a FILLED
+ * honey tile (the streak's colour, never the score bands: a complete 4.5 day must
+ * not read as a red alarm next to the hollow red missed tile), so a run reads as one
+ * block. A Super day is a complete tile with a thin Super-gold rim and a small spark
+ * in its top-right corner ("complete, and then some"), glowing gold in dark mode. A
+ * saved day is a honey wash with the saver glyph, a beginner day carries the leaf, a
+ * missed day is a hollow red outline, any other past day faint glass, and today an
+ * outline in field ink. Colour never travels alone: fill vs. outline vs. glyph carry
+ * the outcome, and tapping a day opens the stats dialog with digits.
  */
+@Composable
+private fun DayTile(
+    kind: TileKind,
+    modifier: Modifier = Modifier,
+    isToday: Boolean = false,
+    corner: Dp = 9.dp,
+    glyphSize: Dp = 9.dp,
+    sparkSize: Dp = 10.dp,
+    glyphCentered: Boolean = false,
+    // The click (and its ripple) belongs to the clipped tile, not the box around it:
+    // clipping the outer box would also cut off the Super day spark and glow.
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit = {}
+) {
+    val x = LocalBeeExtras.current
+    val shape = RoundedCornerShape(corner)
+    val fill = when (kind) {
+        TileKind.Complete, TileKind.Super -> x.accentFill
+        TileKind.Saved -> x.accentFill.copy(alpha = 0.22f)
+        TileKind.Plain, TileKind.Beginner -> x.fieldInk.copy(alpha = 0.06f)
+        TileKind.Missed, TileKind.Future -> Color.Transparent
+    }
+    val glyphAt = if (glyphCentered) Modifier else Modifier.padding(bottom = 3.dp)
+    val glyphAlign = if (glyphCentered) Alignment.Center else Alignment.BottomCenter
+    val border = when {
+        isToday -> BorderStroke(1.5.dp, x.fieldInk)
+        kind == TileKind.Super -> BorderStroke(1.5.dp, x.fieldSuper)
+        kind == TileKind.Missed -> BorderStroke(1.5.dp, x.fieldRed.copy(alpha = 0.85f))
+        else -> null
+    }
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .then(
+                    if (kind == TileKind.Super && x.fieldDark)
+                        Modifier.shadow(6.dp, shape, ambientColor = x.fieldSuper, spotColor = x.fieldSuper)
+                    else Modifier
+                )
+                .clip(shape)
+                .background(fill)
+                .then(if (border != null) Modifier.border(border, shape) else Modifier)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        )
+        when (kind) {
+            TileKind.Saved -> BeeIcon(
+                Sym.Saver, size = glyphSize, tint = x.fieldHoney, contentDescription = null,
+                modifier = Modifier.align(glyphAlign).then(glyphAt)
+            )
+            TileKind.Beginner -> BeeIcon(
+                Sym.Beginner, size = glyphSize, tint = x.fieldInk, contentDescription = null,
+                modifier = Modifier.align(glyphAlign).then(glyphAt)
+            )
+            else -> Unit
+        }
+        content()
+        if (kind == TileKind.Super) {
+            // Rides on the corner, half outside the tile, so it is never clipped
+            BeeIcon(
+                Sym.Sparkle, size = sparkSize, tint = x.fieldSuper, contentDescription = null,
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = sparkSize * 0.25f, y = -sparkSize * 0.25f)
+            )
+        }
+    }
+}
+
 @Composable
 private fun DayCell(
     dayNumber: Int,
     outcome: DayOutcome?,
-    avgScore: Double?,
     superDay: Boolean,
     isToday: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(9.dp)
-    val complete = outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED
-    val missed = outcome == DayOutcome.MISSED || outcome == DayOutcome.BROKEN
-    val missedRed = Color(0xFFE57373)
-    val fill = when {
-        complete -> LocalBeeExtras.current.accentFill
-        outcome == DayOutcome.SAVED -> LocalBeeExtras.current.accentFill.copy(alpha = 0.18f)
-        missed || !enabled -> Color.Transparent
-        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    val x = LocalBeeExtras.current
+    val kind = tileKind(outcome, superDay, enabled)
+    val ink = when (kind) {
+        TileKind.Complete, TileKind.Super -> x.onAccentFill
+        TileKind.Saved -> x.fieldHoney
+        TileKind.Missed -> x.fieldRed
+        TileKind.Future -> x.fieldInk.copy(alpha = 0.3f)
+        else -> if (isToday) x.fieldInk else x.fieldInkMuted
     }
-    val ink = when {
-        complete -> LocalBeeExtras.current.onAccentFill
-        missed -> missedRed
-        enabled -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    }
-    Box(
+    DayTile(
+        kind = kind,
+        isToday = isToday,
         modifier = modifier
             .padding(2.dp)
-            .height(40.dp)
-            .clip(shape)
-            .background(fill)
-            .then(
-                when {
-                    isToday -> Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurface, shape)
-                    missed -> Modifier.border(1.dp, missedRed.copy(alpha = 0.7f), shape)
-                    else -> Modifier
-                }
-            )
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
+            .height(40.dp),
+        onClick = if (enabled) onClick else null
     ) {
         Text(
             "$dayNumber",
             fontSize = 12.sp,
             color = ink,
-            fontWeight = if (isToday || complete) FontWeight.Bold else FontWeight.Normal
+            fontWeight = if (isToday || kind == TileKind.Complete || kind == TileKind.Super) FontWeight.SemiBold
+            else FontWeight.Medium,
+            modifier = Modifier.align(Alignment.Center)
         )
-        when {
-            superDay -> BeeIcon(
-                Sym.Sparkle, size = 9.dp, tint = LocalBeeExtras.current.onAccentFill,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
-            )
-            outcome == DayOutcome.BEGINNER_COMPLETE -> BeeIcon(
-                Sym.Beginner, size = 9.dp,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
-            )
-            outcome == DayOutcome.SAVED -> BeeIcon(
-                Sym.Saver, size = 9.dp, tint = LocalBeeExtras.current.accentText,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
-            )
-            else -> Unit
+    }
+}
+
+/** The legend: a 2x2 grid of mini tiles drawn by [DayTile], plus "Beginner day" in beginner mode. */
+@Composable
+private fun CalendarLegend(beginner: Boolean) {
+    val keys = buildList {
+        add(TileKind.Complete to "Complete")
+        add(TileKind.Super to "Super day")
+        add(TileKind.Saved to "Saved")
+        add(TileKind.Missed to "Missed")
+        if (beginner) add(TileKind.Beginner to "Beginner day")
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        keys.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+                pair.forEach { (kind, label) ->
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        DayTile(
+                            kind = kind, modifier = Modifier.size(15.dp),
+                            corner = 4.dp, glyphSize = 10.dp, sparkSize = 8.dp, glyphCentered = true
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                            color = LocalBeeExtras.current.fieldInkMuted
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
@@ -737,54 +755,6 @@ private fun StatRow(label: String, value: String, valueColor: Color = Color.Unsp
             modifier = Modifier.weight(1f)
         )
         Text(value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
-    }
-}
-
-@Composable
-private fun LegendItem(sym: Sym, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        // the label right beside it already says what this is
-        BeeIcon(sym, size = 13.dp, contentDescription = null)
-        Spacer(Modifier.width(4.dp))
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** A honey square carrying the sparkle: the key for a Super day's calendar tile. */
-@Composable
-private fun LegendSuperDay() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(13.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(LocalBeeExtras.current.accentFill),
-            contentAlignment = Alignment.Center
-        ) {
-            BeeIcon(
-                Sym.Sparkle, size = 9.dp, tint = LocalBeeExtras.current.onAccentFill,
-                contentDescription = null
-            )
-        }
-        Spacer(Modifier.width(4.dp))
-        Text("Super day", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun LegendDot(color: Color, hollow: Boolean, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(10.dp)
-                .then(
-                    // Squares, to match the calendar tiles they explain
-                    if (hollow) Modifier.border(1.dp, color, RoundedCornerShape(3.dp))
-                    else Modifier.clip(RoundedCornerShape(3.dp)).background(color)
-                )
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

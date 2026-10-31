@@ -33,22 +33,33 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
 )
 
 // All fifteen M3 roles on Jakarta, so a plain Text() (bodyLarge via
-// LocalTextStyle) and every M3 component inherit it. Display/headline are
-// ExtraBold with slightly tight tracking; titles Bold; labels SemiBold; body Regular.
+// LocalTextStyle) and every M3 component inherit it.
+//
+// THE WEIGHT SCALE (2026-10-31): weight is spent where the eye should land
+// first, and only there, so nothing shouts at the same volume.
+//   800 ExtraBold — the wordmark and hero numerals (the dial's score, the streak
+//                   count, ring counts): display roles
+//   700 Bold      — headings (the tab's question, page titles: headline roles)
+//                   with tight tracking, and the primary action (Save)
+//   600 SemiBold  — panel titles and values (title roles, the hour range,
+//                   selected tags, dial digits, small caps overlines)
+//   500 Medium    — controls and supporting labels (label roles: chips, buttons,
+//                   legends, captions, nav)
+//   400 Regular   — reading text (body roles)
 val Typography = Typography(
     displayLarge = style(57, 64, FontWeight.ExtraBold, -0.5),
     displayMedium = style(45, 52, FontWeight.ExtraBold, -0.5),
     displaySmall = style(36, 44, FontWeight.ExtraBold, -0.4),
-    headlineLarge = style(32, 40, FontWeight.ExtraBold, -0.4),
-    headlineMedium = style(28, 36, FontWeight.ExtraBold, -0.3),
-    headlineSmall = style(24, 32, FontWeight.ExtraBold, -0.3),
-    titleLarge = style(22, 28, FontWeight.Bold, -0.2),
-    titleMedium = style(16, 24, FontWeight.Bold),
-    titleSmall = style(14, 20, FontWeight.Bold),
+    headlineLarge = style(32, 40, FontWeight.Bold, -0.6),
+    headlineMedium = style(28, 36, FontWeight.Bold, -0.5),
+    headlineSmall = style(24, 32, FontWeight.Bold, -0.4),
+    titleLarge = style(22, 28, FontWeight.SemiBold, -0.2),
+    titleMedium = style(16, 24, FontWeight.SemiBold),
+    titleSmall = style(14, 20, FontWeight.SemiBold),
     bodyLarge = style(16, 24, FontWeight.Normal),
     bodyMedium = style(14, 20, FontWeight.Normal),
     bodySmall = style(12, 16, FontWeight.Normal),
-    labelLarge = style(14, 20, FontWeight.SemiBold),
-    labelMedium = style(12, 16, FontWeight.SemiBold),
-    labelSmall = style(11, 16, FontWeight.SemiBold)
+    labelLarge = style(14, 20, FontWeight.Medium),
+    labelMedium = style(12, 16, FontWeight.Medium),
+    labelSmall = style(11, 16, FontWeight.Medium)
 )

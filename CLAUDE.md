@@ -152,7 +152,7 @@ case verify by static review and say so explicitly — the user compiles locally
 | `MainActivity.kt` | `enableEdgeToEdge` (light status-bar icons) + `BeeingTheme` (fixed light/dark palette, no dynamic colour), notification-tap intent → `PendingRating`, alarm scheduling, `ensureModeInitialized` (fresh install ⇒ beginner mode, before `setContent`) |
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`**, Swiggy-style: `surface` bar, hairline top edge, icon over label; inactive = outline `Sym.*Outline` in `onSurfaceVariant`, active = filled `Sym.Fire`/`Hourglass`/`Chart` + bold label in `accentText`, crossfaded by `currentPage + currentPageOffsetFraction`; no pill). **No Scaffold topBar** — each tab opens with its own `BrandBand`, which owns the status-bar inset. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
 | `NowTab.kt` | The rating flow. **Everything above the card is a `BrandBand`**: row 1 = hamburger (`onMenuClick`, data-options menu) · "Beeing" (`headlineSmall`) · `StatusStrip` (streak icon + count · `MiniHourRing` x/goal, a translucent white `OnBandFill` pill on the band; taps to the Streak tab; merged semantics "N-day streak · H of G hours rated today", click label "Open Streak tab"; in beginner mode the fire becomes 🌱 and the description leads with "Beginner mode · streak paused at N"). Row 2 in the **rating state** = "How was your hour?" (`titleLarge`) over `HourWindowPicker` (translucent pill, ‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + "Nm left" countdown (honey in its last 15 min) + the "why these hours" info icon; in the **caught-up state** = "All caught up" + "Next hour opens in N m". Below the band the rating card (`BeeCardDefaults`) holds dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
-| `ui/BeeSurfaces.kt` | The reskin's shared shell: `BrandBand` (the per-tab aubergine header), `BandFillLayout` (band / middle / pinned-footer frame that turns spare height into animated band growth — see the 2026-10-27 history entry), `BandShape`, `OnBandFill`, `BeeCardDefaults` (card colours/elevation/shape) and `beeChipColors()` (muted unselected, `accentFill` selected; `tagChipColors()` delegates to it) |
+| `ui/BeeSurfaces.kt` | The shared shell: `PageHeader` (plain-page title), the **night-field glass** (`GlassPanelShape`, `PillShape`, `Modifier.glass(x)`, `GlassPanel`, `fieldChipColors()`/`fieldChipBorder()`, `fieldEmptyCellColor`), and the plain page's `BeeCardDefaults`, `beeChipColors()` (`tagChipColors()` delegates to it), `BeeButtonDefaults`, `emptyCellColor`. `BrandBand`, `BandFillLayout`, `scaledLayout`, `animatedHeight`, `BandShape` and `OnBandFill` were deleted with the band (2026-10-31); `NowTab`/`StreaksTab`/`DecagonDial` rows above predate that entry |
 | `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `JakartaFontFamily` + `Typography`, `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
 | `CatchTheBee.kt` | The caught-up screen's **earned way out**: `CatchTheBee(onCatch)` — a **🐝 emoji** bee (38dp, sized in dp→sp so font scale can't grow it, in a 64dp circular tap target; the one deliberate exception to "UI emoji → Material Symbols", by owner call: the `Sym.Reclaim` icon didn't read as a bee in flight; it's mirrored when heading right since the emoji faces left) drifting slowly (`BEE_SPEED_PER_S` 70dp/s, eased legs to random points, wing wobble + bob, flips to face its heading) inside its field, under a "Catch the bee to lock the phone" prompt that drops in once then pulses. Every moving value is read in `offset {}`/`graphicsLayer {}` lambdas, so flight never recomposes; it runs on the frame clock, so it stops on its own when the tab pages away, the app is backgrounded or the screen is off. With system animations off (`ANIMATOR_DURATION_SCALE == 0`) the bee sits still and the prompt doesn't pulse |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
@@ -212,11 +212,18 @@ case verify by static review and say so explicitly — the user compiles locally
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
   You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. **A `BrandBand` is a
-  stage for one thing about you, right now** — only **Now** (the hour to rate)
-  and **Streak** (the streak) have one (aubergine gradient, 26dp bottom corners,
-  white content, owns the status-bar inset — there is no Scaffold topBar).
-  Records and utilities — **Past (Journal), Trends, Settings** — open on the
+  all 15 M3 type roles), so plain `Text()` inherits it. **Now and Streak sit on
+  the night field; there is no band** (2026-10-31, spec
+  `docs/superpowers/specs/2026-10-31-night-field-design.md`): one radial-glow
+  surface (`BeeExtras.fieldBrush`) edge to edge, each tab owning its status-bar
+  inset (there is no Scaffold topBar). On the field everything is **glass**
+  (`glassFill` + 1dp `glassLine`, never a shadow, `GlassPanel` /
+  `Modifier.glass`) or honey; one shape family — panels 20dp
+  (`GlassPanelShape`), everything smaller a circle or a full pill (`PillShape`).
+  Field text uses the field roles (`fieldInk`, `fieldInkMuted` ≥60%/70%,
+  `fieldHoney`, `fieldRed`, `fieldSuperText`, `fieldDone`), never the page's:
+  the page values fail contrast on the violet light field. Only the Save pill and
+  the streak medallion glow (a honey shadow). Records and utilities — **Past (Journal), Trends, Settings** — open on the
   plain page under a **`PageHeader`** (large title, optional back arrow /
   trailing slot), all over a calm page
   (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
@@ -228,8 +235,8 @@ case verify by static review and say so explicitly — the user compiles locally
   (always `#F5A623`, aubergine ink `onAccentFill`); text/controls use
   `primary`, which is **deepened to `#9A6000` in light mode** because M3 draws
   TextButtons/switches/checkboxes in `primary` and plain honey on white is
-  2:1. `accentText` is honey-as-label on the page (nav, bee prompt). On the
-  band, chips/pills are `OnBandFill` (white 14%). Score bands = data only:
+  2:1. `accentText` is honey-as-label on the page; on the field it is
+  `fieldHoney` (`#7A4A00` in light mode). Score bands = data only:
   1–4 red, 5–7 amber, 8–10 green (`scoreBandColor` for ints,
   `getScoreColor` for averages). Honey gold = streak identity. Progress rings
   are never red.
@@ -239,7 +246,8 @@ case verify by static review and say so explicitly — the user compiles locally
   single daily full-screen celebration, waggle = rare milestones only.
 - **Lock phone exists ONLY in the caught-up state** (no pending hours).
   Rating pending hours always outranks leaving.
-- Cards: `BeeCardDefaults` (20dp radius, `surface` fill, light-mode shadow), 16dp padding.
+- Cards (plain page only — Past, Trends, Settings): `BeeCardDefaults` (20dp radius,
+  `surface` fill, light-mode shadow), 16dp padding. The field tabs have no cards.
   Cards inside a dialog use `surfaceVariant` instead (a card on a card-coloured dialog vanishes).
   Every scrollable tab ends with a 24dp spacer — the nav is a `bottomBar` and
   insets the pager itself, so nothing has to clear a floating pill any more.
@@ -1103,3 +1111,114 @@ case verify by static review and say so explicitly — the user compiles locally
   once-a-day `super_invite_shown_day` gate. Yesterday's ring closed after midnight
   still gets no screen (`!day.isToday`). The status cue keeps its exact fit over
   the same clock-only count.
+- 2026-10-31 (**night field: one surface for Now and Streak**): spec
+  `docs/superpowers/specs/2026-10-31-night-field-design.md` (mockups beside it).
+  Owner verdict on Now: "not coherent, in both states" — a band, a card and a
+  grey slab from three different apps, and six unrelated rounded shapes. Visual
+  and layout only: no rule, number, stored value or notification changed.
+  (1) **The field**: `BeeExtras` gained `fieldBrush` (a `ShaderBrush` radial
+  gradient, centred top, 120% wide × 70% deep, squashed via its local matrix),
+  `fieldTop/Bottom`, `fieldDark`, `fieldInk`, `fieldInkMuted`, `fieldHoney`,
+  `glassFill`, `glassLine`, `navOnField`, `fieldRed`, `fieldSuper`,
+  `fieldSuperText`, `fieldDone`; the band fields (`bandBrush/Top/Bottom`) are
+  gone. Light mode is a soft violet (`#DCCDF6 → #F8F5FD`) with violet-black ink
+  `#24123A`. Values chosen by contrast, all pinned in `PaletteContrastTest`:
+  light honey text `#7A4A00`, light muted ink 70%, light red `#A4161A`, light
+  Super text `#6E5300`, light green `#1B5E20`; dark red lifted to `#FF8A80`
+  (#FF6B6B was 3.9:1 on glass); the disabled Save wash is 18% honey.
+  (2) **Now, rating**: no band, no card. The top row, "How was your hour?"
+  (25sp ExtraBold), ONE hour line (‹ range › with no container, then "· 1h 46m
+  left" in field honey — **tapping the countdown opens "Why only these hours?"**,
+  the ⓘ is gone), the dial at its old width (32dp side padding), glass tag pills
+  (the fold is a **dashed-outline pill**), "+ Add a note" in muted ink (opens as
+  a glass field: `NotesSection(field = true)`), and a full-width honey **Save
+  pill** pinned above the nav (glows while it can act; disabled = honey wash
+  with honey-text label, never grey). A plain `Column` with the tags in
+  `weight(1f)` replaced `BandFillLayout`.
+  (3) **The dial** (`DecagonDial.kt`, drawing only — every mechanic untouched):
+  the core is a **circle** (`CORE_CIRCLE_FRAC` 0.172, inside the old decagon's
+  apothem, so the ring geometry, hit-test and rim trims didn't move); unselected
+  cells are glass with field-ink digits at 85%; the selected cell is its score
+  colour with a 2dp white stroke; rated, the core floods with the score and
+  gets a 25%-alpha halo (`HALO_R_FRAC`/`HALO_W_FRAC`); unrated, a glass core
+  reads "Pick a rating"; the notch is field ink; the fast-spin annulus is glass.
+  **Digits on a score fill keep `dialDigitColor`'s lightness flip** (white on the
+  1–4 red), not the spec's "dark ink": dark ink on `#B71C1C` is 2.6:1.
+  (4) **Now, caught up**: a 112dp ring (the Streak hero's `StreakRing`, now
+  `internal` with a `lapColor` param — honey on a glass track, 4 segments in
+  beginner mode, the Super lap once a Master ring closes; count "H/G", or "H/12"
+  while a Super day is in reach), "All caught up", "Next hour opens in Nm", the
+  today strip as a glass `TodayStripPanel` ("TODAY" · "avg N.N"), the slipped-
+  hours link in muted ink, then `CatchTheBee` in the remaining height (its
+  prompt now sits at the field's **bottom**, in field honey, 17sp) over an
+  **outlined glass Lock pill** (not honey: leaving isn't "act here"; the
+  trailing bee glyph dropped, the words unchanged). **`BestHourCard` is
+  deleted** — one job per screen.
+  (5) **Streak**: no `BrandBand`; the field with the hero pinned above the
+  scroller (so nothing scrolls under the fixed top row). `StreakMeter` floats on
+  the field in field roles (medallion glows; at-risk ink flips on the red's
+  lightness). "Missed an hour?" is a `GlassPanel` (AddPast on a honey-wash
+  circle, subtitle just "Add a past hour", no caret; spent = faded, no lock).
+  The calendar is a glass panel of `DayTile`s (Complete honey · **Super day =
+  honey + `fieldSuper` rim + a spark riding the top-right corner, gold glow in
+  dark** · Saved wash + shield · Missed red outline · Today ink outline · plain
+  faint glass · beginner leaf); the click lives on the inner tile so the spark
+  and glow aren't clipped. The legend is a **2×2 grid of the same `DayTile`s**
+  (+ "Beginner day" in beginner mode) under a hairline, with a "How streaks
+  work" link under it. History is `StreakHistoryPanel` (replaced
+  `StreakLogContent`): collapsed to a peek at the latest event, the whole panel
+  toggles, expanded rows grouped by `historyGroup` ("THIS WEEK", "EARLIER IN
+  OCTOBER", month names) with a 30dp `EventTile`, one-line detail and a "d MMM"
+  date; still 3 months, 60 rows.
+  (6) **Chrome**: `BandTopRow` lerps to field ink and a glass bell/strip;
+  `BottomNavBar` lerps to `navOnField` + a field-ink hairline + field honey over
+  Streak/Now. Status-bar icons are now set once in `BeeingTheme` (light in dark
+  mode, dark in light mode, every tab); the pager-dependent `SideEffect` is gone.
+  Past, Trends, Settings, Tags, the sheets, dialogs and celebrations are
+  untouched. Not device-verified from this session.
+- 2026-10-31 (follow-ups): (1) the Now tab's **status strip lost its glass
+  pill**: flame + count and ring + "H/G" sit straight on the field beside the
+  bell, no divider (the pill shape survives only as the ripple). (2) **Font-size
+  floor (owner call)**: the owner's phone runs font scale 0.8 at 450dp wide, and
+  since font size shrinks text but not the dp shapes around it, the tabs looked
+  empty next to the mockups. `fullFontDensity()` (`ui/BeeSurfaces.kt`) keeps the
+  system font size but never below 1.0; it is provided around Now's and
+  Streak's field content, the journal + Trends (`PastTab`'s `AnimatedContent`)
+  and the shared top row. Dialogs, sheets, Settings, Tags and the nav bar stay on
+  the system setting; font sizes above 100% still apply everywhere.
+  (3) "How was your hour?" went 25sp → 36sp (owner). A full-width dial (ring
+  sized to the 16dp gutters) was tried and reverted by the owner: the dial keeps
+  its 32dp side padding.
+  (4) **Fixed proportions at any DPI (owner)**: `fullFontDensity()` became
+  `designDensity()` (`ui/BeeSurfaces.kt`). Besides the font-size floor it
+  rescales dp so the screen's short side is always `DESIGN_WIDTH_DP` (450, the
+  owner's phone at 1440px / density 512 when the layout was tuned), so a
+  different screen zoom or phone shows the same picture, scaled. Provided around
+  the same places as before (Now, Streak, journal + Trends, the top row — now
+  its whole box, padding and height included, so it lines up with each tab's
+  scaled `BandTopRowSpacer`). The nav bar, dialogs, sheets, Settings and Tags
+  stay on the system's dp and font size.
+  (5) **Mockup proportions, checked against a device screenshot**: the dial's
+  insides follow the mockup as fractions of the ring's fixed outer radius R
+  (0.394*s — footprint, notch and rim trims unchanged): cells 0.20R with clear
+  gaps (`CELL_R_FRAC` 0.0788, was 0.0902 and nearly touching), cell centres
+  0.80R (`CELL_D_FRAC`, replaces the core-derived distance; `CORE_R_FRAC` and
+  `CELL_GAP_FRAC` are gone), core 0.47R (`CORE_CIRCLE_FRAC` 0.185), halo on 0.54R;
+  tap slop `rc * 1.22`. Save pill 52 → 64dp with 18sp text; the hour range and
+  countdown 18sp; field tag chips 15sp (`FieldChipTextSize`, via
+  `TagChipContent(fontSize)`).
+  (6) **Quieter tags (owner: "distracting")**: field chips are Medium weight in
+  ink at 88% (`fieldChipColors()`); a selected chip steps up to SemiBold on its
+  honey (`fieldChipWeight(selected)`, passed through `TagChipContent(fontWeight)`).
+  (7) **One weight scale, app-wide (owner: "intentional and professionally
+  gorgeous")**, written down in `ui/theme/Type.kt`: 800 = the wordmark and hero
+  numerals (display roles); 700 = headings with tight tracking (headline roles,
+  now Bold, -0.4 to -0.6) and the primary action (Save); 600 = panel titles and
+  values (title roles, now SemiBold; the hour range, selected tags, dial digits,
+  caps overlines); 500 = controls and supporting labels (label roles, now Medium:
+  chips, legends, captions); 400 = body. Explicit overrides were swept to match
+  in Now, Streak, the top row, Past/Trends, the edit sheet, `PageHeader`,
+  Settings and Tags ("How was your hour?" / "All caught up" are Bold with
+  -0.8 / -0.6sp tracking; the top-row counts Bold; Lock SemiBold). The dial
+  now draws in **Plus Jakarta Sans** (`DialFaces`: cells 600, core numeral 800,
+  score word 600, "Pick a rating" 500) instead of the phone's system bold.

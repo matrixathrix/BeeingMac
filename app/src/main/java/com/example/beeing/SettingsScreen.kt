@@ -200,7 +200,7 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
 private fun Section(label: String, content: @Composable () -> Unit) {
     Text(
         label,
-        fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp,
+        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp)
     )

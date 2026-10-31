@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --honey: #F5A623; --ink: #2A0F31; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0A0C; color: #EDE9F0; font-family: 'Plus Jakarta Sans', sans-serif; padding: 32px 28px 80px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .lede { color: #A9A3AE; margin: 6px 0 26px; max-width: 860px; line-height: 1.5; font-size: 14px; }
+  .row { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 34px; }
+  .cap { font-size: 11px; color: #7d7682; text-align: center; margin-top: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .notes { max-width: 860px; color: #B9B3BE; font-size: 13.5px; line-height: 1.6; }
+  .notes h2 { font-size: 18px; color: #fff; margin: 4px 0 6px; }
+  .notes ul { margin-left: 18px; }
+
+  .phone { width: 300px; height: 640px; border-radius: 34px; overflow: hidden; position: relative; border: 6px solid #000; box-shadow: 0 18px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .sb { height: 22px; flex: none; }
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 0; }
+  .brand { font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
+  .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+  .flame { color: var(--honey); }
+  .bell { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+  .scroll { flex: 1; overflow: hidden; }
+  .hero { display: grid; grid-template-columns: 1fr 1px 1fr; margin: 14px 16px 0; align-items: start; }
+  .hero .col { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .hero .rule { height: 140px; align-self: center; }
+  .medal { width: 96px; height: 96px; border-radius: 50%; background: var(--honey); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 2px; font-size: 40px; font-weight: 800; box-shadow: 0 10px 28px rgba(245,166,35,.28); }
+  .medal small { font-size: 22px; }
+  .hero .lab { font-size: 12.5px; font-weight: 700; margin-top: 8px; }
+  .savers { display: flex; gap: 4px; margin-top: 8px; align-items: center; font-size: 11px; font-weight: 700; }
+  .savers i { width: 13px; height: 15px; border-radius: 3px 3px 7px 7px; display: inline-block; }
+  .panel { margin: 12px 16px 0; padding: 12px 14px; border-radius: 20px; }
+  .panel .h { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; }
+  .panel .sub { font-size: 12px; margin-top: 2px; }
+  .add { display: flex; align-items: center; gap: 12px; }
+  .add .ic { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+  .cal span { aspect-ratio: 1.3; border-radius: 7px; font-size: 9.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; font-size: 9px; font-weight: 700; text-align: center; letter-spacing: .08em; }
+  .legend { display: flex; gap: 12px; justify-content: center; margin-top: 10px; font-size: 10px; }
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 12px; padding-top: 10px; font-size: 10.5px; font-weight: 600; }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+  .k { width: 14px; height: 14px; border-radius: 4px; position: relative; flex: none; }
+  .cal span.x, .k.x { position: relative; }
+  .cal span.x em, .k.x em { position: absolute; top: -4px; right: -3px; font-style: normal; font-size: 9px; line-height: 1; color: #FFD54F; text-shadow: 0 0 4px rgba(255,213,79,.8); }
+  .k.x em { top: -5px; right: -4px; }
+  .cal span.x { box-shadow: 0 0 0 1.5px #FFD54F, 0 0 10px rgba(255,213,79,.45); }
+  .k.x { box-shadow: 0 0 0 1.5px #FFD54F, 0 0 6px rgba(255,213,79,.45); }
+  .nav { height: 54px; flex: none; display: flex; justify-content: space-around; align-items: center; font-size: 10px; }
+  .nav div { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .nav i { width: 18px; height: 18px; border-radius: 5px; border: 1.6px solid currentColor; display: block; }
+  .nav .on { font-weight: 700; }
+  .nav .on i { background: currentColor; }
+  svg text { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+  /* ---- dark ---- */
+  .dark { background: radial-gradient(120% 70% at 50% 0%, #4A1D53 0%, #2E1135 45%, #1A0A1E 100%); color: #fff; }
+  .dark .bell { background: rgba(255,255,255,.08); }
+  .dark .rule { background: rgba(255,255,255,.12); }
+  .dark .hero .sub2 { color: rgba(255,255,255,.65); }
+  .dark .savers { color: rgba(255,255,255,.7); }
+  .dark .savers i { background: var(--honey); }
+  .dark .savers i.off { background: rgba(255,255,255,.14); }
+  .dark .panel { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.07); }
+  .dark .panel .sub, .dark .dow, .dark .legend { color: rgba(255,255,255,.55); }
+  .dark .add .ic { background: rgba(245,166,35,.16); color: var(--honey); }
+  .dark .cal span { background: rgba(255,255,255,.05); color: rgba(255,255,255,.45); }
+  .dark .cal span.c, .dark .k.c { background: var(--honey); color: var(--ink); }
+  .dark .k.s { background: rgba(245,166,35,.22); }
+  .dark .k.m { box-shadow: inset 0 0 0 1.5px #EF6F6C; }
+  .dark .legend { border-top: 1px solid rgba(255,255,255,.08); color: rgba(255,255,255,.7); }
+  .dark .cal span.s { background: rgba(245,166,35,.22); color: var(--honey); }
+  .dark .cal span.m { background: transparent; box-shadow: inset 0 0 0 1.5px #EF6F6C; color: #EF6F6C; }
+  .dark .cal span.t { box-shadow: inset 0 0 0 1.5px #fff; color: #fff; }
+  .dark .cal span.f { background: transparent; color: rgba(255,255,255,.25); }
+  .dark .nav { border-top: 1px solid rgba(255,255,255,.08); color: rgba(255,255,255,.55); background: rgba(10,4,12,.35); }
+  .dark .nav .on { color: var(--honey); }
+
+  /* ---- light: soft violet ---- */
+  .light { background: radial-gradient(120% 70% at 50% 0%, #DCCDF6 0%, #ECE4FA 45%, #F8F5FD 100%); color: #24123A; }
+  .light .flame { color: #C77D0A; }
+  .light .bell { background: rgba(255,255,255,.7); }
+  .light .rule { background: rgba(36,18,58,.12); }
+  .light .hero .sub2 { color: rgba(36,18,58,.6); }
+  .light .savers { color: rgba(36,18,58,.65); }
+  .light .savers i { background: var(--honey); }
+  .light .savers i.off { background: rgba(36,18,58,.12); }
+  .light .medal { box-shadow: 0 10px 24px rgba(196,120,10,.25); }
+  .light .panel { background: rgba(255,255,255,.7); border: 1px solid rgba(36,18,58,.06); }
+  .light .panel .sub, .light .dow, .light .legend { color: rgba(36,18,58,.55); }
+  .light .add .ic { background: rgba(245,166,35,.2); color: #9A6000; }
+  .light .cal span { background: rgba(36,18,58,.05); color: rgba(36,18,58,.45); }
+  .light .cal span.c, .light .k.c { background: var(--honey); color: var(--ink); }
+  .light .k.s { background: rgba(245,166,35,.25); }
+  .light .k.m { box-shadow: inset 0 0 0 1.5px #D9534F; }
+  .light .legend { border-top: 1px solid rgba(36,18,58,.08); color: rgba(36,18,58,.7); }
+  .light .cal span.x em, .light .k.x em { color: #C99A00; text-shadow: none; }
+  .light .cal span.x { box-shadow: 0 0 0 1.5px #E0B000, 0 0 8px rgba(224,176,0,.35); }
+  .light .k.x { box-shadow: 0 0 0 1.5px #E0B000; }
+  .light .cal span.s { background: rgba(245,166,35,.25); color: #9A6000; }
+  .light .cal span.m { background: transparent; box-shadow: inset 0 0 0 1.5px #D9534F; color: #C0403C; }
+  .light .cal span.t { box-shadow: inset 0 0 0 1.5px #24123A; color: #24123A; }
+  .light .cal span.f { background: transparent; color: rgba(36,18,58,.25); }
+  .light .nav { border-top: 1px solid rgba(36,18,58,.08); color: rgba(36,18,58,.5); background: rgba(255,255,255,.55); }
+  .light .nav .on { color: #9A6000; }
+  .scroll { position: relative; }
+  .hist .h .chev { font-size: 16px; opacity: .6; }
+  .peek { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; }
+  .tile { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex: none; }
+  .grp { font-size: 9.5px; font-weight: 700; letter-spacing: .14em; margin: 12px 0 4px; }
+  .ev { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+  .ev .tx { flex: 1; min-width: 0; }
+  .ev .tx b { display: block; font-size: 12.5px; }
+  .ev .tx small { display: block; font-size: 10.5px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev .at { font-size: 10px; flex: none; }
+  .tile.done { background: var(--honey); color: var(--ink); }
+  .tile.super { background: #FFD54F; color: var(--ink); box-shadow: 0 0 10px rgba(255,213,79,.45); }
+  .tile.saved { background: rgba(245,166,35,.22); color: var(--honey); }
+  .tile.broke { background: rgba(239,111,108,.18); color: #EF6F6C; }
+  .dark .tile.past { background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); }
+  .dark .peek, .dark .ev .tx small, .dark .ev .at, .dark .grp { color: rgba(255,255,255,.55); }
+  .dark .peek b { color: #fff; }
+  .light .tile.past { background: rgba(36,18,58,.07); color: rgba(36,18,58,.65); }
+  .light .tile.saved { color: #9A6000; }
+  .light .tile.broke { background: rgba(217,83,79,.14); color: #C0403C; }
+  .light .tile.super { box-shadow: 0 0 0 1.5px #E0B000; }
+  .light .peek, .light .ev .tx small, .light .ev .at, .light .grp { color: rgba(36,18,58,.55); }
+  .light .peek b { color: #24123A; }
+</style>
+</head>
+<body>
+<h1>Streak tab · History, collapsed and expanded</h1>
+<p class="lede">Each phone is scrolled to the bottom of the Streak tab. <b>Collapsed</b> (the default), History is one glass panel showing a peek at the latest event, so it never looks empty. <b>Expanded</b>, it opens in place into rows grouped by week. Each row has a round tile in the event's colour, a title with its detail, and the time on the right.</p>
+
+<div class="row">
+  <div><div class="phone dark" data-hist="closed" data-scroll="230"></div><div class="cap">Dark · History collapsed</div></div>
+  <div><div class="phone dark" data-hist="open" data-scroll="470"></div><div class="cap">Dark · History expanded</div></div>
+  <div><div class="phone light" data-hist="closed" data-scroll="230"></div><div class="cap">Light · History collapsed</div></div>
+  <div><div class="phone light" data-hist="open" data-scroll="470"></div><div class="cap">Light · History expanded</div></div>
+</div>
+
+<div class="notes">
+  <h2>How History behaves</h2>
+  <ul>
+    <li><b>Collapsed:</b> the title, a one-line peek at the latest event ("Super day · 30 Oct") and a chevron. The whole panel is the tap target.</li>
+    <li><b>Expanded:</b> it opens in place, with the chevron flipped. Rows are grouped under small headers (This week, Earlier in October, September) instead of one long divider list. It still covers the last 3 months.</li>
+    <li><b>Row tiles carry the meaning by colour and icon together:</b> honey hexagon = day complete, gold spark = Super day, honey shield = saver used, faint clock = past hour added, red = streak broken. A Super day that earned a saver stays one row, as today.</li>
+    <li>The time sits on the right in small type, so titles get the full width.</li>
+  </ul>
+</div>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; parent.appendChild(e); return e; }
+const NAV = `<div class="nav"><div class="on"><i></i>Streak</div><div><i></i>Now</div><div><i></i>Past</div></div>`;
+// October 2026 starts on a Thursday; Mon-first grid
+const kinds = {1:'c',2:'c',3:'m',4:'',5:'',6:'c',7:'c',8:'s',9:'x',10:'c',11:'c',12:'',13:'c',14:'c',15:'c',16:'m',17:'',18:'',19:'',20:'',21:'',22:'',23:'',24:'',25:'',26:'',27:'c',28:'c',29:'s',30:'x',31:'t'};
+const EVENTS = [
+  { g: 'THIS WEEK', k: 'super', t: 'Super day', d: '12 hours on 30 Oct · saver earned, 2 of 5', at: '30 Oct' },
+  { k: 'saved', t: 'Streak saver used', d: 'Kept your streak alive on 29 Oct', at: '30 Oct' },
+  { k: 'done', t: 'Day complete', d: 'Day 2 of your streak · 8 hours', at: '28 Oct' },
+  { k: 'done', t: 'Day complete', d: 'Day 1 of your streak · 8 hours', at: '27 Oct' },
+  { k: 'past', t: 'Past hour added', d: 'Added an hour from earlier', at: '27 Oct' },
+  { g: 'EARLIER IN OCTOBER', k: 'broke', t: 'Streak broken', d: 'No savers left on 16 Oct', at: '17 Oct' },
+  { k: 'done', t: 'Day complete', d: 'Day 3 of your streak · 8 hours', at: '15 Oct' },
+];
+const SV = d => `<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">${d}</svg>`;
+const ICON = {
+  super: SV('<path d="M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4z"/>'),
+  saved: SV('<path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5z"/>'),
+  done: SV('<path d="M12 2l8.7 5v10L12 22l-8.7-5V7z"/>'),
+  past: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`,
+  broke: `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`
+};
+function history(open) {
+  const latest = EVENTS[0];
+  let h = `<div class="panel hist ${open ? 'open' : ''}">
+    <div class="h"><span>History</span><span class="chev">${open ? '⌃' : '⌄'}</span></div>`;
+  if (!open) return h + `<div class="peek"><span class="tile super">${ICON.super}</span><span><b>${latest.t}</b> · ${latest.at}</span></div></div>`;
+  EVENTS.forEach(e => {
+    if (e.g) h += `<div class="grp">${e.g}</div>`;
+    h += `<div class="ev"><span class="tile ${e.k}">${ICON[e.k]}</span><div class="tx"><b>${e.t}</b><small>${e.d}</small></div><span class="at">${e.at}</span></div>`;
+  });
+  return h + '</div>';
+}
+function calendar() {
+  let h = '<div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div><div class="cal">';
+  for (let i = 0; i < 3; i++) h += '<span class="f"></span>';
+  for (let d = 1; d <= 31; d++) h += kinds[d] === 'x' ? `<span class="c x">${d}<em>✦</em></span>` : `<span class="${kinds[d]}">${d}</span>`;
+  return h + '</div>';
+}
+document.querySelectorAll('.phone').forEach(p => {
+  const light = p.classList.contains('light');
+  p.innerHTML = `
+    <div class="sb"></div>
+    <div class="top"><span class="brand">Beeing</span><span class="stat"><span class="bell">🔔</span><span style="opacity:.75">⋮</span></span></div>
+    <div class="scroll"><div class="inner" style="transform:translateY(-${p.dataset.scroll || 0}px)">
+      <div class="hero">
+        <div class="col">
+          <div class="medal"><small>🔥</small>4</div>
+          <div class="lab">4-day streak</div>
+          <div class="savers"><i></i><i></i><i class="off"></i><i class="off"></i><i class="off"></i><span style="margin-left:4px">2/5</span></div>
+        </div>
+        <div class="rule"></div>
+        <div class="col">
+          <svg class="ring" viewBox="0 0 120 120" width="96" height="96"></svg>
+          <div class="lab">Today</div>
+          <div class="sub2" style="font-size:11.5px;margin-top:6px">5 more to complete</div>
+        </div>
+      </div>
+      <div class="panel add">
+        <span class="ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v5l3 2"/><path d="M20.5 13A8.5 8.5 0 1 1 12 3.5"/><path d="M19 3v5M16.5 5.5h5"/></svg></span>
+        <div style="flex:1"><div class="h">Missed an hour?</div><div class="sub">Add a past hour</div></div>
+      </div>
+      <div class="panel">
+        <div class="h"><span>‹</span><span>October 2026</span><span style="opacity:.3">›</span></div>
+        ${calendar()}
+        <div class="legend">
+          <span><b class="k c"></b>Complete</span>
+          <span><b class="k c x"><em>✦</em></b>Super day</span>
+          <span><b class="k s"></b>Saved</span>
+          <span><b class="k m"></b>Missed</span>
+        </div>
+      </div>
+      ${history(p.dataset.hist === 'open')}
+      <div style="height:24px"></div>
+    </div></div>` + NAV;
+  const r = p.querySelector('svg.ring');
+  const track = light ? 'rgba(36,18,58,.10)' : 'rgba(255,255,255,.12)';
+  el('circle', { cx: 60, cy: 60, r: 48, fill: 'none', stroke: track, 'stroke-width': 10 }, r);
+  el('circle', { cx: 60, cy: 60, r: 48, fill: 'none', stroke: '#F5A623', 'stroke-width': 10, 'stroke-linecap': 'round', 'stroke-dasharray': `${301.6 * 3 / 8} 302`, transform: 'rotate(-90 60 60)' }, r);
+  el('text', { x: 60, y: 70, 'text-anchor': 'middle', fill: light ? '#24123A' : '#fff', 'font-size': 30, 'font-weight': 800 }, r, '3');
+  el('text', { x: 60, y: 86, 'text-anchor': 'middle', fill: light ? 'rgba(36,18,58,.55)' : 'rgba(255,255,255,.6)', 'font-size': 11, 'font-weight': 700 }, r, 'of 8');
+});
+</script>
+</body>
+</html>

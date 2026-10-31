@@ -8,6 +8,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import com.example.beeing.ui.BeeButtonDefaults
 import com.example.beeing.ui.beeChipColors
+import com.example.beeing.ui.fieldChipBorder
+import com.example.beeing.ui.fieldChipColors
+import com.example.beeing.ui.glass
+import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.tagDisplayText
@@ -35,6 +39,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -109,7 +114,7 @@ fun HistoryPanel(ratings: List<RatingEntry>, onEdit: (RatingEntry) -> Unit) {
                         ) {
                             Text(
                                 "${item.score}",
-                                fontWeight = FontWeight.ExtraBold,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = if (item.score >= 5) Color.Black else Color.White
                             )
@@ -163,7 +168,7 @@ private fun SectionLabel(text: String, top: Dp) {
     Text(
         text,
         fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.8.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -234,7 +239,7 @@ fun EditEntrySheet(
                 Text(
                     text = if (editable) "Edit entry" else "Entry details",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f).padding(top = 6.dp)
                 )
                 // Time period + seek carets in a pill, with the date centered below.
@@ -257,7 +262,7 @@ fun EditEntrySheet(
                             Text(
                                 text = "${formatHour(startH)} – ${formatHour(endH)}",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                                 maxLines = 1
                             )
                             IconButton(
@@ -313,7 +318,7 @@ fun EditEntrySheet(
                             Text(
                                 text = "$score",
                                 fontSize = if (isSelected) 15.sp else 13.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                 color = if (score >= 5) Color.Black else Color.White
                             )
                         }
@@ -459,7 +464,7 @@ private fun ReadOnlyEntry(entry: RatingEntry, onDelete: () -> Unit) {
             Text(
                 (DIAL_WORDS[entry.score] ?: "").replaceFirstChar { it.uppercase() },
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.SemiBold
             )
             if (entry.isReclaimed) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -537,18 +542,31 @@ internal val TagChipShape = RoundedCornerShape(50)
  * slot rather than `leadingIcon` so all four chip call sites stay one-liners.
  */
 @Composable
-internal fun TagChipContent(tag: String) {
+internal fun TagChipContent(
+    tag: String,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    fontWeight: FontWeight? = null
+) {
     val sym = tagSym(tag)
     if (sym == null) {
-        Text(tag)
+        Text(tag, fontSize = fontSize, fontWeight = fontWeight)
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BeeIcon(sym, size = 15.dp, contentDescription = null)
             Spacer(Modifier.width(5.dp))
-            Text(tagLabelOf(tag))
+            Text(tagLabelOf(tag), fontSize = fontSize, fontWeight = fontWeight)
         }
     }
 }
+
+/** Tag text on the night field: a step up from the chips' 14sp, as in the mockup. */
+internal val FieldChipTextSize = 15.sp
+
+/**
+ * Tag weight on the night field: Medium, so a field of 30 chips stays quiet next
+ * to the heading and the dial; a selected tag steps up to SemiBold on its honey.
+ */
+internal fun fieldChipWeight(selected: Boolean) = if (selected) FontWeight.SemiBold else FontWeight.Medium
 
 @Composable
 internal fun tagChipColors() = beeChipColors()
@@ -562,10 +580,14 @@ fun SoulFuelTagsSection(
     isEnabled: Boolean,
     onTagsUpdate: (List<String>) -> Unit,
     onManageTags: () -> Unit,
-    onCollapse: (() -> Unit)? = null
+    onCollapse: (() -> Unit)? = null,
+    /** On the night field (the Now tab): glass chips with field ink. */
+    field: Boolean = false
 ) {
     // Centered chips that read as part of the rating dial above; the single
     // pencil opens the manage-tags popup (reorder / rename / delete / add).
+    val x = LocalBeeExtras.current
+    val quiet = if (field) x.fieldInkMuted else MaterialTheme.colorScheme.onSurfaceVariant
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         FlowRow(
             Modifier.fillMaxWidth(),
@@ -573,16 +595,20 @@ fun SoulFuelTagsSection(
             verticalArrangement = Arrangement.spacedBy(-8.dp, Alignment.CenterVertically)
         ) {
             availableTags.forEach { tag ->
+                val selected = tag in selectedTags
                 InputChip(
-                    selected = tag in selectedTags,
+                    selected = selected,
                     onClick = {
                         if (tag in selectedTags) selectedTags.remove(tag) else selectedTags.add(tag)
                     },
-                    label = { TagChipContent(tag) },
+                    label = {
+                        if (field) TagChipContent(tag, fontSize = FieldChipTextSize, fontWeight = fieldChipWeight(selected))
+                        else TagChipContent(tag)
+                    },
                     enabled = isEnabled,
                     shape = TagChipShape,
-                    colors = tagChipColors(),
-                    border = null
+                    colors = if (field) fieldChipColors() else tagChipColors(),
+                    border = if (field) fieldChipBorder(selected) else null
                 )
             }
 
@@ -595,7 +621,7 @@ fun SoulFuelTagsSection(
                     Icons.Default.Edit,
                     contentDescription = "Manage tags",
                     modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = quiet
                 )
             }
 
@@ -613,11 +639,11 @@ fun SoulFuelTagsSection(
                         Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                     },
                     shape = TagChipShape,
-                    border = null,
+                    border = if (field) BorderStroke(1.dp, x.glassLine) else null,
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (field) x.glassFill else MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = quiet,
+                        leadingIconContentColor = quiet
                     )
                 )
             }
@@ -629,12 +655,17 @@ fun SoulFuelTagsSection(
 fun NotesSection(
     noteText: String,
     onNoteChange: (String) -> Unit,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    /** On the night field: field-muted "+ Add a note", and the open field is a glass panel. */
+    field: Boolean = false
 ) {
     // Deliberately low-contrast and collapsed by default — an optional
     // afterthought, not a call to action. A slim "+ Add a note" row until
     // tapped; then a compact single-row field at hint-text emphasis.
-    val hint = MaterialTheme.colorScheme.onSurfaceVariant
+    val x = LocalBeeExtras.current
+    val hint = if (field) x.fieldInkMuted else MaterialTheme.colorScheme.onSurfaceVariant
+    // On the field the muted ink is already the floor for readable text, so it isn't faded further
+    val hintAlpha = if (field) 1f else 0.55f
     var expanded by remember { mutableStateOf(noteText.isNotEmpty()) }
     var wantFocus by remember { mutableStateOf(false) }
     // onFocusChanged fires once with isFocused=false when the field first
@@ -652,18 +683,18 @@ fun NotesSection(
         ) {
             Icon(
                 Icons.Default.Add, contentDescription = null,
-                tint = hint.copy(alpha = 0.55f), modifier = Modifier.size(15.dp)
+                tint = hint.copy(alpha = hint.alpha * hintAlpha), modifier = Modifier.size(15.dp)
             )
             Spacer(Modifier.width(5.dp))
-            Text("Add a note", fontSize = 13.sp, color = hint.copy(alpha = 0.55f))
+            Text("Add a note", fontSize = 13.sp, color = hint.copy(alpha = hint.alpha * hintAlpha))
         }
     } else {
         BasicTextField(
             value = noteText,
             onValueChange = onNoteChange,
             enabled = enabled,
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = hint),
-            cursorBrush = SolidColor(hint),
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, color = if (field) x.fieldInk else hint),
+            cursorBrush = SolidColor(if (field) x.fieldInk else hint),
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester)
@@ -679,11 +710,14 @@ fun NotesSection(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .border(1.dp, hint.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .then(
+                            if (field) Modifier.glass(x)
+                            else Modifier.border(1.dp, hint.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        )
                         .padding(horizontal = 12.dp, vertical = 9.dp)
                 ) {
                     if (noteText.isEmpty()) {
-                        Text("Add a note", fontSize = 14.sp, color = hint.copy(alpha = 0.4f))
+                        Text("Add a note", fontSize = 14.sp, color = if (field) hint else hint.copy(alpha = 0.4f))
                     }
                     inner()
                 }
