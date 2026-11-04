@@ -31,6 +31,9 @@ const val RECLAIM_TAG = "💧reclaimed"
 /** True when this entry was added later ("Add a past hour"). It never counts toward a streak. */
 val RatingEntry.isReclaimed: Boolean get() = RECLAIM_TAG in tags
 
+/** Tags fit to show: the reclaim sentinel is carried by the icon badge instead. */
+fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
+
 /** One flip of the mode toggle. `enteredBeginner == false` means "back to Master". */
 data class ModeEvent(val timestamp: Long, val enteredBeginner: Boolean)
 
@@ -504,7 +507,7 @@ internal fun singleNewHourDay(
 }
 
 /** Start millis of the two hours ratable at [nowMs]: the last two finished clock hours, DST-aware. */
-private fun ratableHourStarts(nowMs: Long): Set<Long> {
+internal fun ratableHourStarts(nowMs: Long): Set<Long> {
     val cal = Calendar.getInstance().apply {
         timeInMillis = nowMs
         set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)

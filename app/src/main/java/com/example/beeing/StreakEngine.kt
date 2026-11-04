@@ -71,8 +71,6 @@ import kotlin.math.sin
 // STREAK ENGINE  (pure logic — fully derived from ratings)
 // ============================================================
 
-/** Tags fit to show: the reclaim sentinel is carried by the icon badge instead. */
-fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
 
 // ============================================================
 // RECLAIM SPENDS  (persisted — not derivable from ratings)
