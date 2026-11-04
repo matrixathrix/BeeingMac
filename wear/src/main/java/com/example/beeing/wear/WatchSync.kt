@@ -29,6 +29,7 @@ fun saveFromWatch(ctx: Context, hourStartMs: Long, score: Int, tags: List<String
         tags = tags, modifiedAt = nowMs, origin = Origin.WATCH
     )
     WatchStore.saveLocal(ctx, e)
+    clearReminderIfDone(ctx)
     try {
         Wearable.getDataClient(ctx).putDataItem(
             PutDataRequest.create(PATH_RATING_PREFIX + hourStartMs).setData(encodeRating(e)).setUrgent()
@@ -53,6 +54,7 @@ class WatchSync : WearableListenerService() {
                 // No host = every node's copy of that path.
                 data.deleteDataItems(Uri.Builder().scheme("wear").path(PATH_RATING_PREFIX + e.timestamp).build())
             }
+            clearReminderIfDone(this)
             WatchSurfaces.refresh(this)
         }
     }

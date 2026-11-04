@@ -47,10 +47,14 @@ fun mergedRatings(state: PhoneState, local: List<RatingEntry>): List<RatingEntry
     return state.recentRatings.filter { it.timestamp !in mine } + local
 }
 
+/** The phone's replay resumed over what this watch knows; [ringClosed] compares two of these. */
+fun watchStreakState(state: PhoneState, local: List<RatingEntry>, nowMs: Long): StreakState =
+    computeStreakStateFrom(state.carry, mergedRatings(state, local), state.modeEvents, nowMs)
+
 fun watchView(state: PhoneState?, local: List<RatingEntry>, nowMs: Long): WatchView {
     if (state == null) return WatchView(false, emptyList(), 0, STREAK_HOURS_REQUIRED, 0, false, false, false, 0, true)
     val merged = mergedRatings(state, local)
-    val s = computeStreakStateFrom(state.carry, merged, state.modeEvents, nowMs)
+    val s = watchStreakState(state, local, nowMs)
     return WatchView(
         setUp = true,
         waiting = waitingHours(nowMs, merged.mapTo(HashSet()) { it.timestamp }),
