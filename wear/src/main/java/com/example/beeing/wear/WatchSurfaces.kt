@@ -1,6 +1,7 @@
 package com.example.beeing.wear
 
 import android.content.Context
+import androidx.wear.tiles.TileService
 import com.example.beeing.WatchView
 import com.example.beeing.watchView
 
@@ -11,7 +12,7 @@ import com.example.beeing.watchView
  */
 object WatchSurfaces {
     fun refresh(ctx: Context) {
-        // The Tile and complication requesters are added in their own tasks.
+        TileService.getUpdater(ctx).requestUpdate(BeeingTileService::class.java)
     }
 
     fun view(ctx: Context, nowMs: Long = System.currentTimeMillis()): WatchView =
