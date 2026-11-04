@@ -46,7 +46,7 @@ fun hoursRequiredFor(beginner: Boolean): Int =
 internal fun beginnerAt(timeMs: Long, events: List<ModeEvent>): Boolean =
     events.lastOrNull { it.timestamp <= timeMs }?.enteredBeginner ?: false
 
-internal fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
+fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
 
 enum class DayOutcome { QUALIFIED, SAVED, FADED, BROKEN, MISSED, RECOVERED, BEGINNER_COMPLETE }
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.beeing.NotificationPrefsTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-11-04T19:03:52.167Z" hostname="ATHIZENBOOK" time="0.029">
+  <properties/>
+  <testcase name="pause_ending_at_midnight_does_not_overlap_that_day" classname="com.example.beeing.NotificationPrefsTest" time="0.012"/>
+  <testcase name="equal_start_end_means_off" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="pause_risk_fade_version_at_streak_zero" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="max_pause_is_48h" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="silent_hours_within_one_day" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="pause_quiet_is_silent" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="reminders_off_is_none" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="silent_hours_make_hourly_and_other_silent_but_never_none" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="silent_hours_cross_midnight" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="pause_risk_ignores_beginner" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="pause_off_suppresses_hourly_only" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="silent_switch_off_means_never_silent" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="expired_pause_is_ignored" classname="com.example.beeing.NotificationPrefsTest" time="0.0"/>
+  <testcase name="pause_risk_counts_overlapped_days_minus_qualified_today" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <testcase name="pause_risk_null_when_savers_cover" classname="com.example.beeing.NotificationPrefsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

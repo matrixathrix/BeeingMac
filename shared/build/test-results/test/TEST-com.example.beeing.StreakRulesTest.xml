@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.beeing.StreakRulesTest" tests="27" skipped="0" failures="0" errors="0" timestamp="2026-11-04T19:03:52.263Z" hostname="ATHIZENBOOK" time="0.062">
+  <properties/>
+  <testcase name="miss_with_streak_uses_saver" classname="com.example.beeing.StreakRulesTest" time="0.024"/>
+  <testcase name="today_ten_hours_recovers_immediately" classname="com.example.beeing.StreakRulesTest" time="0.004"/>
+  <testcase name="same_hour_backdated_and_organic_counts_once_as_organic" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="comeback_gift_after_seven_idle_days" classname="com.example.beeing.StreakRulesTest" time="0.004"/>
+  <testcase name="miss_at_streak_zero_fades_saver" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <testcase name="no_burn_inside_open_window" classname="com.example.beeing.StreakRulesTest" time="0.005"/>
+  <testcase name="backdated_hours_do_not_count" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="today_in_progress_has_no_verdict" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <testcase name="recovery_days_left_events_at_two_and_one" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="closed_window_keeps_trailing_run" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="miss_with_no_savers_breaks_and_opens_window" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="recent_days_hold_yesterday_and_today" classname="com.example.beeing.StreakRulesTest" time="0.002"/>
+  <testcase name="beginner_completion_resets_idle_count" classname="com.example.beeing.StreakRulesTest" time="0.002"/>
+  <testcase name="late_eleven_pm_hour_counts_for_yesterday" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <testcase name="beginner_days_neither_earn_nor_spend" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="day_four_does_not_recover" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="gifted_savers_survive_an_open_window" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="savers_cap_at_five" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="ten_hours_on_window_day_1_2_3_recovers" classname="com.example.beeing.StreakRulesTest" time="0.002"/>
+  <testcase name="window_across_dst_change" classname="com.example.beeing.StreakRulesTest" time="0.003"/>
+  <testcase name="super_day_event_fires_at_the_twelfth_hour_even_at_cap" classname="com.example.beeing.StreakRulesTest" time="0.003"/>
+  <testcase name="beginner_days_use_window_days_and_cannot_recover" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="twelve_organic_hours_earns_a_saver" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <testcase name="recovery_counts_qualifying_days_and_ignores_short_ones" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="starts_with_two_savers" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <testcase name="beginner_day_with_twelve_hours_is_not_super" classname="com.example.beeing.StreakRulesTest" time="0.001"/>
+  <testcase name="backdated_hours_never_make_a_super_day" classname="com.example.beeing.StreakRulesTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

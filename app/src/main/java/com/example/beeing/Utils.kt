@@ -15,15 +15,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // --- DATA MODELS ---
-data class RatingEntry(
-    val id: Long,
-    val score: Int,
-    val timestamp: Long,
-    val hourLabel: String,
-    val note: String = "",
-    val tags: List<String> = emptyList()
-)
-
 /** A score chosen on the hourly notification, waiting to be finished in-app. */
 data class PendingRating(val score: Int, val targetTs: Long, val label: String, val tags: List<String> = emptyList())
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.beeing.StreakMomentTest" tests="19" skipped="0" failures="0" errors="0" timestamp="2026-11-04T19:03:52.202Z" hostname="ATHIZENBOOK" time="0.055">
+  <properties/>
+  <testcase name="first_composition_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.021"/>
+  <testcase name="beginner_fourth_hour_counts_beginner_days" classname="com.example.beeing.StreakMomentTest" time="0.018"/>
+  <testcase name="two_days_each_plus_one_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.002"/>
+  <testcase name="pure_delete_returns_null" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="mode_toggle_without_new_hour_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="late_twelfth_hour_after_midnight_is_late" classname="com.example.beeing.StreakMomentTest" time="0.003"/>
+  <testcase name="late_eighth_hour_closes_yesterdays_ring" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="tenth_hour_recovers_only_when_window_closes_by_recovery" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="a_day_only_in_prev_is_ignored_and_a_new_day_counts_from_zero" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="import_jump_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="beginner_twelfth_hour_is_not_a_super_day" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="midnight_rollover_without_a_save_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="restored_old_today_hour_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="eighth_hour_closes_the_ring" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="twelfth_hour_in_the_grace_hour_fires_too" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="app_open_across_midnight_then_late_save_fires" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="twelfth_hour_fires_super_day_once" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <testcase name="restored_old_yesterday_hour_never_fires" classname="com.example.beeing.StreakMomentTest" time="0.0"/>
+  <testcase name="twelfth_hour_at_cap_fires_super_day_without_saver" classname="com.example.beeing.StreakMomentTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

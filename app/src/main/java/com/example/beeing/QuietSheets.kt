@@ -237,10 +237,11 @@ private fun ModeCard(title: String, body: String, selected: Boolean, modifier: M
 
 @Composable
 private fun RiskCard(risk: PauseRisk) {
-    val text = if (risk.breakDayStartMs != null) {
+    val breakDay = risk.breakDayStartMs
+    val text = if (breakDay != null) {
         "This covers ${risk.days} ${plural(risk.days, "day")} and you have ${risk.savers} ${plural(risk.savers, "saver")}. " +
             "If you don't rate on your own, your ${risk.streak}-day streak could break on " +
-            SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(risk.breakDayStartMs)) + "."
+            SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(breakDay)) + "."
     } else {
         "Savers fade on days you don't complete. You could lose ${risk.fadeCount} of your ${risk.savers}."
     }

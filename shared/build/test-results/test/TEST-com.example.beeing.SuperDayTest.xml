@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.beeing.SuperDayTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-04T19:03:52.330Z" hostname="ATHIZENBOOK" time="0.007">
+  <properties/>
+  <testcase name="invite_flag_blocks_a_second_invite_the_same_day" classname="com.example.beeing.SuperDayTest" time="0.003"/>
+  <testcase name="evening_ring_close_counts_every_hour_left" classname="com.example.beeing.SuperDayTest" time="0.001"/>
+  <testcase name="invite_always_shows_and_says_when_the_hours_dont_fit" classname="com.example.beeing.SuperDayTest" time="0.001"/>
+  <testcase name="ring_close_at_8_50pm_gets_the_invite" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <testcase name="invite_flags_the_saver_cap" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <testcase name="cue_uses_exact_fit" classname="com.example.beeing.SuperDayTest" time="0.001"/>
+  <testcase name="yesterdays_ring_closed_after_midnight_gets_no_screen" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <testcase name="late_hint_for_the_super_hour_and_the_ring_hour" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <testcase name="after_midnight_only_ratable_hours_of_yesterday_remain" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <testcase name="ring_close_after_9pm_is_too_late" classname="com.example.beeing.SuperDayTest" time="0.001"/>
+  <testcase name="dst_spring_forward_day_has_23_candidate_hours" classname="com.example.beeing.SuperDayTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
