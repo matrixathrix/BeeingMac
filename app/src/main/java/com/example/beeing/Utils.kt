@@ -360,6 +360,7 @@ fun saveTags(c: Context, tags: List<String>) {
 }
 
 // --- DATA PERSISTENCE ---
+// Rows are encoded by encodeRatingRow/decodeRatingRow (:shared RatingRow.kt).
 fun saveRating(context: Context, entry: RatingEntry) {
     val prefs = context.getSharedPreferences("b", 0)
     val existing = loadRatings(context).toMutableList()
@@ -371,10 +372,9 @@ fun saveRating(context: Context, entry: RatingEntry) {
 
     existing.add(safeEntry)
 
-    val serialized = existing.joinToString("|") { e ->
-        "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}"
-    }
-    prefs.edit { putString("ratings", serialized) }
+    prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
+    // A save for an hour supersedes its deletion (this is also how Undo restores one).
+    clearTombstone(context, entry.timestamp)
 }
 
 fun loadRatings(context: Context): List<RatingEntry> {
@@ -382,28 +382,15 @@ fun loadRatings(context: Context): List<RatingEntry> {
     val data = prefs.getString("ratings", "") ?: return emptyList()
     if (data.isEmpty()) return emptyList()
 
-    return data.split("|").mapNotNull { line ->
-        val parts = line.split(",")
-        if (parts.size >= 4) {
-            RatingEntry(
-                id = parts[0].toLongOrNull() ?: 0L,
-                score = parts[1].toIntOrNull() ?: 0,
-                timestamp = parts[2].toLongOrNull() ?: 0L,
-                hourLabel = parts[3],
-                note = parts.getOrNull(4) ?: "",
-                tags = parts.getOrNull(5)?.split(";")?.filter { it.isNotEmpty() } ?: emptyList()
-            )
-        } else null
-    }.sortedByDescending { it.timestamp }
+    return data.split("|").mapNotNull { decodeRatingRow(it) }.sortedByDescending { it.timestamp }
 }
 
 fun deleteRating(context: Context, id: Long) {
     val prefs = context.getSharedPreferences("b", 0)
-    val existing = loadRatings(context).filter { it.id != id }
-    val serialized = existing.joinToString("|") { e ->
-        "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}"
-    }
-    prefs.edit { putString("ratings", serialized) }
+    val all = loadRatings(context)
+    val existing = all.filter { it.id != id }
+    prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
+    all.firstOrNull { it.id == id }?.let { recordTombstone(context, it.timestamp, System.currentTimeMillis()) }
 }
 
 // --- BACKUP/RESTORE ---

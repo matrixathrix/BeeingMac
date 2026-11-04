@@ -375,7 +375,7 @@ fun EditEntrySheet(
                         Button(
                             colors = BeeButtonDefaults.colors(),
                             onClick = {
-                                onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                                onPersist(editedEntry.copy(tags = selectedTags.toList(), modifiedAt = System.currentTimeMillis()))
                                 onClose()
                             },
                             modifier = Modifier.weight(0.8f)
@@ -421,7 +421,7 @@ fun EditEntrySheet(
             text = { Text("You have unsaved edits to this hour.") },
             confirmButton = {
                 TextButton(onClick = {
-                    onPersist(editedEntry.copy(tags = selectedTags.toList()))
+                    onPersist(editedEntry.copy(tags = selectedTags.toList(), modifiedAt = System.currentTimeMillis()))
                     currentEntry = target
                     pendingTarget = null
                 }) { Text("Save") }
