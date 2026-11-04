@@ -145,7 +145,15 @@ Note for cloud/CI sessions: Google's artifact hosts (dl.google.com,
 maven.google.com) may be blocked, making Gradle builds impossible. In that
 case verify by static review and say so explicitly — the user compiles locally.
 
-## File map (all in `app/src/main/java/com/example/beeing/`)
+## File map (all in `app/src/main/java/com/example/beeing/`, except `:shared`)
+
+**`:shared`** (`shared/src/main/kotlin/com/example/beeing/`, plain Kotlin/JVM, same
+package, tests in `shared/src/test/`) holds everything pure that the phone and the
+watch both need: `StreakRules.kt`, `SuperDay.kt`, `Model.kt` (`RatingEntry`,
+`Origin`, `Tombstone`), `RatingRow.kt` (the stored row codec), `NotificationRules.kt`
+(`NotificationPrefs`, `hourlyDelivery`, `otherDelivery`, `pauseRisk` — the app's
+`NotificationPrefs.kt` keeps only load/save) and `SyncMerge.kt` (`mergeIncoming`).
+
 
 | File | What lives there |
 |---|---|
@@ -179,19 +187,27 @@ case verify by static review and say so explicitly — the user compiles locally
 | `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
 | `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
-| `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
+| `StreakAlerts.kt` | Daily 02:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event; `withdrawStaleAlerts` (run after every save/delete) cancels ones a later rating disproved |
+| `Tombstones.kt` | Deleted hours (prefs `"tombstones"`), kept `TOMBSTONE_TTL_MS` (7 days) so a watch copy can't resurrect one |
 | `RatingFrameGaps.kt` | Pure: `shareRatingGaps` and its base/min gaps, the rule `RatingFrame` (Now tab) uses to spread spare height over its four gaps |
 | `TrendsSelection.kt` | Pure: `previousSpan` (what a selected Trends bar's ▲ ▼ compare against) and `spanLabel` (the scope chip's text) |
 
 ## Data model & persistence gotchas
 
-- `RatingEntry(id, score, timestamp, hourLabel, note, tags)` — **timestamp is
+- `RatingEntry(id, score, timestamp, hourLabel, note, tags, modifiedAt, origin)` — **timestamp is
   the START of the rated hour** (minute/sec zeroed). `id` is the wall-clock
   millis when recorded. `hourLabel` is the ordinal of the hour END ("14th" =
   1–2pm); day membership must be derived from `timestamp`, not the label.
+  `modifiedAt` is the last save (edits stamp it; "the later save wins" when a
+  watch rating syncs) and `origin` is PHONE/WATCH.
 - Storage: SharedPreferences `"b"`, key `"ratings"`, `|`-separated rows,
   `,`-separated fields, tags `;`-joined — so notes/tags must never contain
-  `,` `|` `;` (notes are sanitized on save). No database.
+  `,` `|` `;` (notes are sanitized on save). No database. Rows are written by
+  `encodeRatingRow` with 8 fields (`…,tags,modifiedAt,P|W`); a 6-field row from
+  before 2026-11-05 reads as a phone save with `modifiedAt = id`. The CSV export
+  is unchanged.
+- Deleting an hour leaves a tombstone (`"tombstones"`, `"<hourStart>:<deletedAt>"`
+  joined by `,`); any save to that hour, Undo included, clears it.
 - Reclaim spends persist separately (`"reclaim_spends"`) because they are not
   derivable from ratings. Now that reclaims are free they exist only to enforce
   the `RECLAIM_PER_DAY` cap and to date the "bee sent back" log rows — the key
@@ -282,14 +298,18 @@ case verify by static review and say so explicitly — the user compiles locally
   `PENDING_SCORE`/`TARGET_TS` extras → `PendingRating` → pre-selects the comb.
   When both ratable hours are logged, notification ID 1 is cancelled.
 - **Notification channels** (all created in `createNotificationChannel`):
-  `hourly_bee` / `hourly_bee_silent`, `streak_alerts` / `streak_alerts_silent`,
-  `weekly_report` / `weekly_report_silent`. A channel's sound is fixed at
-  creation, so "silent" is a twin channel. **Silent hours, pause and the
-  reminders switch (`NotificationPrefs.kt`) govern hourly reminders only**
+  `hourly_bee_v2` / `hourly_bee_silent`, `streak_alerts_v2` / `streak_alerts_silent`,
+  `weekly_report_v2` / `weekly_report_silent` (`CHANNEL_HOURLY` / `CHANNEL_STREAK_ALERTS`
+  / `CHANNEL_WEEKLY`). The sounding ones play the bundled Beeing tone
+  `res/raw/beepingandroidbuzz.ogg`; the pre-tone ids are deleted on startup. A
+  channel's sound is fixed at creation, so "silent" is a twin channel. **Silent
+  hours and pause (`NotificationRules.kt`) govern hourly reminders only** — there is
+  no reminders on/off switch (removed 2026-11-05)
   (`hourlyDelivery`: SOUND/SILENT/NONE; the alarm always reschedules). Streak
   alerts and the weekly report use `otherDelivery` — never suppressed, silent
   during silent hours.
-- **Streak alerts:** `StreakAlertReceiver` runs from a daily 00:01 exact alarm
+- **Streak alerts:** `StreakAlertReceiver` runs from a daily 02:01 exact alarm (after
+  yesterday's last ratable hour closes)
   (`scheduleStreakAlerts`, also on boot and app start), replays
   `computeStreakEvents`, and posts each gift / saver-used / saver-faded event
   once (`alertsToPost`; ids in `"alert_notified_ids"`, baseline
@@ -1409,3 +1429,23 @@ case verify by static review and say so explicitly — the user compiles locally
   A release APK can't install over a debug install (different signer): the
   phone must uninstall first, which wipes the app's data, so export a CSV
   backup before switching a phone with real ratings.
+- 2026-11-05 (**Wear groundwork**, phone side of the Wear OS companion; spec
+  `docs/superpowers/specs/2026-11-05-wear-companion-design.md`, plans
+  `docs/superpowers/plans/2026-11-05-wear-groundwork.md` / `-wear-app.md`):
+  (1) the pure engine moved to a **`:shared`** module (see the file map); the
+  three log/bell tests that read app code became `StreakLogTest` in `:app`.
+  (2) **The "Hourly reminders" switch is gone** (owner): pause covers breaks,
+  Android's channel settings cover "never". (3) Ratings carry `modifiedAt` and
+  `origin`; deletes leave 7-day tombstones. (4) **The replay is resumable**:
+  `carryAt(ratings, modes, dayStart)` → `ReplayCarry`, and
+  `computeStreakStateFrom(carry, ratings, modes, now)` equals the full replay for
+  any checkpoint before yesterday (`ReplayCarryTest` checks every split, and a DST
+  day). `ReplayCarry.started` = something was walked; a checkpoint before the first
+  rating resumes at the first rating, as a full replay does. (5) `mergeIncoming`:
+  a watch rating counts only if saved while its hour was ratable (± 5 min), the
+  later save wins (tie → phone), a live rating beats an "Added later" one and
+  refunds its reclaim, a newer tombstone drops it. (6) `ringClosed` /
+  `streakMoment` take `watchHourStarts`, so the phone never re-celebrates an hour
+  the watch saved. (7) Streak alerts run at **02:01**, and an alert a later rating
+  disproved is cancelled. (8) Sounding channels moved to the Beeing tone under v2 ids.
+  Not device-verified (no phone connected; `test assembleDebug` only).
