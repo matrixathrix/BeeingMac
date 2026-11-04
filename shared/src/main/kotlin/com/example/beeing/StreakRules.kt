@@ -489,7 +489,8 @@ sealed interface StreakMoment {
  * a Delete + Undo from the journal restores an old timestamp, and must not celebrate.
  */
 internal fun singleNewHourDay(
-    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
 ): DayTally? {
     if (prev == null) return null
     val before = prev.recentDays.associate { it.dayStartMs to it.countedStarts }
@@ -498,7 +499,8 @@ internal fun singleNewHourDay(
     val old = before[day.dayStartMs].orEmpty()
     if (day.countedHours != old.size + 1) return null
     val added = day.countedStarts.filter { it !in old }.singleOrNull() ?: return null
-    return day.takeIf { added in ratableHourStarts(nowMs) }
+    // The watch already celebrated an hour it saved; the phone never does it again.
+    return day.takeIf { added in ratableHourStarts(nowMs) && added !in watchHourStarts }
 }
 
 /** Start millis of the two hours ratable at [nowMs]: the last two finished clock hours, DST-aware. */
@@ -517,8 +519,11 @@ private fun ratableHourStarts(nowMs: Long): Set<Long> {
 data class RingClosed(val day: DayTally, val count: Int, val beginner: Boolean, val late: Boolean)
 
 /** Fires on the one new hour that brings a day exactly to its goal; same guard as [streakMoment]. */
-fun ringClosed(prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()): RingClosed? {
-    val d = singleNewHourDay(prev, now, nowMs) ?: return null
+fun ringClosed(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
+): RingClosed? {
+    val d = singleNewHourDay(prev, now, nowMs, watchHourStarts) ?: return null
     if (d.countedHours != d.goal) return null
     val count = if (d.beginner) now.beginnerDaysCompleted else d.streakAfter
     return RingClosed(d, count, d.beginner, late = !d.isToday)
@@ -531,9 +536,12 @@ fun ringClosed(prev: StreakState?, now: StreakState, nowMs: Long = System.curren
  * celebrate: none of them add a single counted hour. It is keyed by day, so a save
  * for yesterday after midnight still counts.
  */
-fun streakMoment(prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis()): StreakMoment? {
+fun streakMoment(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
+): StreakMoment? {
     if (prev == null) return null
-    val d = singleNewHourDay(prev, now, nowMs) ?: return null
+    val d = singleNewHourDay(prev, now, nowMs, watchHourStarts) ?: return null
     if (!d.beginner && d.countedHours == SUPER_DAY_HOURS) {
         return StreakMoment.SuperDay(now.savers, d.earnedSaver, late = !d.isToday)
     }

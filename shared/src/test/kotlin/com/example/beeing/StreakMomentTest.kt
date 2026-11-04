@@ -222,4 +222,23 @@ class StreakMomentTest {
         assertNull(streakMoment(prev, now, t))
         assertNull(ringClosed(prev, now, t))
     }
+
+    // --- the watch already celebrated these ------------------------------------
+
+    @Test fun ring_closed_by_a_watch_hour_does_not_fire() {
+        val eighth = d0 + 7 * hourMs
+        assertNull(ringClosed(state(tally(d0, 7)), state(tally(d0, 8)), justAfter(d0, 7), setOf(eighth)))
+    }
+
+    @Test fun super_day_from_a_watch_hour_does_not_fire() {
+        val twelfth = d0 + 11 * hourMs
+        val now = state(tally(d0, 12, earned = true), savers = 3)
+        assertNull(streakMoment(state(tally(d0, 11)), now, justAfter(d0, 11), setOf(twelfth)))
+    }
+
+    @Test fun phone_hour_after_watch_hours_still_fires() {
+        val watchHours = List(7) { d0 + it * hourMs }.toSet()
+        val closed = ringClosed(state(tally(d0, 7)), state(tally(d0, 8)), justAfter(d0, 7), watchHours)
+        assertEquals(8, closed?.day?.countedHours)
+    }
 }

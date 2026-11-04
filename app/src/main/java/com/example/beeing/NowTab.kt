@@ -251,7 +251,10 @@ fun NowTab(
     var previousState by remember { mutableStateOf<StreakState?>(null) }
     LaunchedEffect(streakState) {
         val prev = previousState
-        ringClosed(prev, streakState)?.let { closed ->
+        // Hours the watch saved were celebrated on the watch.
+        val watchHours = allRatings.filter { it.origin == Origin.WATCH && !it.isReclaimed }.mapTo(HashSet()) { it.timestamp }
+        val nowMs = System.currentTimeMillis()
+        ringClosed(prev, streakState, nowMs, watchHours)?.let { closed ->
             val day = closed.day
             val reachable = reachableHours(day.dayStartMs, day.countedStarts, System.currentTimeMillis())
             val invite = gateInvite(
@@ -259,7 +262,7 @@ fun NowTab(
             )
             onRingClosed(RingCelebration(closed.count, closed.beginner, closed.late, invite))
         }
-        streakMoment(prev, streakState)?.let(onStreakMoment)
+        streakMoment(prev, streakState, nowMs, watchHours)?.let(onStreakMoment)
         previousState = streakState
     }
 
