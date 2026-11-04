@@ -57,6 +57,7 @@ class RatingsViewModel : ViewModel() {
     fun saveRating(context: Context, rating: RatingEntry) {
         com.example.beeing.saveRating(context, rating)
         loadRatings(context) // Reload to get fresh data
+        withdrawStaleAlerts(context)
         triggerRefresh()
     }
     
@@ -66,6 +67,7 @@ class RatingsViewModel : ViewModel() {
     fun deleteRating(context: Context, id: Long) {
         com.example.beeing.deleteRating(context, id)
         loadRatings(context)
+        withdrawStaleAlerts(context)
         triggerRefresh()
     }
     

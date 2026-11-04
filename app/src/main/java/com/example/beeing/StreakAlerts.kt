@@ -17,8 +17,10 @@ import java.util.Locale
 // STREAK PHONE ALERTS  (gift, saver used, saver faded — once per event)
 // ============================================================
 //
-// Day verdicts land at midnight, so a daily alarm just after it replays the engine,
-// compares with the ids it already notified and posts each new event exactly once.
+// Day verdicts land at midnight, but yesterday's last two hours stay ratable until
+// 2am (and a watch may sync them later still), so a daily alarm at 02:01 replays the
+// engine, compares with the ids it already notified and posts each new event exactly
+// once. An alert a later rating disproved is withdrawn (withdrawStaleAlerts).
 // Hourly-reminder settings (pause) never apply here; the only
 // setting that does is silent hours, which post the alert on the silent channel.
 
@@ -29,6 +31,31 @@ private const val GIFT_FADE_MS = 2 * 24 * 3_600_000L + 2 * 3_600_000L // day 8 a
 fun alertsToPost(events: List<StreakEvent>, notifiedIds: Set<String>, baselineMs: Long): List<StreakEvent> =
     events.filter { it.type in ALERT_TYPES && it.timestamp >= baselineMs && it.id !in notifiedIds }
         .sortedBy { it.timestamp }
+
+/** Alerts already shown whose event the replay no longer has (a late hour completed the day). */
+fun alertsToWithdraw(events: List<StreakEvent>, notifiedIds: Set<String>): Set<String> {
+    val alertPrefixes = ALERT_TYPES.map { "${it.name}:" }
+    val live = events.mapTo(HashSet()) { it.id }
+    return notifiedIds.filterTo(HashSet()) { id -> alertPrefixes.any { id.startsWith(it) } && id !in live }
+}
+
+private fun alertNotificationId(eventId: String) = 1000 + (eventId.hashCode() and 0xFFFF)
+
+/**
+ * Cancels shown alerts that stopped being true and forgets them. Runs after every
+ * rating save and delete, and before the 02:01 post. It never posts: posting before
+ * 2am would announce a day that can still change.
+ */
+fun withdrawStaleAlerts(context: Context, events: List<StreakEvent> = computeStreakEvents(
+    loadRatings(context), loadReclaimSpends(context), loadModeEvents(context), System.currentTimeMillis()
+)) {
+    val notified = loadNotifiedIds(context)
+    val stale = alertsToWithdraw(events, notified)
+    if (stale.isEmpty()) return
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    stale.forEach { manager.cancel(alertNotificationId(it)) }
+    context.getSharedPreferences("b", 0).edit().putString(NOTIFIED_KEY, (notified - stale).joinToString(";")).apply()
+}
 
 /** A fade within two days after a comeback gift is one of the gifted savers going. */
 fun isGiftedFade(events: List<StreakEvent>, e: StreakEvent): Boolean =
@@ -63,10 +90,10 @@ fun resetAlertBaseline(ctx: Context) {
     ctx.getSharedPreferences("b", 0).edit().putLong(BASELINE_KEY, System.currentTimeMillis()).apply()
 }
 
-/** Daily exact alarm at 00:01, same pattern as the hourly one. */
+/** Daily exact alarm at 02:01, once yesterday's last ratable hour has closed. */
 fun scheduleStreakAlerts(context: Context) {
     // Pin the baseline to the first launch: events before it never alert, and the
-    // first midnight replay (00:01) must not treat the night before as "old".
+    // first replay (02:01) must not treat the night before as "old".
     alertBaseline(context)
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return
@@ -75,7 +102,7 @@ fun scheduleStreakAlerts(context: Context) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
     val next = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 1); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        set(Calendar.HOUR_OF_DAY, 2); set(Calendar.MINUTE, 1); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         if (!after(Calendar.getInstance())) add(Calendar.DAY_OF_YEAR, 1)
     }
     alarmManager.cancel(pending)
@@ -96,6 +123,7 @@ class StreakAlertReceiver : BroadcastReceiver() {
         val events = computeStreakEvents(
             loadRatings(context), loadReclaimSpends(context), loadModeEvents(context), now
         )
+        withdrawStaleAlerts(context, events)
         val notified = loadNotifiedIds(context)
         val toPost = alertsToPost(events, notified, alertBaseline(context))
         if (toPost.isEmpty()) return
@@ -124,7 +152,7 @@ class StreakAlertReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .setContentIntent(open)
                 .build()
-            manager.notify(1000 + (e.id.hashCode() and 0xFFFF), n)
+            manager.notify(alertNotificationId(e.id), n)
         }
         // Remember them only after posting, and keep the set bounded.
         val merged = (notified + toPost.map { it.id }).toList().takeLast(200)
