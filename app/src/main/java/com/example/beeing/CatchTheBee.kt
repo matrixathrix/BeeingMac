@@ -38,7 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.beeing.ui.theme.JakartaFontFamily
+import com.example.beeing.ui.theme.InstrumentSans
 import com.example.beeing.ui.theme.LocalBeeExtras
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -47,7 +47,7 @@ import kotlin.random.Random
 private val BEE_ICON = 38.dp
 private val BEE_TOUCH = 64.dp
 
-/** Room kept at the top of the field for the prompt, so the bee never covers it. */
+/** Room kept at the bottom of the field for the prompt, so the bee never covers it. */
 private val HINT_SPACE = 34.dp
 
 /** Cruising speed. Slow on purpose: catching it should take a moment, not a reflex. */
@@ -56,7 +56,8 @@ private const val MIN_LEG_MS = 1200
 
 /**
  * The caught-up screen's earned way out: a bee drifting slowly around this
- * field, with "Catch the bee to lock the phone" above it. Tapping the bee
+ * field, with "Catch the bee to lock the phone" along its bottom edge, just
+ * above the Lock button. Tapping the bee
  * calls [onCatch] (NowTab locks the phone, same as the Lock button).
  *
  * Cheap by construction: every moving value is read inside a layout/draw
@@ -79,8 +80,8 @@ fun CatchTheBee(onCatch: () -> Unit, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
         val maxX = with(density) { (maxWidth - BEE_TOUCH).toPx() }.coerceAtLeast(0f)
-        val minY = with(density) { HINT_SPACE.toPx() }
-        val maxY = with(density) { (maxHeight - BEE_TOUCH).toPx() }.coerceAtLeast(minY)
+        val minY = 0f
+        val maxY = with(density) { (maxHeight - BEE_TOUCH - HINT_SPACE).toPx() }.coerceAtLeast(minY)
 
         val pos = remember {
             Animatable(Offset(maxX * 0.15f, (minY + maxY) / 2f), Offset.VectorConverter)
@@ -117,24 +118,25 @@ fun CatchTheBee(onCatch: () -> Unit, modifier: Modifier = Modifier) {
             -3f, 3f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "bob"
         )
 
-        // The prompt drops in once, then breathes.
+        // The prompt rises in once, then breathes.
         var shown by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { shown = true }
         val enter by animateFloatAsState(if (shown) 1f else 0f, tween(900), label = "hintIn")
 
         Text(
             "Catch the bee to lock the phone",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = JakartaFontFamily,
-            color = LocalBeeExtras.current.accentText,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = InstrumentSans,
+            // Honey as text on the night field: the one call to action here
+            color = LocalBeeExtras.current.fieldHoney,
             textAlign = TextAlign.Center,
             modifier = Modifier
-                .align(Alignment.TopCenter)
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .graphicsLayer {
                     alpha = enter * if (reduceMotion) 1f else pulse
-                    translationY = (1f - enter) * -24.dp.toPx()
+                    translationY = (1f - enter) * 24.dp.toPx()
                 }
         )
 

@@ -11,8 +11,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -84,41 +88,125 @@ val BeeingDarkColors: ColorScheme = darkColorScheme(
     onError = Color(0xFF2A0A0B)
 )
 
-/** What a [ColorScheme] can't hold: the band gradient and accent-as-text. */
+/**
+ * What a [ColorScheme] can't hold: accent-as-text, the honey fill, and the
+ * **night field** roles — the surface under the Now and Streak tabs and
+ * everything that sits on it. No composable on the field hard-codes a colour.
+ */
 data class BeeExtras(
-    val bandBrush: Brush,
-    val bandTop: Color,
-    val bandBottom: Color,
     val accentText: Color,
     // The big "commit" fill (Save, selected chips, active segments) — always
     // honey, even where `primary` is deepened for text legibility.
     val accentFill: Color,
     val onAccentFill: Color,
-    val cardShadow: Boolean
+    val cardShadow: Boolean,
+
+    /** The field itself: a radial glow at the top, 120% of the width across, 70% of the height deep. */
+    val fieldBrush: Brush,
+    val fieldTop: Color,
+    val fieldBottom: Color,
+    /** True when the field is dark (status-bar icons go light). */
+    val fieldDark: Boolean,
+    /** Primary text and icons on the field. */
+    val fieldInk: Color,
+    /** Secondary text on the field: ink at 60% (dark) / 70% (light). */
+    val fieldInkMuted: Color,
+    /** Honey as text on the field (countdown, active nav label, bee prompt). */
+    val fieldHoney: Color,
+    /** Glass: every container on the field (cells, chips, panels, the bell). No shadows. */
+    val glassFill: Color,
+    val glassLine: Color,
+    /** The nav bar while it sits over the field. */
+    val navOnField: Color,
+    /** At-risk / missed / broken on the field. */
+    val fieldRed: Color,
+    /** Super day marks (rims, sparks, the outer lap). */
+    val fieldSuper: Color,
+    /** "Super day" as text on the field. */
+    val fieldSuperText: Color,
+    /** "Day secured" green as text on the field. */
+    val fieldDone: Color
 )
 
-private fun bandBrush(top: Color, bottom: Color) =
-    // ~160°: top-left lighter, bottom-right deeper.
-    Brush.linearGradient(listOf(top, bottom), start = Offset.Zero, end = Offset(600f, 1650f))
+/**
+ * The field's radial glow: centred at the top, an ellipse 120% of the width
+ * across and 70% of the height deep. A gradient's shader can only be circular,
+ * so it is drawn as a circle of the horizontal radius squashed vertically by its
+ * local matrix. Rebuilt only when the size changes (ShaderBrush caches by size).
+ */
+internal class FieldBrush(private val top: Color, private val mid: Color, private val bottom: Color) : ShaderBrush() {
+    override fun createShader(size: Size): Shader = shader(size, Offset.Zero)
+
+    /**
+     * The same field for one piece of a page: [page] is the size of the surface
+     * the field fills, [offset] where the piece sits on it. A sticky header that
+     * must hide what scrolls under it paints this and shows no seam.
+     */
+    fun at(page: Size, offset: Offset): Brush = object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = shader(page, offset)
+    }
+
+    private fun shader(page: Size, offset: Offset): Shader {
+        val cx = page.width / 2f - offset.x
+        val cy = -offset.y
+        val rx = (page.width * 1.2f).coerceAtLeast(1f)
+        val ry = (page.height * 0.7f).coerceAtLeast(1f)
+        return android.graphics.RadialGradient(
+            cx, cy, rx,
+            intArrayOf(top.toArgb(), mid.toArgb(), bottom.toArgb()),
+            floatArrayOf(0f, 0.45f, 1f),
+            android.graphics.Shader.TileMode.CLAMP
+        ).apply {
+            setLocalMatrix(android.graphics.Matrix().apply { setScale(1f, ry / rx, cx, cy) })
+        }
+    }
+
+    override fun equals(other: Any?) =
+        other is FieldBrush && other.top == top && other.mid == mid && other.bottom == bottom
+
+    override fun hashCode() = (top.hashCode() * 31 + mid.hashCode()) * 31 + bottom.hashCode()
+}
 
 val BeeLightExtras = BeeExtras(
-    bandBrush = bandBrush(BandTopLight, BandBottomLight),
-    bandTop = BandTopLight,
-    bandBottom = BandBottomLight,
     accentText = AccentTextLight,
     accentFill = Honey,
     onAccentFill = OnHoney,
-    cardShadow = true
+    cardShadow = true,
+    fieldBrush = FieldBrush(FieldTopLight, FieldMidLight, FieldBottomLight),
+    fieldTop = FieldTopLight,
+    fieldBottom = FieldBottomLight,
+    fieldDark = false,
+    fieldInk = FieldInkLight,
+    fieldInkMuted = FieldInkLight.copy(alpha = 0.70f),
+    fieldHoney = FieldHoneyLight,
+    glassFill = Color.White.copy(alpha = 0.70f),
+    glassLine = FieldInkLight.copy(alpha = 0.07f),
+    navOnField = NavOnFieldLight,
+    fieldRed = FieldRedLight,
+    fieldSuper = FieldSuperLight,
+    fieldSuperText = FieldSuperTextLight,
+    fieldDone = FieldDoneLight
 )
 
 val BeeDarkExtras = BeeExtras(
-    bandBrush = bandBrush(BandTopDark, BandBottomDark),
-    bandTop = BandTopDark,
-    bandBottom = BandBottomDark,
     accentText = AccentTextDark,
     accentFill = Honey,
     onAccentFill = OnHoney,
-    cardShadow = false
+    cardShadow = false,
+    fieldBrush = FieldBrush(FieldTopDark, FieldMidDark, FieldBottomDark),
+    fieldTop = FieldTopDark,
+    fieldBottom = FieldBottomDark,
+    fieldDark = true,
+    fieldInk = Color.White,
+    fieldInkMuted = Color.White.copy(alpha = 0.60f),
+    fieldHoney = Honey,
+    glassFill = Color.White.copy(alpha = 0.065f),
+    glassLine = Color.White.copy(alpha = 0.085f),
+    navOnField = NavOnFieldDark,
+    fieldRed = FieldRedDark,
+    fieldSuper = SuperGold,
+    fieldSuperText = SuperGold,
+    fieldDone = RingQualifiedGreen
 )
 
 val LocalBeeExtras = staticCompositionLocalOf { BeeLightExtras }
@@ -141,9 +229,12 @@ fun BeeingTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // Status-bar icons are owned by HourlyPulseApp: they depend on whether
-            // the current tab has a band under them.
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
+            // System-bar icons simply follow the theme on every tab: the night field
+            // is dark in dark mode and light in light mode, and so is the page.
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
     CompositionLocalProvider(LocalBeeExtras provides if (darkTheme) BeeDarkExtras else BeeLightExtras) {

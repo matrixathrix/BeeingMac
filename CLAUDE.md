@@ -145,22 +145,30 @@ Note for cloud/CI sessions: Google's artifact hosts (dl.google.com,
 maven.google.com) may be blocked, making Gradle builds impossible. In that
 case verify by static review and say so explicitly — the user compiles locally.
 
-## File map (all in `app/src/main/java/com/example/beeing/`)
+## File map (all in `app/src/main/java/com/example/beeing/`, except `:shared`)
+
+**`:shared`** (`shared/src/main/kotlin/com/example/beeing/`, plain Kotlin/JVM, same
+package, tests in `shared/src/test/`) holds everything pure that the phone and the
+watch both need: `StreakRules.kt`, `SuperDay.kt`, `Model.kt` (`RatingEntry`,
+`Origin`, `Tombstone`), `RatingRow.kt` (the stored row codec), `NotificationRules.kt`
+(`NotificationPrefs`, `hourlyDelivery`, `otherDelivery`, `pauseRisk` — the app's
+`NotificationPrefs.kt` keeps only load/save) and `SyncMerge.kt` (`mergeIncoming`).
+
 
 | File | What lives there |
 |---|---|
 | `MainActivity.kt` | `enableEdgeToEdge` (light status-bar icons) + `BeeingTheme` (fixed light/dark palette, no dynamic colour), notification-tap intent → `PendingRating`, alarm scheduling, `ensureModeInitialized` (fresh install ⇒ beginner mode, before `setContent`) |
 | `HourlyPulseApp.kt` | Root composable: HorizontalPager with 3 tabs (0=Hive, 1=Now default, 2=Past), `BottomNavBar` (**the Scaffold's `bottomBar`**, Swiggy-style: `surface` bar, hairline top edge, icon over label; inactive = outline `Sym.*Outline` in `onSurfaceVariant`, active = filled `Sym.Fire`/`Hourglass`/`Chart` + bold label in `accentText`, crossfaded by `currentPage + currentPageOffsetFraction`; no pill). **No Scaffold topBar** — each tab opens with its own `BrandBand`, which owns the status-bar inset. Holds settings/info dialogs (the ⋮ menu now includes "How Beeing works"), import/export, ON_RESUME auto-focus of the pending hour. Also owns the **beginner-mode seam**: it computes the shared `streakState`, renders the "Beginner mode (4-hour days)" checkbox row in the Data-options dialog (a row like auto-backup; entering beginner with `currentStreak > 0` closes the menu and raises the `showBeginnerConfirm` pause dialog instead of toggling), the one-time graduation `AlertDialog` (fired by a `LaunchedEffect` on `beginnerDaysCompleted`, flag written before it shows), and the mode-aware "🌱 Beginner Mode" paragraph in "How Beeing works" |
 | `NowTab.kt` | The rating flow. **Everything above the card is a `BrandBand`**: row 1 = hamburger (`onMenuClick`, data-options menu) · "Beeing" (`headlineSmall`) · `StatusStrip` (streak icon + count · `MiniHourRing` x/goal, a translucent white `OnBandFill` pill on the band; taps to the Streak tab; merged semantics "N-day streak · H of G hours rated today", click label "Open Streak tab"; in beginner mode the fire becomes 🌱 and the description leads with "Beginner mode · streak paused at N"). Row 2 in the **rating state** = "How was your hour?" (`titleLarge`) over `HourWindowPicker` (translucent pill, ‹ range › carets — each enabled only when that neighbouring hour is still pending; offset 1 = earlier/expiring, offset 0 = latest) + "Nm left" countdown (honey in its last 15 min) + the "why these hours" info icon; in the **caught-up state** = "All caught up" + "Next hour opens in N m". Below the band the rating card (`BeeCardDefaults`) holds dial→tags→notes→save (the rating input is `DecagonCombDial` from `DecagonDial.kt`; no section label above the tags — the save button's "Tag it to save" state teaches the rule). The notes box (`NotesSection`) is collapsed to a slim "＋ Add a note" hint row until tapped. `TagPickerSection` shows up to `COLLAPSED_TAG_COUNT` (9, ~3 rows) chips before folding the rest into a neutral-toned `AssistChip`: **"+N more"** just expands to reveal hidden tags; **"edit tags"** (shown when nothing is hidden) and the expanded editor's pencil open **`ManageTagsDialog`** (private in `NowTab.kt`) — one row per tag with long-press-drag reorder (fixed 46dp rows, index math on drag offset), inline rename (✏️ → `BasicTextField` + tick; **picker-only** — past entries keep the old name by owner decision), delete behind a confirm `AlertDialog` (**picker-only** too: old entries keep the tag), and a "New tag" footer that reuses the add-tag `AlertDialog`. The expanded editor's "✓ Show less" pill rides inline in the chip `FlowRow` (no extra vertical line). Caught-up hero with the "🔒 Lock phone and bee mindful🐝" button + `TodayStripCard`. Sends `ACTION_LOCK_PHONE` broadcast if `isLockAccessibilityServiceEnabled`, else shows a dialog that opens Settings → Accessibility |
-| `ui/BeeSurfaces.kt` | The reskin's shared shell: `BrandBand` (the per-tab aubergine header), `BandFillLayout` (band / middle / pinned-footer frame that turns spare height into animated band growth — see the 2026-10-27 history entry), `BandShape`, `OnBandFill`, `BeeCardDefaults` (card colours/elevation/shape) and `beeChipColors()` (muted unselected, `accentFill` selected; `tagChipColors()` delegates to it) |
-| `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `JakartaFontFamily` + `Typography`, `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
+| `ui/BeeSurfaces.kt` | The shared shell: `PageHeader` (plain-page title), the **night-field glass** (`GlassPanelShape`, `PillShape`, `Modifier.glass(x)`, `GlassPanel`, `fieldChipColors()`/`fieldChipBorder()`, `fieldEmptyCellColor`), and the plain page's `BeeCardDefaults`, `beeChipColors()` (`tagChipColors()` delegates to it), `BeeButtonDefaults`, `emptyCellColor`. `BrandBand`, `BandFillLayout`, `scaledLayout`, `animatedHeight`, `BandShape` and `OnBandFill` were deleted with the band (2026-10-31); `NowTab`/`StreaksTab`/`DecagonDial` rows above predate that entry |
+| `ui/theme/*` | `Color.kt` palette constants, `Theme.kt` `BeeingLightColors`/`BeeingDarkColors` + `BeeExtras`/`LocalBeeExtras` (band brush, `accentText`, `accentFill`/`onAccentFill`, `cardShadow`) + `BeeingTheme` (also sets light status-bar icons, since a band is always under them), `Type.kt` `InstrumentSans` / `InstrumentSerifItalic` / `DisplaySerif` + `Typography` (fonts in `res/font`, OFL licences in `assets/licenses`), `Contrast.kt` `contrastRatio` (tested by `PaletteContrastTest`) |
 | `CatchTheBee.kt` | The caught-up screen's **earned way out**: `CatchTheBee(onCatch)` — a **🐝 emoji** bee (38dp, sized in dp→sp so font scale can't grow it, in a 64dp circular tap target; the one deliberate exception to "UI emoji → Material Symbols", by owner call: the `Sym.Reclaim` icon didn't read as a bee in flight; it's mirrored when heading right since the emoji faces left) drifting slowly (`BEE_SPEED_PER_S` 70dp/s, eased legs to random points, wing wobble + bob, flips to face its heading) inside its field, under a "Catch the bee to lock the phone" prompt that drops in once then pulses. Every moving value is read in `offset {}`/`graphicsLayer {}` lambdas, so flight never recomposes; it runs on the frame clock, so it stops on its own when the tab pages away, the app is backgrounded or the screen is off. With system animations off (`ANIMATOR_DURATION_SCALE == 0`) the bee sits still and the prompt doesn't pulse |
 | `LockAccessibilityService.kt` | `AccessibilityService` that registers a receiver for `ACTION_LOCK_PHONE` and calls `performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)` — same as the power button, so it never touches keyguard/device-admin policy and biometric unlock keeps working next time. `isLockAccessibilityServiceEnabled(context)` checks `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`. User must toggle it on once under Settings → Accessibility (can't be done programmatically) |
 | `DecagonDial.kt` | **The rating input now mounted in `NowTab`**: `DecagonCombDial` — a 10-sided readout core with ten **round** cells docked one per edge, spun as one unit with 36° detents (drag anywhere, fling with damped snap, tap a cell to seek). Fixed notch on top marks the value; resting state is a theme-aware (`surfaceVariant`/`outline`) dashed core reading "Pick a rating"; rated state floods the core with `dialScoreColor` and shows the numeral plus the Title-Cased score word (`DIAL_WORDS`) inside the core. Haptic+click per detent |
 | `CombStrip.kt` | Legacy (unmounted since the dial landed): the previous rating input, **one big flat-top hexagon** (`FlatHexShape`, softly rounded vertices; `aspectRatio(1.1547f)`, `fillMaxWidth(0.86f)`), vertical drag (top = 10, bottom = 1). Two states keyed only on `selectedScore`: **null →** `RestingScaleHex` draws ten filled, soft-tinted (`band × 0.35α`) island bands with gaps (`roundedPolygonPath`, sized to the hex width at each height via `flatHexHalfWidth`), each numbered 1–10, and the whole cell breathes (`pulseScale`); **set →** the hexagon floods one solid `scoreBandColor` with a big centered numeral, staying filled after release (so the notification's pre-selected score lands filled). Haptic tick per boundary; **no loupe** (removed — the big numeral replaces it). `scoreWord()`, `FlatHexShape`, `flatHexHalfWidth`, `roundedPolygonPath` |
 | `StreaksTab.kt` | Hive tab: streak hero (`StreakMeter`), "Send a bee back" 🐝 reclaim CTA (shown when reachable hours exist; disabled once the day's 2 bees are spent), calendar with score-tinted dots (🌱 = completed beginner day, 🌙 = rest day, hollow red ring = missed — 🌱 is a glyph, not a hollow tinted dot, which would collide with the missed ring at 9dp), a `FlowRow` legend (four keys + the info button no longer fit one line), hive log, reclaim dialogs (`reclaimHourLabel` prefixes "Yesterday ·" across midnight; the cap is re-checked in `onReclaim` because the dialog can outlive the tap), and the rules explainer, which swaps to a "🌱 How beginner mode works" body in beginner mode. No currency card |
 | `StreakEngine.kt` | Pure streak logic. **`replayDays` is the single walk over history** — private, returns one `ReplayDay` per calendar day (outcome, streak after, `brokeStreak`, `beginner`, that day's hour timestamps + reclaim spends); `computeStreakState`, `computeDayOutcomes` and `computeStreakLog` are thin readers over it and all three take the same `modeEvents` list, so they *cannot* disagree. Also `DayOutcome` (QUALIFIED/REST/MISSED/**BEGINNER_COMPLETE**), the **mode-event layer** (`ModeEvent`, `loadModeEvents`/`recordModeEvent`, `isBeginnerMode`, `hoursRequiredFor`, private `beginnerAt(timeMs, events)` = the mode at an instant, `ensureModeInitialized`, `beginnerGraduationShown`/`markBeginnerGraduationShown`), `reclaimsUsedToday`, the `isReclaimed`/`visibleTags()` entry extensions, `StreakMeter`/`StreakRing` composables (`StreakRing` takes `hoursRequired`, so the ring is 4 segments in beginner mode; `StreakMeter` reads `state.hoursRequired` and shows "Beginner day complete ✓" / "Streak paused at N" + "Resumes in Master mode"), constants |
-| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; a row tap **always opens `EditEntrySheet`**, and **the row's trailing icon labels how it opens**: ✏️ (≤10h, editable) or › (older — read-only "Entry details"). A tap never deletes. The 10h rule lives *inside* `EditEntrySheet` (`editable = now - timestamp <= EDIT_WINDOW_MS`, re-checked on every caret step): score/tags/note locked for older entries, delete available behind a confirm dialog. `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days — counted off `computeStreakLog`, now passed `loadModeEvents(context)`, so beginner stretches correctly contribute none) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **Zoom is Weeks (across a month) / Months (across a year) only** — no Day level, no `DaySheetContent`, and every chart is a pure readout (no taps, no highlight). Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
+| `PastTab.kt` | **Journal first, analytics second.** `PastTab` is now a shell: it owns the active window, the shared `EditEntrySheet` + delete-undo snackbar, and an `AnimatedContent` that swaps between two full-screen views — **`JournalView`** (default) and **`TrendsView`** — with a `BackHandler` returning from Trends. **`JournalView`**: a fixed `JournalHeader` (month label of the topmost visible day, derived from `listState.firstVisibleItemIndex`, tapping it opens `DateJumpDialog`; "Trends ›" pill on the right) over a `LazyColumn` of `JournalDayCard`s, newest day first (`buildJournalDays` groups ratings into `JournalDay`; **days with no ratings are not rows**). Collapsed card = date (`journalDayLabel`: Today/Yesterday/`EEE d MMM`) · hour count · avg pill (`getScoreColor`) over a slim tick strip — one 14dp tick per active-window hour, `scoreBandColor` when rated, positioned by hour, with `TickCapPill` ▲N/▼N badges for out-of-window ratings. Tapping the card expands that day inline (single-open accordion, `expandedDay` hoisted in `PastTab`) into `HourEntryRow`s; a row tap **always opens `EditEntrySheet`**, and **the row's trailing icon labels how it opens**: ✏️ (≤10h, editable) or › (older — read-only "Entry details"). A tap never deletes. The 10h rule lives *inside* `EditEntrySheet` (`editable = now - timestamp <= EDIT_WINDOW_MS`, re-checked on every caret step): score/tags/note locked for older entries, delete available behind a confirm dialog. `DateJumpDialog` is a month grid with ‹ › month arrows, clamped to the data's first/last month; only days that hold ratings are live and they're tinted by that day's average — picking one expands the day and `animateScrollToItem`s to it (any past hour in 2 taps). **`TrendsView`** is the rare deep-dive, deliberately short: static control bar (arrows + range label + `ZoomPicker`) over the `AnimatedContent` keyed by `PastViewKey` (period steps slide L/R, zoom flies via `scaleIn/Out`, driven by `navKind`), stacking summary stats (avg · hours rated · 🌙 rest days — counted off `computeStreakLog`, now passed `loadModeEvents(context)`, so beginner stretches correctly contribute none) → **one auto-written insight line** (`buildInsight`) → `ScoreBarChart` → `PatternGrid` (**Months/year zoom only, expanded by default**, `hourByHourExpanded`) → `TagScoresSection` (short inner scroll ≈5 rows with a `FadingScrollbar`). **The span is Month (weekly bars) / Year (monthly bars) only** (the selector read "Weeks/Months" until 2026-10-31) — no Day level, no `DaySheetContent`. **Tapping a bar scopes the numbers, not the charts** (2026-10-31): see the history entry. Its zoom/period state is local, so it opens at Weeks/this-month each time. `buildInsight(entries, ratedHours)` is pure: returns null under `INSIGHT_MIN_HOURS` (20) rated hours in the period, else joins up to two clauses with " · " — the widest gap between `DAY_PARTS` (mornings 5–11 / afternoons 12–16 / evenings 17–23, each needing `INSIGHT_MIN_SAMPLES` = 3 ratings and a gap ≥ `INSIGHT_MIN_GAP` = 0.5) and the lowest-scoring tag (≥3 uses, ≥2 tags, `visibleTags()` so the reclaim sentinel can't be named); null when neither clause qualifies. `HourEntryRow` (time range, score circle, 🕐 badge, `visibleTags()`, note preview) is journal-only now. Also `getScoreColor(Double)` |
 | `UIComponents.kt` | Shared: `HeaderSection` (legacy, no longer mounted), `EditEntrySheet` (opens fully expanded on one tap via `skipPartiallyExpanded`; grouped SCORE/TAGS/NOTE sections via the `SectionLabel` overline; edits score, note, **and** tags — every available tag is a toggleable `InputChip` (centered, tightened rows). **The 10h edit gate lives here**: an `editable` flag per `currentEntry` (`now - timestamp <= EDIT_WINDOW_MS`) locks the score circles, tag chips and note for older entries, swaps the title to "Entry details", replaces "Save Changes" with an "Editable for 10 hours after the hour ends" notice, and leaves delete always available. Header = "Edit entry"/"Entry details" + date on the left, time range flanked by ‹ › **seek carets** right-aligned. Carets step through that day's rated hours only (`dayEntries`, sorted; disabled at the ends), swapping `currentEntry` in place without closing; edited buffers are keyed on `currentEntry.id` so they reset per hour. Seeking mid-edit raises a save-or-discard `AlertDialog` (`pendingTarget`). Callbacks are split `onPersist`/`onClose` so an in-sheet save doesn't dismiss the sheet), `SoulFuelTagsSection` (display-only tag chips + a pencil that opens `NowTab`'s `ManageTagsDialog`; the old in-place delete mode is gone), `NotesSection` (collapsed "＋ Add a note" row → compact `BasicTextField`; a `hadFocus` flag stops the initial unfocused `onFocusChanged` event from re-collapsing it), `HistoryPanel` (🕐 badge + `visibleTags()`; legacy — unmounted since the Past tab became a journal, which supersedes it), misc format helpers (`formatHour`, `getOrdinalSuffix`, `isSameDay`) |
 | `StatsComponents.kt` | Just the weekly report notification now (`buildWeeklySummaryText` — third line is mode-aware: "streak ⬢N", or "🌱 N beginner days · streak paused at M" — `showWeeklyReportNotification`, `schedule`/`cancelWeeklyReport`) |
 | `RatingsViewModel.kt` | Shared state: `allRatings`, `refreshTrigger`, save/delete/load wrappers, plus `modeEvents` / `beginnerMode` / `setBeginnerMode` — the mode lives here (not per-tab like `spendsVersion`) because it is replay input: one toggle has to re-derive the meter, calendar and log in the same composition |
@@ -179,17 +187,44 @@ case verify by static review and say so explicitly — the user compiles locally
 | `SettingsScreen.kt` | The full-screen settings page (the old Data options dialog is gone); slides in/out via `AnimatedVisibility` in `HourlyPulseApp` |
 | `TagsScreen.kt` | The **Tags** page pushed from Settings (replaced `SettingsManageTags`, which wrapped the Now tab's `ManageTagsDialog` popup): `PageHeader("Tags")` with "+ New", one grouped card of fixed 58dp rows (neutral tile · name · grip; the divider is drawn inside the row so one row = one drag step), tap = `TagNameDialog` (rename, with "Delete tag" behind a confirm), hold-drag = reorder. `tagParts` lifts a leading OR trailing emoji into the tile, display only. the Now tab's pencil and "Edit tags" open it too (`ManageTagsDialog` is gone) |
 | `NotificationPrefs.kt` / `QuietSheets.kt` | Silent hours, pause, `hourlyDelivery`/`otherDelivery`, `pauseRisk`; the two bottom sheets |
-| `StreakAlerts.kt` | Daily 00:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event |
+| `StreakAlerts.kt` | Daily 02:01 receiver that posts gift / saver-used / saver-faded phone alerts once per event; `withdrawStaleAlerts` (run after every save/delete) cancels ones a later rating disproved |
+| `Tombstones.kt` | Deleted hours (prefs `"tombstones"`), kept `TOMBSTONE_TTL_MS` (7 days) so a watch copy can't resurrect one |
+| `RatingFrameGaps.kt` | Pure: `shareRatingGaps` and its base/min gaps, the rule `RatingFrame` (Now tab) uses to spread spare height over its four gaps |
+| `TrendsSelection.kt` | Pure: `previousSpan` (what a selected Trends bar's ▲ ▼ compare against) and `spanLabel` (the scope chip's text) |
+
+**`:wear`** (`wear/src/main/java/com/example/beeing/wear/`, Wear OS app, same
+`applicationId` and signing key as `:app` — the Data Layer only pairs matching apps):
+
+| File | What lives there |
+|---|---|
+| `WatchStore.kt` | Prefs `"w"`: the phone's last `PhoneState`, local saves not yet processed by the phone (kept until listed in `mergedWatchIds`, 14-day bound), the chime-tip flag |
+| `WatchSync.kt` | `saveFromWatch` (local + DataItem `/rating/<hourStart>`), `WatchSync` (takes in `/state`, prunes processed saves and their items), `ChargingReceiver` (`/charging`) |
+| `WatchReminders.kt` | Own hourly alarm (exact when allowed), channels `watch_hourly_v1` (Beeing tone, double-tap vibration) / `_silent_v1`, one notification id, `hourlyDelivery` over the phone's prefs, `clearReminderIfDone` (never re-posts) |
+| `RatingFlow.kt` / `RatingActivity.kt` | Pure flow (`startFlow`, `onClock`, `afterSave`, `switchHour`; `RatingFlowTest`) and its host: Score → Tags → save, ring-closed / Super day moment via `ringClosed` / `streakMoment` over `watchStreakState` |
+| `ui/` | `WearTheme` (dark field, Instrument Sans), `ScoreScreen` (crown, bezel dots), `TagsScreen` (top 8 two per row, More, Save), `Moments.kt` (ring-closed, caught up, chime tip, `StreakLine`), `Pieces.kt` (pills) |
+| `BeeingTileService.kt` / `Complications.kt` | Tile and three complications (ring, waiting, streak + savers); freshness / update period 0, pushed by `WatchSurfaces.refresh` |
+| `WatchSurfaces.kt` | The one redraw hook (save, sync, hour, boot) and `view()` |
+
+Shared watch pieces: `WatchRules.kt` (`waitingHours`, `topTags`, `WatchView`, `watchView`,
+`watchStreakState`), `Wire.kt` (`PhoneState`, paths, JSON codecs), `ApplyIncoming.kt`,
+`HourLabels.kt` (`formatHour`, `hourRangeLabel`, `hourLabelFor`, `DIAL_WORDS`).
 
 ## Data model & persistence gotchas
 
-- `RatingEntry(id, score, timestamp, hourLabel, note, tags)` — **timestamp is
+- `RatingEntry(id, score, timestamp, hourLabel, note, tags, modifiedAt, origin)` — **timestamp is
   the START of the rated hour** (minute/sec zeroed). `id` is the wall-clock
   millis when recorded. `hourLabel` is the ordinal of the hour END ("14th" =
   1–2pm); day membership must be derived from `timestamp`, not the label.
+  `modifiedAt` is the last save (edits stamp it; "the later save wins" when a
+  watch rating syncs) and `origin` is PHONE/WATCH.
 - Storage: SharedPreferences `"b"`, key `"ratings"`, `|`-separated rows,
   `,`-separated fields, tags `;`-joined — so notes/tags must never contain
-  `,` `|` `;` (notes are sanitized on save). No database.
+  `,` `|` `;` (notes are sanitized on save). No database. Rows are written by
+  `encodeRatingRow` with 8 fields (`…,tags,modifiedAt,P|W`); a 6-field row from
+  before 2026-11-05 reads as a phone save with `modifiedAt = id`. The CSV export
+  is unchanged.
+- Deleting an hour leaves a tombstone (`"tombstones"`, `"<hourStart>:<deletedAt>"`
+  joined by `,`); any save to that hour, Undo included, clears it.
 - Reclaim spends persist separately (`"reclaim_spends"`) because they are not
   derivable from ratings. Now that reclaims are free they exist only to enforce
   the `RECLAIM_PER_DAY` cap and to date the "bee sent back" log rows — the key
@@ -211,25 +246,41 @@ case verify by static review and say so explicitly — the user compiles locally
 - **The look: "Night bloom"** (spec `docs/superpowers/specs/2026-10-27-reskin-design.md`).
   Beeing's own fixed light/dark palette (`ui/theme/Color.kt`/`Theme.kt`,
   `BeeingTheme`) following the system dark-mode setting — **never** Material
-  You dynamic colour. One typeface, **Plus Jakarta Sans** (`JakartaFontFamily`,
-  all 15 M3 type roles), so plain `Text()` inherits it. **A `BrandBand` is a
-  stage for one thing about you, right now** — only **Now** (the hour to rate)
-  and **Streak** (the streak) have one (aubergine gradient, 26dp bottom corners,
-  white content, owns the status-bar inset — there is no Scaffold topBar).
-  Records and utilities — **Past (Journal), Trends, Settings** — open on the
-  plain page under a **`PageHeader`** (large title, optional back arrow /
-  trailing slot), all over a calm page
-  (`background`) of **white/charcoal cards** (`BeeCardDefaults`: `surface`,
-  20dp, shadow in light mode only). Swiggy-style nav bar: outline icons, the
-  active tab filled + bold in `accentText`, no pill. `PaletteContrastTest`
+  You dynamic colour. One family, **Instrument** (2026-10-31): **Instrument Sans**
+  (`InstrumentSans`, all 15 M3 type roles, so plain `Text()` inherits it) for
+  everything, and **Instrument Serif Italic** (`DisplaySerif`) for the reflective
+  lines only — the question, "All caught up", `PageHeader` titles, the two
+  celebration titles and the dial's score word (not the wordmark: sans 700 22sp); never numbers,
+  buttons, chips or dialogs, never under 28sp, sized ~15% up. **Now, Streak and Past
+  (Journal + Trends) sit on the night field; there is no band** (2026-10-31, spec
+  `docs/superpowers/specs/2026-10-31-night-field-design.md`): one radial-glow
+  surface (`BeeExtras.fieldBrush`) edge to edge, each tab owning its status-bar
+  inset (there is no Scaffold topBar). On the field everything is **glass**
+  (`glassFill` + 1dp `glassLine`, never a shadow, `GlassPanel` /
+  `Modifier.glass`) or honey; one shape family — panels 20dp
+  (`GlassPanelShape`), everything smaller a circle or a full pill (`PillShape`).
+  Field text uses the field roles (`fieldInk`, `fieldInkMuted` ≥60%/70%,
+  `fieldHoney`, `fieldRed`, `fieldSuperText`, `fieldDone`), never the page's:
+  the page values fail contrast on the violet light field. Only the Save pill and
+  the streak medallion glow (a honey shadow). Past keeps its page-written code
+  under **`FieldColors`** (`ui/BeeSurfaces.kt`), which remaps the page roles to
+  the field's in one place; a dialog opened inside it wraps itself in
+  **`PageColors`**. **Score text sits on glass, never bare on the field** (light
+  red on the glow is ~3.8:1). App-wide utilities — **Settings, Tags**, every
+  dialog and sheet — stay on the plain page under a **`PageHeader`** (large
+  title, optional back arrow / trailing slot; it takes the ambient ink, so Past
+  uses it too), over a calm page (`background`) of **white/charcoal cards**
+  (`BeeCardDefaults`: `surface`, 20dp, shadow in light mode only). Swiggy-style
+  nav bar: outline icons, the active tab filled + bold, no pill; with all three
+  tabs on the field it is always `navOnField` with field honey. `PaletteContrastTest`
   pins every text-on-colour pairing; run it after any palette change.
 - **Color roles:** honey = "act here", used sparingly. Two forms: the big
   fill (Save, selected chips/segments) is `LocalBeeExtras.current.accentFill`
   (always `#F5A623`, aubergine ink `onAccentFill`); text/controls use
   `primary`, which is **deepened to `#9A6000` in light mode** because M3 draws
   TextButtons/switches/checkboxes in `primary` and plain honey on white is
-  2:1. `accentText` is honey-as-label on the page (nav, bee prompt). On the
-  band, chips/pills are `OnBandFill` (white 14%). Score bands = data only:
+  2:1. `accentText` is honey-as-label on the page; on the field it is
+  `fieldHoney` (`#7A4A00` in light mode). Score bands = data only:
   1–4 red, 5–7 amber, 8–10 green (`scoreBandColor` for ints,
   `getScoreColor` for averages). Honey gold = streak identity. Progress rings
   are never red.
@@ -239,7 +290,9 @@ case verify by static review and say so explicitly — the user compiles locally
   single daily full-screen celebration, waggle = rare milestones only.
 - **Lock phone exists ONLY in the caught-up state** (no pending hours).
   Rating pending hours always outranks leaving.
-- Cards: `BeeCardDefaults` (20dp radius, `surface` fill, light-mode shadow), 16dp padding.
+- Cards (plain page only — Settings and dialogs): `BeeCardDefaults` (20dp radius,
+  `surface` fill, light-mode shadow), 16dp padding. On the field the same code
+  draws glass: Past's day groups and Trends panel get their 1dp `glassLine` edge.
   Cards inside a dialog use `surfaceVariant` instead (a card on a card-coloured dialog vanishes).
   Every scrollable tab ends with a 24dp spacer — the nav is a `bottomBar` and
   insets the pager itself, so nothing has to clear a floating pill any more.
@@ -262,19 +315,35 @@ case verify by static review and say so explicitly — the user compiles locally
   `PENDING_SCORE`/`TARGET_TS` extras → `PendingRating` → pre-selects the comb.
   When both ratable hours are logged, notification ID 1 is cancelled.
 - **Notification channels** (all created in `createNotificationChannel`):
-  `hourly_bee` / `hourly_bee_silent`, `streak_alerts` / `streak_alerts_silent`,
-  `weekly_report` / `weekly_report_silent`. A channel's sound is fixed at
-  creation, so "silent" is a twin channel. **Silent hours, pause and the
-  reminders switch (`NotificationPrefs.kt`) govern hourly reminders only**
+  `hourly_bee_v2` / `hourly_bee_silent`, `streak_alerts_v2` / `streak_alerts_silent`,
+  `weekly_report_v2` / `weekly_report_silent` (`CHANNEL_HOURLY` / `CHANNEL_STREAK_ALERTS`
+  / `CHANNEL_WEEKLY`). The sounding ones play the bundled Beeing tone
+  `res/raw/beepingandroidbuzz.ogg`; the pre-tone ids are deleted on startup. A
+  channel's sound is fixed at creation, so "silent" is a twin channel. **Silent
+  hours and pause (`NotificationRules.kt`) govern hourly reminders only** — there is
+  no reminders on/off switch (removed 2026-11-05)
   (`hourlyDelivery`: SOUND/SILENT/NONE; the alarm always reschedules). Streak
   alerts and the weekly report use `otherDelivery` — never suppressed, silent
   during silent hours.
-- **Streak alerts:** `StreakAlertReceiver` runs from a daily 00:01 exact alarm
+- **Streak alerts:** `StreakAlertReceiver` runs from a daily 02:01 exact alarm (after
+  yesterday's last ratable hour closes)
   (`scheduleStreakAlerts`, also on boot and app start), replays
   `computeStreakEvents`, and posts each gift / saver-used / saver-faded event
   once (`alertsToPost`; ids in `"alert_notified_ids"`, baseline
   `"alert_baseline_ms"`, reset on import). Tap → `MainActivity` with extra
   `OPEN_TAB = 0` → Streak tab.
+- **Watch sync** (`PhoneSync.kt` / `WatchListenerService.kt` on the phone): DataClient
+  only. The phone's `publishState` (coalesced, background thread) runs from every
+  low-level writer — `saveRating`, `deleteRating`, `saveTags`, `recordModeEvent`,
+  `saveNotificationPrefs` — plus app start and the hourly alarm, and sends one
+  `PhoneState`: the replay carry at the end of the day before yesterday, yesterday +
+  today's ratings, tags + `topTags`, mode events, quiet prefs, and the ids of watch
+  ratings it has processed (`"watch_processed_ids"`). Incoming `/rating/*` items go
+  through `applyIncoming` (idempotent); `/charging` sets `"watch_charging"`. The
+  watch resumes the replay from the carry (`computeStreakStateFrom`), so its numbers
+  are the phone's. **Who buzzes:** `phoneDelivery` makes the phone's reminder silent
+  while the watch app is reachable and not charging; the phone's reminder is always
+  `setLocalOnly` once `"watch_installed"`.
 - **Hour targeting:** `targetedHourOffset` (0 = latest completed hour,
   1 = the expiring grace hour). With both pending, default is 1 (expiring
   first) unless a notification deep-link chose otherwise — logic split
@@ -1103,3 +1172,319 @@ case verify by static review and say so explicitly — the user compiles locally
   once-a-day `super_invite_shown_day` gate. Yesterday's ring closed after midnight
   still gets no screen (`!day.isToday`). The status cue keeps its exact fit over
   the same clock-only count.
+- 2026-10-31 (**night field: one surface for Now and Streak**): spec
+  `docs/superpowers/specs/2026-10-31-night-field-design.md` (mockups beside it).
+  Owner verdict on Now: "not coherent, in both states" — a band, a card and a
+  grey slab from three different apps, and six unrelated rounded shapes. Visual
+  and layout only: no rule, number, stored value or notification changed.
+  (1) **The field**: `BeeExtras` gained `fieldBrush` (a `ShaderBrush` radial
+  gradient, centred top, 120% wide × 70% deep, squashed via its local matrix),
+  `fieldTop/Bottom`, `fieldDark`, `fieldInk`, `fieldInkMuted`, `fieldHoney`,
+  `glassFill`, `glassLine`, `navOnField`, `fieldRed`, `fieldSuper`,
+  `fieldSuperText`, `fieldDone`; the band fields (`bandBrush/Top/Bottom`) are
+  gone. Light mode is a soft violet (`#DCCDF6 → #F8F5FD`) with violet-black ink
+  `#24123A`. Values chosen by contrast, all pinned in `PaletteContrastTest`:
+  light honey text `#7A4A00`, light muted ink 70%, light red `#A4161A`, light
+  Super text `#6E5300`, light green `#1B5E20`; dark red lifted to `#FF8A80`
+  (#FF6B6B was 3.9:1 on glass); the disabled Save wash is 18% honey.
+  (2) **Now, rating**: no band, no card. The top row, "How was your hour?"
+  (25sp ExtraBold), ONE hour line (‹ range › with no container, then "· 1h 46m
+  left" in field honey — **tapping the countdown opens "Why only these hours?"**,
+  the ⓘ is gone), the dial at its old width (32dp side padding), glass tag pills
+  (the fold is a **dashed-outline pill**), "+ Add a note" in muted ink (opens as
+  a glass field: `NotesSection(field = true)`), and a full-width honey **Save
+  pill** pinned above the nav (glows while it can act; disabled = honey wash
+  with honey-text label, never grey). A plain `Column` with the tags in
+  `weight(1f)` replaced `BandFillLayout`.
+  (3) **The dial** (`DecagonDial.kt`, drawing only — every mechanic untouched):
+  the core is a **circle** (`CORE_CIRCLE_FRAC` 0.172, inside the old decagon's
+  apothem, so the ring geometry, hit-test and rim trims didn't move); unselected
+  cells are glass with field-ink digits at 85%; the selected cell is its score
+  colour with a 2dp white stroke; rated, the core floods with the score and
+  gets a 25%-alpha halo (`HALO_R_FRAC`/`HALO_W_FRAC`); unrated, a glass core
+  reads "Pick a rating"; the notch is field ink; the fast-spin annulus is glass.
+  **Digits on a score fill keep `dialDigitColor`'s lightness flip** (white on the
+  1–4 red), not the spec's "dark ink": dark ink on `#B71C1C` is 2.6:1.
+  (4) **Now, caught up**: a 112dp ring (the Streak hero's `StreakRing`, now
+  `internal` with a `lapColor` param — honey on a glass track, 4 segments in
+  beginner mode, the Super lap once a Master ring closes; count "H/G", or "H/12"
+  while a Super day is in reach), "All caught up", "Next hour opens in Nm", the
+  today strip as a glass `TodayStripPanel` ("TODAY" · "avg N.N"), the slipped-
+  hours link in muted ink, then `CatchTheBee` in the remaining height (its
+  prompt now sits at the field's **bottom**, in field honey, 17sp) over an
+  **outlined glass Lock pill** (not honey: leaving isn't "act here"; the
+  trailing bee glyph dropped, the words unchanged). **`BestHourCard` is
+  deleted** — one job per screen.
+  (5) **Streak**: no `BrandBand`; the field with the hero pinned above the
+  scroller (so nothing scrolls under the fixed top row). `StreakMeter` floats on
+  the field in field roles (medallion glows; at-risk ink flips on the red's
+  lightness). "Missed an hour?" is a `GlassPanel` (AddPast on a honey-wash
+  circle, subtitle just "Add a past hour", no caret; spent = faded, no lock).
+  The calendar is a glass panel of `DayTile`s (Complete honey · **Super day =
+  honey + `fieldSuper` rim + a spark riding the top-right corner, gold glow in
+  dark** · Saved wash + shield · Missed red outline · Today ink outline · plain
+  faint glass · beginner leaf); the click lives on the inner tile so the spark
+  and glow aren't clipped. The legend is a **2×2 grid of the same `DayTile`s**
+  (+ "Beginner day" in beginner mode) under a hairline, with a "How streaks
+  work" link under it. History is `StreakHistoryPanel` (replaced
+  `StreakLogContent`): collapsed to a peek at the latest event, the whole panel
+  toggles, expanded rows grouped by `historyGroup` ("THIS WEEK", "EARLIER IN
+  OCTOBER", month names) with a 30dp `EventTile`, one-line detail and a "d MMM"
+  date; still 3 months, 60 rows.
+  (6) **Chrome**: `BandTopRow` lerps to field ink and a glass bell/strip;
+  `BottomNavBar` lerps to `navOnField` + a field-ink hairline + field honey over
+  Streak/Now. Status-bar icons are now set once in `BeeingTheme` (light in dark
+  mode, dark in light mode, every tab); the pager-dependent `SideEffect` is gone.
+  Past, Trends, Settings, Tags, the sheets, dialogs and celebrations are
+  untouched. Not device-verified from this session.
+- 2026-10-31 (follow-ups): (1) the Now tab's **status strip lost its glass
+  pill**: flame + count and ring + "H/G" sit straight on the field beside the
+  bell, no divider (the pill shape survives only as the ripple). (2) **Font-size
+  floor (owner call)**: the owner's phone runs font scale 0.8 at 450dp wide, and
+  since font size shrinks text but not the dp shapes around it, the tabs looked
+  empty next to the mockups. `fullFontDensity()` (`ui/BeeSurfaces.kt`) keeps the
+  system font size but never below 1.0; it is provided around Now's and
+  Streak's field content, the journal + Trends (`PastTab`'s `AnimatedContent`)
+  and the shared top row. Dialogs, sheets, Settings, Tags and the nav bar stay on
+  the system setting; font sizes above 100% still apply everywhere.
+  (3) "How was your hour?" went 25sp → 36sp (owner). A full-width dial (ring
+  sized to the 16dp gutters) was tried and reverted by the owner: the dial keeps
+  its 32dp side padding.
+  (4) **Fixed proportions at any DPI (owner)**: `fullFontDensity()` became
+  `designDensity()` (`ui/BeeSurfaces.kt`). Besides the font-size floor it
+  rescales dp so the screen's short side is always `DESIGN_WIDTH_DP` (450, the
+  owner's phone at 1440px / density 512 when the layout was tuned), so a
+  different screen zoom or phone shows the same picture, scaled. Provided around
+  the same places as before (Now, Streak, journal + Trends, the top row — now
+  its whole box, padding and height included, so it lines up with each tab's
+  scaled `BandTopRowSpacer`). The nav bar, dialogs, sheets, Settings and Tags
+  stay on the system's dp and font size.
+  (5) **Mockup proportions, checked against a device screenshot**: the dial's
+  insides follow the mockup as fractions of the ring's fixed outer radius R
+  (0.394*s — footprint, notch and rim trims unchanged): cells 0.20R with clear
+  gaps (`CELL_R_FRAC` 0.0788, was 0.0902 and nearly touching), cell centres
+  0.80R (`CELL_D_FRAC`, replaces the core-derived distance; `CORE_R_FRAC` and
+  `CELL_GAP_FRAC` are gone), core 0.47R (`CORE_CIRCLE_FRAC` 0.185), halo on 0.54R;
+  tap slop `rc * 1.22`. Save pill 52 → 64dp with 18sp text; the hour range and
+  countdown 18sp; field tag chips 15sp (`FieldChipTextSize`, via
+  `TagChipContent(fontSize)`).
+  (6) **Quieter tags (owner: "distracting")**: field chips are Medium weight in
+  ink at 88% (`fieldChipColors()`); a selected chip steps up to SemiBold on its
+  honey (`fieldChipWeight(selected)`, passed through `TagChipContent(fontWeight)`).
+  (7) **One weight scale, app-wide (owner: "intentional and professionally
+  gorgeous")**, written down in `ui/theme/Type.kt`: 800 = the wordmark and hero
+  numerals (display roles); 700 = headings with tight tracking (headline roles,
+  now Bold, -0.4 to -0.6) and the primary action (Save); 600 = panel titles and
+  values (title roles, now SemiBold; the hour range, selected tags, dial digits,
+  caps overlines); 500 = controls and supporting labels (label roles, now Medium:
+  chips, legends, captions); 400 = body. Explicit overrides were swept to match
+  in Now, Streak, the top row, Past/Trends, the edit sheet, `PageHeader`,
+  Settings and Tags ("How was your hour?" / "All caught up" are Bold with
+  -0.8 / -0.6sp tracking; the top-row counts Bold; Lock SemiBold). The dial
+  now draws in **Plus Jakarta Sans** (`DialFaces`: cells 600, core numeral 800,
+  score word 600, "Pick a rating" 500) instead of the phone's system bold.
+- 2026-10-31 (**Now tab spacing pass**): measured from a device screenshot; the
+  owner reviewed redlines and four alignment mockups (artifact "Now Tab Spacing")
+  before this was built. Layout only: no rule, size, colour or font changed.
+  (1) **`RatingFrame`** (`NowTab.kt`, a multi-content `Layout`) holds the dial,
+  tags and note between the hour pill and Save. The dial and note keep their
+  size; the tags get as many rows as fit with every gap at its minimum; the
+  leftover is spread over four gaps by **`shareRatingGaps`** (`RatingFrameGaps.kt`,
+  pure, `RatingFrameGapsTest`): hour pill→dial, dial→tags, tags→note, note→Save,
+  base 24/24/12/24, min 16/16/8/16, in proportion to the base. Why: tags come in
+  40dp rows, and the frame's height changes with screen zoom even under
+  `designDensity` (the status and nav bars are in system dp) and with aspect
+  ratio; spread like this the gaps keep their ratios everywhere and none moves
+  more than ~11dp. It replaced the `weight(1f)` tag box whose `fillMaxSize`
+  `ContextualFlowRow` dumped the 0–40dp row remainder under the tags (55dp of
+  empty field above the note on the owner's phone, with only 9dp between the dial
+  and the tags). The flow row now wraps (`fillMaxWidth`) and the frame's max
+  height decides the rows. Gaps are measured between what you see: the chips'
+  8dp touch padding (`TagTouchInset`) and the note row's 4dp tap padding
+  (`NoteTapInset`) are taken out. The tags' `FadingScrollbar` sits in a
+  `matchParentSize` box, so `tagsViewportHeightPx` is gone.
+  (2) **Alignment "D"** (owner's pick): the words and Save on the 16dp edge, the
+  dial and tags centred. 16, not the mockup's 20, because the shared top row and
+  the other tabs already use 16. Title padding 20→16, the spacer above it 18→14,
+  and in field mode `NotesSection` nudges its row −7dp so the "+" stroke, not its
+  tap padding, sits on the edge.
+  (3) **Hour pill** (owner's pick over arrows-around-the-time and
+  arrows-on-the-right): `HourWindowPicker` is one 36dp glass pill
+  (`glass(x, PillShape)`) holding ‹ range ›. The countdown sits 8dp outside it,
+  lost its "·", and still opens "Why only these hours?".
+  (4) Save: 16dp from the sides and the nav bar (bottom was 10); no top padding,
+  since the frame's last gap is above it.
+  (5) **Top row** (all tabs): flame in a 22dp box (it draws about as tall as the
+  ring), `MiniHourRing` 24→20dp (stroke 3.5), spacers 6 / 16 / 6. The bell lost
+  its glass circle (owner OK, reverses the earlier call): a bare 24dp icon in a
+  40dp target whose clipped tap circle is a sibling, so the badge (offset 9, −13)
+  is never cut off. The ⋮ target is 36dp wide and the row has no end padding
+  (`HourlyPulseApp`), so the dots end on the 16dp edge.
+  (6) User tags show their emoji first on chips (`tagChipText` in `BeeIcons.kt`,
+  `TagChipTextTest`; `tagParts` moved there from `TagsScreen.kt`). Display only:
+  stored tag strings are untouched.
+  Not device-verified from this session (built, unit-tested and installed).
+- 2026-10-31 (**Past joins the night field**): owner's call after a mockup
+  (artifact "Past on the Field"); reverses the 2026-10-29 "purple only where it
+  earns it" split, made when the purple was a saturated band. The three tabs you
+  swipe between are now one surface. Colour only: no layout, size or data change.
+  (1) `PastTab`'s Scaffold paints `fieldBrush`; the Journal and Trends run inside
+  **`FieldColors`**, which remaps the page roles they were written against
+  (`onSurface`/`onBackground` → `fieldInk`, `onSurfaceVariant` → `fieldInkMuted`,
+  `surface` → `glassFill`, `surfaceVariant` → ink 8%, `primary` and `accentText` →
+  `fieldHoney`, no card shadow, `LocalContentColor` → `fieldInk`). One place
+  instead of ~60 role reads. The date-jump calendar is wrapped in **`PageColors`**
+  (dialogs stay plain); the edit sheet and the undo snackbar sit outside it.
+  (2) Glass edges: the Trends card gets a `glassLine` border; a month's day rows
+  draw theirs row by row (`drawWithContent` + two `ClipOp.Difference` strips), so
+  the month reads as one panel with dividers, not stacked boxes.
+  (3) The sticky month header paints its own slice of the field
+  (**`Modifier.fieldBackdrop`**, `ui/BeeSurfaces.kt`, from `FieldBrush.at(page,
+  offset)` in `Theme.kt`), so days scroll under it with no seam; `PastTab`
+  records the page bounds for it.
+  (4) Score text: the tints moved to `Color.kt` (`ScoreText*`) and
+  `PaletteContrastTest.score_text_reads_on_field_glass` pins them at 4.5:1 on
+  glass over both ends of the field (light 4.6–5.5, dark 4.8–10.7). Trends' ▲ ▼
+  now use them instead of the fill green (~2:1 as type), and the chart's "goal 7"
+  line/label use muted ink instead of a fixed grey.
+  (5) Chrome: `BandChrome.bandUnder` → **`wordmarkShown`** (the top row is field
+  ink on every tab; only the wordmark still fades over Past, which has its own
+  "Journal" title); the bell's badge ring is always `fieldTop`; `BottomNavBar` is
+  always `navOnField` with field honey (no more page↔field cross-fade);
+  `overPlainPage` → `overPast`.
+  Not device-verified from this session (built, 125 unit tests, installed).
+- 2026-10-31 (**Trends: Month · Year, and bars you can tap**): owner noticed
+  tapping a bar did nothing and that "Weeks/Months" named the bars' unit, not
+  the span shown. (1) `Zoom.fullLabel()` now reads **Month / Year** (matching the
+  "October 2026" / "2026" range label); the enum and "WEEK/MONTH SCORES" are
+  unchanged. (2) **A tapped bar scopes the stats, the savers count, the insight
+  and the tag table** to its span; the bar chart and the year grid stay whole
+  (the selected bar takes its band fill via `getScoreColor`, the rest dim to 7%
+  and their values to 45%; grid columns other than the selected month dim to
+  30%). State is `TrendsView.selected` (an index into the view's units); only the
+  current `PastViewKey` slot honours it, so an outgoing view is always whole.
+  (3) **Resets**: a second tap on the bar, any tap on the chart that isn't a bar
+  (axis, gaps, future weeks, labels: the chart's outer `clickable`, enabled only
+  while something is selected), the **scope chip** that replaces the range label
+  ("12–18 Oct ✕", honey on an 18% honey wash), stepping the period, switching
+  Month/Year, or leaving Trends. Deliberately NOT "tap anywhere outside": on a
+  scrolling page that includes the sort toggle and tag rows, so a stray tap
+  would silently reset the view. (4) **Comparisons stay honest**:
+  `previousSpan` (`TrendsSelection.kt`, pure, `TrendsSelectionTest`) gives a
+  month bar the calendar month before it and a week bar (clipped to 1–7 days at a
+  month's edge) the same number of days just before it, by calendar days so a
+  DST week still starts at midnight; `spanLabel` writes the chip ("12–18 Oct",
+  "31 Oct", "28 Sep – 4 Oct", "March 2026"). The insight keeps its 20-hour
+  floor, so a thin week shows none. (5) A muted "Tap a week/month" sits right of
+  the chart's section label until a bar is chosen. Each bar column is the whole
+  column height (`selectable`, `Role.Button`, described as "12–18 Oct, average
+  5.9"; the value text and x-label clear their own semantics). This reverses the
+  2026-08-04 "every chart is a pure readout" call, which was about the deleted
+  Day-zoom drill; scoping to a bar doesn't duplicate the journal.
+  Not device-verified from this session (built, 134 unit tests, installed).
+- 2026-10-31 (**portrait, selection motion, Instrument type**):
+  (1) `MainActivity` is `screenOrientation="portrait"` (owner). Android 16
+  ignores this on large screens (≥600dp wide), so it holds on phones only.
+  (2) Choosing or clearing a Trends bar animates on one rhythm, `SELECT_MS`
+  (260ms, FastOutSlowIn): the range label ⇄ scope chip (`AnimatedContent`, fade
+  + scale from 90%, width glides via `SizeTransform` so the › slides), the stats
+  + insight block (`ScopeSummary` as the target state) and the tag rows swap via
+  **`scopeSwap()`** — old content out in 120ms, new in 70ms later with a
+  ≤24px rise, height gliding — and the bar colours, value alphas, x-labels and
+  grid columns animate on the same tween. "Tap a week" fades with
+  `AnimatedVisibility`.
+  (3) **Typeface: Instrument** (owner's pick from the "Beeing Typefaces" mockup:
+  Jakarta vs Instrument vs Geist vs Bricolage). `res/font/instrument_sans.ttf` is
+  the variable font (wght 400–700; Compose dials `wght` from each `FontWeight`,
+  so ExtraBold/Black render at 700) and `instrument_serif_italic.ttf` the one
+  serif cut; both from google/fonts, OFL texts in `assets/licenses`. Jakarta's
+  five files are deleted. Role tracking was lightened (headlines −0.2/−0.3), the
+  narrower face needing less. **`DisplaySerif`** call sites and sizes: "How was
+  your hour?" 42/46sp, "All caught up" 31/35, `PageHeader` 33/38 (Journal,
+  Trends, Settings, Tags), wordmark 30/34 (`WordmarkStyle`), Super day and
+  streak-recovered titles 34/38. The dial draws on a native canvas, so
+  `DialFaces` now holds `DialFace(typeface, variation)` and `Paint.use()` sets
+  `fontVariationSettings` ('wght' 600 digits, 700 numeral, 500 prompt); the
+  score word is the serif at `rd * 0.27`. This brings back a second face, which
+  the 2026-10-27 reskin removed: that was a "fun" display face used everywhere;
+  this is its own family's serif in about six places.
+  Not device-verified from this session (built, 134 unit tests, installed).
+- 2026-10-31 (**quiet header, clear gap**): owner pointed back at the
+  night-field mockup's proportions (header reads as one quiet line, a distinct
+  gap before the hero). Measured at 450dp: the top row shrank — wordmark serif
+  30→26sp, counts 18→16sp, flame 22→18dp, ring 20→17dp (stroke 3), spacers
+  5/14/5, bell and ⋮ 24→22dp — and the gap above "How was your hour?" went
+  14→36dp (the mockup's ~39), with the hour pill 6dp under it. RatingFrame
+  absorbs the extra header height by shrinking its four gaps in proportion, so on
+  a short screen a tag row may fold sooner. Not device-verified.
+- 2026-10-31 (**sans wordmark, centred medallion**): owner call — the "Beeing"
+  wordmark is a brand mark in the quiet header, not a reflective line, so it is
+  Instrument Sans 700 22sp (−0.4 tracking); the question below stays the
+  screen's only serif. Both Streak-tab medallions (the honey disc and the hour
+  ring) lay out their inside with one private **`MedallionStack`**: hero over
+  label with a 3dp gap, the pair centred as a block then nudged down a sixth of
+  the label's height. Pure block-centring lifted the count; pinning the count to
+  dead centre (tried first) crowded "day streak" into the disc's bottom edge.
+  Both labels are 11sp SemiBold with **`MedallionLabelLineHeight` (13sp)**: they
+  had inherited bodyLarge's 24sp line height, which made each label a 24dp box
+  and pushed the stack onto the ring's stroke. Not device-verified.
+  Same day: **choosing a tag no longer reflows the picker.** Selected chips are
+  SemiBold and so a few dp wider, which re-wrapped the row and dropped its last
+  chip into "+N more"; `TagChipContent`'s private `ChipLabel` now reserves the
+  SemiBold width with an invisible twin whenever a weight is given (field chips).
+- 2026-10-31 (**fixes found on device**, owner asked me to try them myself; adb
+  screenshots + taps this once): (1) **Instrument Sans weights never applied** —
+  a variable resource `Font` given only a `FontWeight` rendered at the file's
+  default 400 everywhere. `Type.kt` now sets `FontVariation.weight(n)` per `Font`
+  (`@OptIn(ExperimentalTextApi)`). (2) **Medallion text sat low**: Instrument's
+  tall ascender puts ~12dp of empty box above 46sp digits and their descent below,
+  so box-centring sank everything onto the ring. `MedallionStack(heroSize)` now
+  centres the visible block — digits' top (FirstBaseline − 0.72 × size, the
+  face's cap height) to the label's baseline — and hangs the label 4dp under the
+  hero's baseline; verified centred in both discs. (3) **Choosing a tag dropped
+  the last visible chip**: not chip width — `TagFoldButton`'s text grew to
+  "+N more · 1 selected" whenever a chosen tag would be folded, and
+  `ContextualFlowRow` measures the indicator for candidate fold points, so the
+  wider variant cost a chip. The text is now always "+N more"; it turns
+  `fieldHoney` (`holdsSelection`) when a chosen tag is inside. Verified by tapping
+  Hobbies on the last row. (`ChipLabel`'s bold twin stays: it keeps width stable
+  now that weights really change.)
+- 2026-10-31 (**release signing**): `app/build.gradle.kts` signs release builds
+  from `~/.android-keystores/beeing-release.properties` (storeFile, storePassword,
+  keyAlias `beeing`, keyPassword) and `beeing-release.jks` (RSA 4096, ~27 years,
+  `CN=Beeing, O=athiv`, cert SHA-256 `39:5E:5E:1A…A7:71:59:F3`) — both OUTSIDE
+  the repo; without the file a release build is just unsigned. Build with
+  `./gradlew assembleRelease`; shareable copies go in `dist/` (git-ignored).
+  A release APK can't install over a debug install (different signer): the
+  phone must uninstall first, which wipes the app's data, so export a CSV
+  backup before switching a phone with real ratings.
+- 2026-11-05 (**Wear groundwork**, phone side of the Wear OS companion; spec
+  `docs/superpowers/specs/2026-11-05-wear-companion-design.md`, plans
+  `docs/superpowers/plans/2026-11-05-wear-groundwork.md` / `-wear-app.md`):
+  (1) the pure engine moved to a **`:shared`** module (see the file map); the
+  three log/bell tests that read app code became `StreakLogTest` in `:app`.
+  (2) **The "Hourly reminders" switch is gone** (owner): pause covers breaks,
+  Android's channel settings cover "never". (3) Ratings carry `modifiedAt` and
+  `origin`; deletes leave 7-day tombstones. (4) **The replay is resumable**:
+  `carryAt(ratings, modes, dayStart)` → `ReplayCarry`, and
+  `computeStreakStateFrom(carry, ratings, modes, now)` equals the full replay for
+  any checkpoint before yesterday (`ReplayCarryTest` checks every split, and a DST
+  day). `ReplayCarry.started` = something was walked; a checkpoint before the first
+  rating resumes at the first rating, as a full replay does. (5) `mergeIncoming`:
+  a watch rating counts only if saved while its hour was ratable (± 5 min), the
+  later save wins (tie → phone), a live rating beats an "Added later" one and
+  refunds its reclaim, a newer tombstone drops it. (6) `ringClosed` /
+  `streakMoment` take `watchHourStarts`, so the phone never re-celebrates an hour
+  the watch saved. (7) Streak alerts run at **02:01**, and an alert a later rating
+  disproved is cancelled. (8) Sounding channels moved to the Beeing tone under v2 ids.
+  Not device-verified (no phone connected; `test assembleDebug` only).
+- 2026-11-05 (**Beeing for Wear OS**, plan `docs/superpowers/plans/2026-11-05-wear-app.md`):
+  the `:wear` app (see its file map) and the sync seam above. The watch only rates
+  and tags (no history, notes, editing or settings), works offline for days, posts its
+  own reminder, celebrates the ring closing and the 12th hour, and offers a Tile and
+  three complications. Decisions worth keeping: the watch keeps a save until the phone
+  lists it as processed (pruning by age would starve the resumed replay); the phone
+  lists dropped watch ratings as processed too, so they stop overriding its copy; the
+  watch never re-posts its reminder after a save or sync (it only clears it). Device
+  checks for the owner: `docs/superpowers/plans/2026-11-05-wear-device-checklist.md`.
+  Not device-verified (no phone or watch connected; `test assembleDebug` only).

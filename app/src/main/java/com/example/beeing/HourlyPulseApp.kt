@@ -43,6 +43,8 @@ import com.example.beeing.ui.BandTopRow
 import com.example.beeing.ui.BandTopRowHeight
 import com.example.beeing.ui.LocalBandChrome
 import com.example.beeing.ui.SaverExplainerDialog
+import com.example.beeing.ui.designDensity
+import androidx.compose.ui.platform.LocalDensity
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
 import com.example.beeing.ui.icons.SymTitle
@@ -50,9 +52,6 @@ import com.example.beeing.ui.theme.LocalBeeExtras
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -204,24 +203,15 @@ fun HourlyPulseApp(
         onBellClick = { showWarnings = true },
         onMenuClick = { showSettings = true },
         onTopRowHidden = { topRowHidden = it },
-        bandUnder = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
+        wordmarkShown = { (1f - (pagerPosition() - 1f)).coerceIn(0f, 1f) },
         nowShown = { (1f - abs(pagerPosition() - 1f)).coerceIn(0f, 1f) },
         superHoursLeft = superHoursLeft
     )
 
-    // Status-bar icons follow what is under them: white over a band (Streak, Now),
-    // dark over the plain light page (Past, Trends, Settings). Dark mode is always
-    // white. BeeingTheme no longer sets this — it can't see the pager.
-    val view = LocalView.current
-    val darkTheme = isSystemInDarkTheme()
+    // Status-bar icons are BeeingTheme's job: the field and the page are both dark in
+    // dark mode and light in light mode, so nothing here depends on the tab.
     // derivedStateOf: the root must not recompose on every swipe frame
-    val overPlainPage by remember { derivedStateOf { pagerPosition() > 1.5f } }
-    val lightStatusIcons = !darkTheme && (showSettings || showManageTags || overPlainPage)
-    SideEffect {
-        (view.context as? Activity)?.window?.let { window ->
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = lightStatusIcons
-        }
-    }
+    val overPast by remember { derivedStateOf { pagerPosition() > 1.5f } }
 
     // Graduation nudge: once, ever, on the 3rd completed beginner day. Marked
     // as shown the moment it appears, so declining is not re-asked.
@@ -345,11 +335,11 @@ fun HourlyPulseApp(
     CompositionLocalProvider(LocalBandChrome provides bandChrome) {
     Box(Modifier.fillMaxSize()) {
     Scaffold(
-        // The calm page every tab's cards sit on. No topBar: each tab opens
-        // with its own BrandBand, which draws under the status bar and owns
-        // that inset itself (see BeeSurfaces.kt).
+        // The calm page under Past. No topBar: Now and Streak paint the night
+        // field edge to edge and Past opens on a PageHeader; each draws under the
+        // status bar and owns that inset itself (see BeeSurfaces.kt).
         containerColor = MaterialTheme.colorScheme.background,
-        // Top is owned by each tab's BrandBand and bottom by the nav bar; keep only
+        // Top is owned by each tab and bottom by the nav bar; keep only
         // the side insets (landscape nav bar, camera cutout) for the content.
         contentWindowInsets = WindowInsets.systemBars
             .union(WindowInsets.displayCutout)
@@ -594,14 +584,17 @@ fun HourlyPulseApp(
     // Hidden while Trends is open (it has its own back row) AND the pager is on
     // Past: the pager keeps Past composed after a jump to Now, so Trends' flag
     // alone would leave Now without its top row. ----
-    if (!(topRowHidden && overPlainPage)) {
+    // Scaled like the tabs under it (designDensity), padding and height included, so
+    // it lines up with the BandTopRowSpacer each tab reserves in its own scaled dp.
+    if (!(topRowHidden && overPast)) CompositionLocalProvider(LocalDensity provides designDensity()) {
         Box(
             Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal))
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+                // No end padding: the ⋮'s target runs to the edge so its dots sit on the 16dp edge
+                .padding(start = 16.dp, top = 8.dp)
                 .height(BandTopRowHeight)
         ) { BandTopRow() }
     }
@@ -736,11 +729,13 @@ private fun InfoSection(sym: Sym, title: String) {
 }
 
 /**
- * The app's bottom navigation, Swiggy-style: a plain card-coloured bar with a
- * hairline top edge, each tab an icon over its label. Inactive tabs wear the
- * outline icon in `onSurfaceVariant`; the active one switches to the filled
- * icon and a bold label in the accent-as-text colour. No pill. Colour is
- * driven by the pager's continuous position, so it crossfades with the swipe.
+ * The app's bottom navigation, Swiggy-style: each tab an icon over its label.
+ * Inactive tabs wear the outline icon; the active one switches to the filled
+ * icon and a bold honey label. No pill.
+ *
+ * All three tabs sit on the night field, so the bar is always the field's own
+ * bottom colour with a hairline of field ink, and the field runs into it. Only
+ * the active tab's honey follows the pager's continuous position.
  */
 @Composable
 private fun BottomNavBar(
@@ -748,19 +743,21 @@ private fun BottomNavBar(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = LocalBeeExtras.current.accentText
-    val idle = MaterialTheme.colorScheme.onSurfaceVariant
+    val x = LocalBeeExtras.current
+    // Continuous pager position: whole part = page, fraction = swipe progress
+    val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
+    // All three tabs sit on the field, so the bar never changes surface
+    val accent = x.fieldHoney
+    val idle = x.fieldInkMuted
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = x.navOnField,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(thickness = 0.5.dp, color = x.fieldInk.copy(alpha = 0.10f))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp)) {
-                // Continuous pager position: whole part = page, fraction = swipe progress
-                val progress = pagerState.currentPage + pagerState.currentPageOffsetFraction
                 bottomNavItems.forEachIndexed { index, item ->
                     val focus = (1f - abs(progress - index)).coerceIn(0f, 1f)
                     val active = focus > 0.5f

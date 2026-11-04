@@ -15,15 +15,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // --- DATA MODELS ---
-data class RatingEntry(
-    val id: Long,
-    val score: Int,
-    val timestamp: Long,
-    val hourLabel: String,
-    val note: String = "",
-    val tags: List<String> = emptyList()
-)
-
 /** A score chosen on the hourly notification, waiting to be finished in-app. */
 data class PendingRating(val score: Int, val targetTs: Long, val label: String, val tags: List<String> = emptyList())
 
@@ -38,19 +29,23 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 const val ACTION_NOTIF_SCORE = "com.example.beeing.NOTIF_SCORE"
 const val ACTION_NOTIF_TAG = "com.example.beeing.NOTIF_TAG"
 const val ACTION_NOTIF_SUBMIT = "com.example.beeing.NOTIF_SUBMIT"
-const val CHANNEL_STREAK_ALERTS = "streak_alerts"
+// Sounding channels play the Beeing tone. A channel's sound is fixed when it is
+// created, so moving to the tone needed new ids; the old ones are deleted below.
+const val CHANNEL_HOURLY = "hourly_bee_v2"
+const val CHANNEL_WEEKLY = "weekly_report_v2"
+const val CHANNEL_STREAK_ALERTS = "streak_alerts_v2"
 const val CHANNEL_STREAK_ALERTS_SILENT = "streak_alerts_silent"
 
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+        val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.beepingandroidbuzz}")
         val audioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
         val channel = NotificationChannel(
-            "hourly_bee",
+            CHANNEL_HOURLY,
             "Hourly Reminders",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
@@ -59,7 +54,7 @@ fun createNotificationChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val weeklyChannel = NotificationChannel(
-            "weekly_report",
+            CHANNEL_WEEKLY,
             "Weekly Report",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
@@ -69,6 +64,7 @@ fun createNotificationChannel(context: Context) {
 
         // Silent twins: a channel's sound is fixed at creation, so "no sound" needs its own.
         val manager = context.getSystemService(NotificationManager::class.java)
+        listOf("hourly_bee", "weekly_report", "streak_alerts").forEach { manager.deleteNotificationChannel(it) }
         fun silent(id: String, name: String, importance: Int) = NotificationChannel(id, name, importance).apply {
             setSound(null, null)
             enableVibration(false)
@@ -150,14 +146,28 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                // Hourly reminders obey silent hours, pause and the reminders switch;
-                // the alarm keeps rescheduling either way, so a pause ends on its own.
-                when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
-                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee")
-                    Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
-                    Delivery.NONE -> {}
-                }
+                // Hourly reminders obey silent hours and pause; the alarm keeps
+                // rescheduling either way, so a pause ends on its own. With Beeing on a
+                // watch that is nearby and on duty, the watch buzzes and the phone's
+                // copy arrives silently (asking the Data Layer needs a thread).
+                val base = hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())
+                val pending = goAsync()
+                Thread {
+                    try {
+                        refreshWatchInstalledNow(context) // a watch app installed since launch still counts
+                        val delivery = if (base == Delivery.SOUND && watchInstalled(context))
+                            phoneDelivery(base, watchReachable(context), watchOnDuty(context)) else base
+                        when (delivery) {
+                            Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, CHANNEL_HOURLY)
+                            Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
+                            Delivery.NONE -> {}
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
                 scheduleExactHourlyAlarm(context)
+                publishState(context) // the hour turned: the watch's waiting hours move with it
             }
         }
     }
@@ -290,6 +300,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOnlyAlertOnce(alertOnce)
+            .setLocalOnly(watchInstalled(context)) // the watch posts its own; never bridge a second one
             .setAutoCancel(true) // body tap only; the chips are broadcasts and never cancel
             .setContentIntent(openIntent)
             .build()
@@ -366,24 +377,33 @@ fun loadTags(c: Context): List<String> {
 fun saveTags(c: Context, tags: List<String>) {
     val prefs = c.getSharedPreferences("b", 0)
     prefs.edit { putString("tags_v2", tags.joinToString(",")) }
+    publishState(c)
 }
 
 // --- DATA PERSISTENCE ---
+// The watch merge (a binder thread) and the UI both read-modify-write ratings, reclaim
+// spends and tombstones; every such write holds this one lock, or one side's save is lost.
+internal val STORE_LOCK = Any()
+
+// Rows are encoded by encodeRatingRow/decodeRatingRow (:shared RatingRow.kt).
 fun saveRating(context: Context, entry: RatingEntry) {
     val prefs = context.getSharedPreferences("b", 0)
-    val existing = loadRatings(context).toMutableList()
-    existing.removeAll { it.id == entry.id }
-
     // Safety: Sanitize note to prevent CSV corruption
-    val safeNote = entry.note.replace(",", " ").replace("\n", " ")
-    val safeEntry = entry.copy(note = safeNote)
-
-    existing.add(safeEntry)
-
-    val serialized = existing.joinToString("|") { e ->
-        "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}"
+    val safeEntry = entry.copy(note = entry.note.replace(",", " ").replace("\n", " "))
+    synchronized(STORE_LOCK) {
+        // One row per hour: a save replaces the same entry and any other row for its hour
+        // (a watch rating may have merged while this screen still showed the hour waiting).
+        val next = upsertRating(loadRatings(context), safeEntry)
+        prefs.edit { putString("ratings", next.joinToString("|") { encodeRatingRow(it) }) }
+        // A save for an hour supersedes its deletion (this is also how Undo restores one).
+        clearTombstone(context, entry.timestamp)
     }
-    prefs.edit { putString("ratings", serialized) }
+    publishState(context)
+}
+
+/** Replaces every stored rating at once (the watch merge writes through this). */
+fun saveAllRatings(context: Context, ratings: List<RatingEntry>) = synchronized(STORE_LOCK) {
+    context.getSharedPreferences("b", 0).edit { putString("ratings", ratings.joinToString("|") { encodeRatingRow(it) }) }
 }
 
 fun loadRatings(context: Context): List<RatingEntry> {
@@ -391,28 +411,17 @@ fun loadRatings(context: Context): List<RatingEntry> {
     val data = prefs.getString("ratings", "") ?: return emptyList()
     if (data.isEmpty()) return emptyList()
 
-    return data.split("|").mapNotNull { line ->
-        val parts = line.split(",")
-        if (parts.size >= 4) {
-            RatingEntry(
-                id = parts[0].toLongOrNull() ?: 0L,
-                score = parts[1].toIntOrNull() ?: 0,
-                timestamp = parts[2].toLongOrNull() ?: 0L,
-                hourLabel = parts[3],
-                note = parts.getOrNull(4) ?: "",
-                tags = parts.getOrNull(5)?.split(";")?.filter { it.isNotEmpty() } ?: emptyList()
-            )
-        } else null
-    }.sortedByDescending { it.timestamp }
+    return data.split("|").mapNotNull { decodeRatingRow(it) }.sortedByDescending { it.timestamp }
 }
 
 fun deleteRating(context: Context, id: Long) {
     val prefs = context.getSharedPreferences("b", 0)
-    val existing = loadRatings(context).filter { it.id != id }
-    val serialized = existing.joinToString("|") { e ->
-        "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}"
+    synchronized(STORE_LOCK) {
+        val all = loadRatings(context)
+        prefs.edit { putString("ratings", all.filter { it.id != id }.joinToString("|") { encodeRatingRow(it) }) }
+        all.firstOrNull { it.id == id }?.let { recordTombstone(context, it.timestamp, System.currentTimeMillis()) }
     }
-    prefs.edit { putString("ratings", serialized) }
+    publishState(context)
 }
 
 // --- BACKUP/RESTORE ---

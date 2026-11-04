@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --honey: #F5A623; --ink: #2A0F31; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0A0C; color: #EDE9F0; font-family: 'Plus Jakarta Sans', sans-serif; padding: 32px 28px 80px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .lede { color: #A9A3AE; margin: 6px 0 26px; max-width: 820px; line-height: 1.5; font-size: 14px; }
+  .row { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 34px; }
+  .cap { font-size: 11px; color: #7d7682; text-align: center; margin-top: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .notes { max-width: 820px; color: #B9B3BE; font-size: 13.5px; line-height: 1.6; }
+  .notes h2 { font-size: 18px; color: #fff; margin: 4px 0 6px; }
+  .notes ul { margin-left: 18px; }
+
+  .phone { width: 300px; height: 640px; border-radius: 34px; overflow: hidden; position: relative; border: 6px solid #000; box-shadow: 0 18px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .sb { height: 22px; flex: none; }
+  .top { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 0; }
+  .brand { font-weight: 800; font-size: 17px; letter-spacing: -.02em; }
+  .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+  .flame { color: var(--honey); }
+  .mini { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+  .bell { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+  .q { padding: 26px 20px 0; }
+  .q h3 { font-size: 25px; font-weight: 800; letter-spacing: -.02em; }
+  .when { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 13.5px; }
+  .when .left { color: var(--honey); font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 16px 0; }
+  .chip { font-size: 11px; font-weight: 600; padding: 6px 10px; border-radius: 999px; white-space: nowrap; }
+  .chip.sel { background: var(--honey) !important; color: var(--ink) !important; border-color: var(--honey) !important; }
+  .chip.more { background: transparent !important; border-style: dashed !important; }
+  .note { font-size: 12px; padding: 10px 20px 0; }
+  .save { margin: 0 16px 12px; height: 46px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; background: var(--honey); color: var(--ink); }
+  .nav { height: 54px; flex: none; display: flex; justify-content: space-around; align-items: center; font-size: 10px; }
+  .nav div { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .nav i { width: 18px; height: 18px; border-radius: 5px; border: 1.6px solid currentColor; display: block; }
+  .nav .on { color: var(--honey); font-weight: 700; }
+  .nav .on i { background: currentColor; }
+  .done { text-align: center; padding: 34px 20px 0; }
+  .done h3 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin-top: 14px; }
+  .done p { font-size: 13px; margin-top: 4px; }
+  .strip { margin: 22px 20px 0; padding: 14px; border-radius: 18px; }
+  .strip .lbl { font-size: 10.5px; letter-spacing: .14em; font-weight: 700; display: flex; justify-content: space-between; }
+  .ticks { display: flex; gap: 3px; margin-top: 10px; }
+  .ticks span { flex: 1; height: 22px; border-radius: 5px; }
+  .field { flex: 1; position: relative; }
+  .field .bee { position: absolute; left: 58%; top: 30%; font-size: 26px; }
+  .field .prompt { position: absolute; bottom: 6px; width: 100%; text-align: center; font-size: 13px; }
+  .lock { margin: 0 16px 12px; height: 46px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13.5px; }
+  svg text { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+  /* ---- dark: night field ---- */
+  .dark { background: radial-gradient(120% 70% at 50% 0%, #4A1D53 0%, #2E1135 45%, #1A0A1E 100%); color: #fff; }
+  .dark .mini { border: 2px solid rgba(255,255,255,.35); }
+  .dark .bell { background: rgba(255,255,255,.08); }
+  .dark .when { color: rgba(255,255,255,.75); }
+  .dark .when b { color: #fff; }
+  .dark .chip { background: rgba(255,255,255,.07); color: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.08); }
+  .dark .chip.more { color: rgba(255,255,255,.6); }
+  .dark .note { color: rgba(255,255,255,.5); }
+  .dark .save { box-shadow: 0 8px 24px rgba(245,166,35,.25); }
+  .dark .nav { border-top: 1px solid rgba(255,255,255,.08); color: rgba(255,255,255,.55); background: rgba(10,4,12,.35); }
+  .dark .done p { color: rgba(255,255,255,.65); }
+  .dark .strip { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.07); }
+  .dark .strip .lbl { color: rgba(255,255,255,.5); }
+  .dark .prompt { color: rgba(255,255,255,.7); }
+  .dark .lock { border: 1.5px solid rgba(255,255,255,.25); }
+
+  /* ---- light: dawn field (same hue, lifted) ---- */
+  .light { background: radial-gradient(120% 70% at 50% 0%, #DCCDF6 0%, #ECE4FA 45%, #F8F5FD 100%); color: #24123A; }
+  .light.deep { background: radial-gradient(120% 70% at 50% 0%, #CDB6F2 0%, #E2D5F7 45%, #F3EEFC 100%); }
+  .light .mini { border: 2px solid rgba(42,15,49,.28); }
+  .light .bell { background: rgba(255,255,255,.7); }
+  .light .when { color: rgba(42,15,49,.65); }
+  .light .when b { color: #2A0F31; }
+  .light .when .left { color: #9A6000; }
+  .light .flame { color: #C77D0A; }
+  .light .chip { background: rgba(255,255,255,.72); color: #3A1F40; border: 1px solid rgba(42,15,49,.08); }
+  .light .chip.more { color: rgba(42,15,49,.55); border-color: rgba(42,15,49,.22) !important; }
+  .light .note { color: rgba(42,15,49,.5); }
+  .light .save { box-shadow: 0 8px 20px rgba(196,120,10,.22); }
+  .light .nav { border-top: 1px solid rgba(42,15,49,.08); color: rgba(42,15,49,.5); background: rgba(255,255,255,.55); }
+  .light .nav .on { color: #9A6000; }
+  .light .done p { color: rgba(42,15,49,.6); }
+  .light .strip { background: rgba(255,255,255,.65); border: 1px solid rgba(42,15,49,.06); }
+  .light .strip .lbl { color: rgba(42,15,49,.5); }
+  .light .prompt { color: rgba(42,15,49,.6); }
+  .light .lock { border: 1.5px solid rgba(42,15,49,.2); }
+</style>
+</head>
+<body>
+<h1>A · Night field, light mode in violet</h1>
+<p class="lede">The light field moves from pink-lilac to violet. Two strengths to compare: <b>Soft violet</b> (the quieter one) and <b>Deep violet</b> (more colour in the glow). The dark version is unchanged, for reference.</p>
+
+<div class="row">
+  <div><div class="phone dark" data-state="rate"></div><div class="cap">Dark · rating</div></div>
+  <div><div class="phone dark" data-state="done"></div><div class="cap">Dark · caught up</div></div>
+</div>
+<div class="row">
+  <div><div class="phone light" data-state="rate"></div><div class="cap">Soft violet · rating</div></div>
+  <div><div class="phone light" data-state="done"></div><div class="cap">Soft violet · caught up</div></div>
+  <div><div class="phone light deep" data-state="rate"></div><div class="cap">Deep violet · rating</div></div>
+  <div><div class="phone light deep" data-state="done"></div><div class="cap">Deep violet · caught up</div></div>
+</div>
+
+<div class="notes">
+  <h2>What carries over between the two</h2>
+  <ul>
+    <li><b>Violet, not pink.</b> Soft: #DCCDF6 → #F8F5FD. Deep: #CDB6F2 → #F3EEFC. The text ink shifts with it to a violet-black, #24123A. The glow sits at the top, as in dark.</li>
+    <li><b>Glass inverts.</b> In dark, shapes are white at 7% with white text. In light, they're white at 70% with aubergine ink, so they read as frosted panes either way.</li>
+    <li><b>Honey keeps its job.</b> The Save fill is the same #F5A623 in both. Honey <i>text</i> in light uses the deeper #9A6000 for contrast, as the app already does.</li>
+    <li><b>Score colours are untouched.</b> Only the chosen cell and the core use them, plus the today strip.</li>
+  </ul>
+</div>
+
+<script>
+const WORD = ['', 'Awful', 'Bad', 'Rough', 'Meh', 'Okay', 'Fine', 'Good', 'Great', 'Lovely', 'Perfect'];
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; parent.appendChild(e); return e; }
+
+const T = {
+  dark: { col: s => s <= 4 ? '#EF6F6C' : s <= 7 ? '#F2B54A' : '#6CCB8A', cell: 'rgba(255,255,255,.07)', cellLine: 'rgba(255,255,255,.10)', digit: 'rgba(255,255,255,.85)', notch: '#fff', onCell: '#10200F', track: 'rgba(255,255,255,.1)', empty: 'rgba(255,255,255,.07)' },
+  light: { col: s => s <= 4 ? '#E0605D' : s <= 7 ? '#EBA93A' : '#4FB873', cell: 'rgba(255,255,255,.72)', cellLine: 'rgba(42,15,49,.08)', digit: '#3A1F40', notch: '#2A0F31', onCell: '#10200F', track: 'rgba(42,15,49,.10)', empty: 'rgba(42,15,49,.07)' }
+};
+
+function dial(svg, t, sel) {
+  const cx = 150, cy = 138;
+  const angOf = s => -Math.PI / 2 + (s - sel) * (2 * Math.PI / 10);
+  el('path', { d: 'M144 6 L156 6 L150 14Z', fill: t.notch, opacity: .9 }, svg);
+  for (let s = 1; s <= 10; s++) {
+    const a = angOf(s), x = cx + 92 * Math.cos(a), y = cy + 92 * Math.sin(a), on = s === sel;
+    el('circle', { cx: x, cy: y, r: 23, fill: on ? t.col(s) : t.cell, stroke: on ? '#fff' : t.cellLine, 'stroke-width': on ? 2 : 1 }, svg);
+    el('text', { x, y: y + 6, 'text-anchor': 'middle', 'font-size': 17, 'font-weight': 800, fill: on ? t.onCell : t.digit }, svg, s);
+  }
+  el('circle', { cx, cy, r: 62, fill: 'none', stroke: t.col(sel), 'stroke-opacity': .25, 'stroke-width': 6 }, svg);
+  el('circle', { cx, cy, r: 54, fill: t.col(sel) }, svg);
+  el('text', { x: cx, y: cy + 8, 'text-anchor': 'middle', 'font-size': 40, 'font-weight': 800, fill: t.onCell }, svg, sel);
+  el('text', { x: cx, y: cy + 28, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: t.onCell, opacity: .75 }, svg, WORD[sel]);
+}
+
+const TOP = (light, done) => `
+  <div class="sb"></div>
+  <div class="top"><span class="brand">Beeing</span>
+    <span class="stat"><span class="flame">🔥 4</span>
+      <span class="mini" ${done ? 'style="border-color:#F5A623"' : ''}></span>${done ? '8/8' : '3/8'}
+      <span class="bell">🔔</span><span style="opacity:.75">⋮</span></span></div>`;
+const NAV = `<div class="nav"><div><i></i>Streak</div><div class="on"><i></i>Now</div><div><i></i>Past</div></div>`;
+const RATE = light => TOP(light, false) + `
+  <div class="q"><h3>How was your hour?</h3>
+    <div class="when"><span>‹</span><b>12am – 1am</b><span style="opacity:.35">›</span><span class="left">· 1h 46m left</span></div></div>
+  <svg class="dial" viewBox="0 0 300 262" style="width:100%;height:240px;margin-top:6px"></svg>
+  <div class="chips"><span class="chip sel">Family</span><span class="chip">Work</span><span class="chip">Learning</span><span class="chip">Exercise</span><span class="chip">Food</span><span class="chip">Rest</span><span class="chip sel">Social</span><span class="chip">Scrolling</span><span class="chip more">+18</span></div>
+  <div class="note">＋ Add a note</div>
+  <div style="flex:1"></div>
+  <div class="save">Save 12am – 1am</div>` + NAV;
+const DONE = light => TOP(light, true) + `
+  <div class="done">
+    <svg class="ring" viewBox="0 0 120 120" width="112" height="112"></svg>
+    <h3>All caught up</h3><p>Next hour opens in 34m</p></div>
+  <div class="strip"><div class="lbl"><span>TODAY</span><span style="color:inherit;opacity:1">avg 7.4</span></div><div class="ticks"></div></div>
+  <div class="field"><span class="bee">🐝</span><div class="prompt">Catch the bee to lock your phone</div></div>
+  <div class="lock">🔒 Lock phone and bee mindful</div>` + NAV;
+
+const today = [7,8,6,0,9,7,8,5,0,7,9,8,0,0,0,0,0,0];
+document.querySelectorAll('.phone').forEach(p => {
+  const light = p.classList.contains('light'), t = light ? T.light : T.dark;
+  if (p.dataset.state === 'rate') {
+    p.innerHTML = RATE(light);
+    dial(p.querySelector('svg.dial'), t, 8);
+  } else {
+    p.innerHTML = DONE(light);
+    const r = p.querySelector('svg.ring');
+    el('circle', { cx: 60, cy: 60, r: 50, fill: 'none', stroke: t.track, 'stroke-width': 8 }, r);
+    el('circle', { cx: 60, cy: 60, r: 50, fill: 'none', stroke: '#F5A623', 'stroke-width': 8, 'stroke-linecap': 'round', 'stroke-dasharray': 314, transform: 'rotate(-90 60 60)' }, r);
+    el('text', { x: 60, y: 68, 'text-anchor': 'middle', fill: light ? '#2A0F31' : '#fff', 'font-size': 26, 'font-weight': 800 }, r, '8/8');
+    const tk = p.querySelector('.ticks');
+    today.forEach(s => { const sp = document.createElement('span'); sp.style.background = s ? t.col(s) : t.empty; tk.appendChild(sp); });
+  }
+});
+</script>
+</body>
+</html>

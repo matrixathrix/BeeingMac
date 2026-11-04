@@ -31,6 +31,24 @@ class RatingsViewModel : ViewModel() {
      */
     fun loadRatings(context: Context) {
         allRatings = com.example.beeing.loadRatings(context)
+        watchStorage(context)
+    }
+
+    // A watch rating merged in the background must show up in the open UI at once, or
+    // a save made from the stale copy would act on an hour that is already rated.
+    private var storageListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    private fun watchStorage(context: Context) {
+        if (storageListener != null) return
+        val app = context.applicationContext
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "ratings") {
+                allRatings = com.example.beeing.loadRatings(app)
+                triggerRefresh()
+            }
+        }
+        storageListener = listener // the prefs hold listeners weakly
+        app.getSharedPreferences("b", 0).registerOnSharedPreferenceChangeListener(listener)
     }
 
     /**
@@ -57,6 +75,7 @@ class RatingsViewModel : ViewModel() {
     fun saveRating(context: Context, rating: RatingEntry) {
         com.example.beeing.saveRating(context, rating)
         loadRatings(context) // Reload to get fresh data
+        withdrawStaleAlerts(context)
         triggerRefresh()
     }
     
@@ -66,6 +85,7 @@ class RatingsViewModel : ViewModel() {
     fun deleteRating(context: Context, id: Long) {
         com.example.beeing.deleteRating(context, id)
         loadRatings(context)
+        withdrawStaleAlerts(context)
         triggerRefresh()
     }
     

@@ -55,8 +55,8 @@ fun showWeeklyReportNotification(context: Context) {
     )
     val notification = NotificationCompat.Builder(
         context,
-        // Always arrives; silent only during silent hours (pause and the reminders switch don't apply)
-        if (otherDelivery(loadNotificationPrefs(context), System.currentTimeMillis()) == Delivery.SILENT) "weekly_report_silent" else "weekly_report"
+        // Always arrives; silent only during silent hours (pause doesn't apply)
+        if (otherDelivery(loadNotificationPrefs(context), System.currentTimeMillis()) == Delivery.SILENT) "weekly_report_silent" else CHANNEL_WEEKLY
     )
         .setSmallIcon(android.R.drawable.ic_dialog_info)
         .setContentTitle("Your week in review")

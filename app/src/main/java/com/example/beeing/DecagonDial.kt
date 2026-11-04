@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -32,13 +31,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.core.content.res.ResourcesCompat
+import com.example.beeing.ui.theme.LocalBeeExtras
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -55,8 +57,10 @@ import kotlin.math.sin
 /**
  * Decagon Comb Dial — the Beeing rating input.
  *
- * A 10-sided readout core with ten round cells docked one per edge (the ring
- * has 10-fold symmetry, so its silhouette maps onto itself at every detent).
+ * A round readout core ringed by ten round glass cells (the ring has 10-fold
+ * symmetry, so its silhouette maps onto itself at every detent). The name is
+ * historical: the core was a decagon until the night-field pass (2026-10-31)
+ * made every shape on the field a circle or a pill.
  * Scores ascend counter-clockwise, so a CLOCKWISE
  * glide raises the score at the fixed top notch — physical dial convention.
  *
@@ -78,7 +82,10 @@ import kotlin.math.sin
  *   DecagonCombDial(rating = score, onRatingChange = { score = it })
  *
  * Set `rating` back to null after saving to reset the dial to its resting
- * state (muted "Pick a rating" core, comb at 5-on-top, sleeping notch).
+ * state (glass "Pick a rating" core, comb at 5-on-top, sleeping notch).
+ *
+ * It is drawn for the night field: glass cells with field-ink digits, so the
+ * only coloured fills are the selected cell and the rated core.
  */
 
 private const val DETENT = 36f
@@ -109,10 +116,6 @@ private const val TICK_VOLUME = 0.45f
 // audio HAL (see DialTicker.updateWhine()), so fast spin is silent except for
 // haptics.
 
-val DIAL_WORDS = mapOf(
-    1 to "terrible", 2 to "bad", 3 to "rough", 4 to "meh", 5 to "okay",
-    6 to "fine", 7 to "pretty good", 8 to "great", 9 to "excellent", 10 to "golden"
-)
 
 /**
  * The dial speaks the app's score bands (red 1–4 / amber 5–7 / green 8–10),
@@ -125,26 +128,6 @@ fun dialScoreColor(score: Int): Color = scoreBandColor(score)
 fun dialDigitColor(score: Int): Color =
     if (scoreBandColor(score).luminance() > 0.35f) Color(0xFF1B1B1B) else Color.White
 
-/**
- * Ring cell that is NOT under the notch: one flat gray for all nine, so the
- * ring is a quiet track and the ONLY colored fill on the dial is the selection.
- * The score still reads per cell — through its digit ([cellDigitColor]), not
- * its fill.
- */
-private fun cellGrayColor(surfaceVariant: Color, onSurfaceVariant: Color): Color =
-    lerp(surfaceVariant, onSurfaceVariant, 0.18f)
-
-/**
- * Digit on an unselected (gray) cell: its score band, nudged for legibility —
- * the 1–4 red is a deep 0xFFB71C1C that disappears on a dark gray, so bands are
- * lifted toward white on dark cells and pushed toward black on light ones.
- */
-private fun cellDigitColor(score: Int, cellGray: Color): Color {
-    val band = scoreBandColor(score)
-    return if (cellGray.luminance() < 0.5f) lerp(band, Color.White, 0.38f)
-    else lerp(band, Color.Black, 0.18f)
-}
-
 /** Ring position p (clockwise from top) -> score. Ascending counter-clockwise. */
 private fun scoreAt(p: Int): Int = (4 - p).mod(10) + 1
 
@@ -156,51 +139,25 @@ private fun nearestDetent(thetaDeg: Float): Float =
     (thetaDeg / DETENT).roundToInt() * DETENT
 
 // ---- ring geometry (shared by the tap hit-test and the draw pass) ----
-// s = the dial's min dimension. The ring is DERIVED from the core again
-// (apothem + gap + cell radius), so shrinking the core pulls the cells in with
-// it — that is what "closer to the decagon" means, and an independent ring
-// distance could not do it.
-//
-// The cell radius is fixed and the gap is tight, so the ring closes in on the
-// smaller core rather than growing to meet the old footprint: outer extent is
-// 0.394*s, down from 0.4435*s, and that ~11% is handed back as vertical space
-// by NowTab's rim trim. The one hard constraint is that cells must clear their
-// own neighbours — at 36° spacing the centre-to-centre chord is 2*sin(18°)*dn,
-// so CELL_R_FRAC <= 0.309*dn (0.0902 against a 0.0939 ceiling here).
-private const val CORE_R_FRAC = 0.2100f      // decagon circumradius
-private const val CELL_R_FRAC = 0.0902f      // cell radius
-private const val CELL_GAP_FRAC = 0.0140f    // core edge -> cell
+// s = the dial's min dimension. The ring's OUTER extent is fixed at 0.394*s, so
+// the dial's footprint, the notch and NowTab's rim trims never move; inside it
+// the proportions follow the night-field mockup, as fractions of that outer
+// radius R: cells 0.20R (with clear gaps between them, not touching), cell
+// centres at 0.80R, the core 0.47R, its halo centred on 0.54R. The halo's outer
+// edge (0.223*s) stays clear of the cells' inner edge (0.237*s), and cells
+// clear their neighbours: at 36° the centre-to-centre chord is 2*sin(18°)*dn =
+// 0.195*s against 0.158*s of two radii.
+private const val RING_OUTER_FRAC = 0.3941f
+private const val CELL_R_FRAC = 0.0788f                          // 0.20R
+private const val CELL_D_FRAC = RING_OUTER_FRAC - CELL_R_FRAC    // 0.80R
+private const val CORE_CIRCLE_FRAC = 0.185f                      // 0.47R
+private const val HALO_R_FRAC = 0.213f                           // 0.54R
+private const val HALO_W_FRAC = 0.0206f
 
 private fun cellRadius(s: Float): Float = s * CELL_R_FRAC
 
 /** Dial centre -> cell centre. */
-private fun cellDistance(s: Float): Float =
-    s * (CORE_R_FRAC * 0.9510565f + CELL_GAP_FRAC + CELL_R_FRAC)
-
-/** Regular n-gon with softly rounded corners, vertices starting at a0 degrees. */
-private fun roundedPoly(
-    cx: Float, cy: Float, r: Float, n: Int, a0: Float,
-    roundness: Float = 0.14f
-): Path {
-    val pts = List(n) { k ->
-        val a = Math.toRadians((a0 + 360f / n * k).toDouble())
-        Offset(cx + r * cos(a).toFloat(), cy + r * sin(a).toFloat())
-    }
-    val rad = r * roundness
-    val path = Path()
-    for (i in 0 until n) {
-        val p0 = pts[(i - 1 + n) % n]; val p1 = pts[i]; val p2 = pts[(i + 1) % n]
-        val l1 = hypot(p1.x - p0.x, p1.y - p0.y)
-        val l2 = hypot(p2.x - p1.x, p2.y - p1.y)
-        val rr = min(rad, min(l1, l2) / 2f)
-        val a = Offset(p1.x - (p1.x - p0.x) / l1 * rr, p1.y - (p1.y - p0.y) / l1 * rr)
-        val b = Offset(p1.x + (p2.x - p1.x) / l2 * rr, p1.y + (p2.y - p1.y) / l2 * rr)
-        if (i == 0) path.moveTo(a.x, a.y) else path.lineTo(a.x, a.y)
-        path.quadraticBezierTo(p1.x, p1.y, b.x, b.y)
-    }
-    path.close()
-    return path
-}
+private fun cellDistance(s: Float): Float = s * CELL_D_FRAC
 
 /**
  * The wheel's audible detent click.
@@ -312,14 +269,29 @@ fun DecagonCombDial(
 ) {
     val view = LocalView.current
     val context = LocalContext.current
-    val restingCoreFill = MaterialTheme.colorScheme.surfaceVariant
-    val restingOutline = MaterialTheme.colorScheme.outline
-    val hintColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val cellGray = cellGrayColor(
-        MaterialTheme.colorScheme.surfaceVariant,
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val field = LocalBeeExtras.current
+    val density = LocalDensity.current
+    // The app's typeface, not the phone's system bold: the dial is drawn on a
+    // native canvas, which doesn't inherit Compose's font family.
+    val faces = remember {
+        fun load(id: Int) = runCatching { ResourcesCompat.getFont(context, id) }.getOrNull()
+            ?: android.graphics.Typeface.DEFAULT_BOLD
+        val sans = load(R.font.instrument_sans)
+        DialFaces(
+            cell = DialFace(sans, "'wght' 600"),
+            numeral = DialFace(sans, "'wght' 700"),
+            word = DialFace(load(R.font.instrument_serif_italic), null),
+            hint = DialFace(sans, "'wght' 500")
+        )
+    }
+    val colors = DialColors(
+        glass = field.glassFill,
+        glassLine = field.glassLine,
+        ink = field.fieldInk,
+        lineWidth = with(density) { 1.dp.toPx() },
+        selectedStroke = with(density) { 2.dp.toPx() },
+        faces = faces
     )
-    val awakeNotchColor = MaterialTheme.colorScheme.onSurface
     val vibrator = remember { context.getSystemService(Vibrator::class.java) }
     val ticker = rememberDialTicker()
     val scope = rememberCoroutineScope()
@@ -542,35 +514,62 @@ fun DecagonCombDial(
                         val a = Math.toRadians((270.0 + 36.0 * p + theta))
                         val nx = cx + dn * cos(a).toFloat()
                         val ny = cy + dn * sin(a).toFloat()
-                        if (hypot(pos.x - nx, pos.y - ny) < rc * 1.18f) {
+                        // Generous slop for the smaller cells, still under half the
+                        // gap to a neighbour (1.22 * 0.0788 < 0.195 / 2)
+                        if (hypot(pos.x - nx, pos.y - ny) < rc * 1.22f) {
                             jumpToScore(scoreAt(p)); break
                         }
                     }
                 }
             }
     ) {
-        drawDial(
-            theta, spin, rating, awake,
-            restingCoreFill, restingOutline, hintColor, awakeNotchColor, cellGray
-        )
+        drawDial(theta, spin, rating, awake, colors)
     }
 }
+
+/** The dial's field colours, resolved once per composition and handed to the draw pass. */
+private class DialColors(
+    val glass: Color,
+    val glassLine: Color,
+    val ink: Color,
+    val lineWidth: Float,
+    val selectedStroke: Float,
+    val faces: DialFaces
+)
+
+/** A typeface plus, for the variable Instrument Sans, the weight to dial it to. */
+private class DialFace(val typeface: android.graphics.Typeface, val variation: String?)
+
+/** Points [this] paint at [face]: a static face just clears the variation. */
+private fun android.graphics.Paint.use(face: DialFace) {
+    typeface = face.typeface
+    fontVariationSettings = face.variation
+}
+
+/**
+ * The dial's text on the app's type scale: the cell digits are values (Instrument
+ * Sans 600), the core's numeral a hero numeral (700, the face's heaviest), the
+ * "Pick a rating" prompt 500, and the score word a reflective line, so it is the
+ * display serif (Instrument Serif Italic), sized up like every serif call site.
+ */
+private class DialFaces(
+    val cell: DialFace,
+    val numeral: DialFace,
+    val word: DialFace,
+    val hint: DialFace
+)
 
 private fun DrawScope.drawDial(
     theta: Float,
     spinDegPerMs: Float,
     rating: Int?,
     awake: Boolean,
-    restingCoreFill: Color,
-    restingOutline: Color,
-    hintColor: Color,
-    awakeNotchColor: Color,
-    cellGray: Color
+    colors: DialColors
 ) {
     val s = size.minDimension
     val cx = size.width / 2f
     val cy = size.height / 2f
-    val rd = s * CORE_R_FRAC                      // decagon circumradius
+    val rd = s * CORE_CIRCLE_FRAC                 // round core radius
     val rc = cellRadius(s)                        // cell radius
     val dn = cellDistance(s)                      // center -> cell center
 
@@ -580,7 +579,7 @@ private fun DrawScope.drawDial(
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
-    // ---- ring: ten cells, docked edge-parallel, spinning with theta ----
+    // ---- ring: ten glass cells, spinning with theta ----
     //
     // Motion blur is not decoration here, it is a correctness fix. The ring has
     // 10-fold symmetry, so its silhouette repeats every 36°; once the wheel
@@ -602,22 +601,26 @@ private fun DrawScope.drawDial(
             val nx = cx + dn * cos(a).toFloat()
             val ny = cy + dn * sin(a).toFloat()
             val isSelected = p == selected
-            val fill = if (isSelected) dialScoreColor(sc) else cellGray
-            drawCircle(fill, radius = rc, center = Offset(nx, ny), alpha = cellAlpha)
+            val c = Offset(nx, ny)
             if (isSelected) {
+                drawCircle(dialScoreColor(sc), radius = rc, center = c, alpha = cellAlpha)
+                drawCircle(Color.White, radius = rc, center = c, style = Stroke(width = colors.selectedStroke))
+            } else {
+                // Glass: the faint fill inside a hairline, like every container on the field
+                drawCircle(colors.glass, radius = rc, center = c, alpha = cellAlpha)
                 drawCircle(
-                    Color.White, radius = rc, center = Offset(nx, ny),
-                    style = Stroke(width = s * 0.011f)
+                    colors.glassLine, radius = rc - colors.lineWidth / 2f, center = c,
+                    style = Stroke(width = colors.lineWidth), alpha = cellAlpha
                 )
             }
             // digits drawn unrotated at the rotated centre -> they stay upright for free.
-            // On a gray cell the digit is the ONLY thing carrying the score band, so
-            // it is colored (red/amber/green); on the selected cell the fill already
-            // is the band, so the digit flips for contrast instead.
+            // Unselected digits are plain field ink: the only colour on the ring is the
+            // selection. On the selected cell the digit flips on the band's lightness
+            // (dark on amber/green, white on the deep 1-4 red, where dark ink fails).
             if (blur < 0.2f) {
-                digitPaint.color =
-                    (if (isSelected) dialDigitColor(sc) else cellDigitColor(sc, cellGray))
-                        .copy(alpha = 1f - blur * 5f).toArgbInt()
+                val digit = if (isSelected) dialDigitColor(sc) else colors.ink.copy(alpha = 0.85f)
+                digitPaint.use(colors.faces.cell)
+                digitPaint.color = digit.copy(alpha = digit.alpha * (1f - blur * 5f)).toArgbInt()
                 digitPaint.textSize = rc * 0.73f
                 drawContext.canvas.nativeCanvas.drawText(
                     sc.toString(), nx, ny + rc * 0.27f, digitPaint
@@ -626,42 +629,53 @@ private fun DrawScope.drawDial(
         }
     }
     if (blur > 0f) {
-        // the ten cells, smeared into the annulus they sweep
+        // the ten cells, smeared into the glass annulus they sweep
         drawCircle(
-            color = cellGray,
+            color = colors.glass,
             radius = dn,
             style = Stroke(width = rc * 2f),
-            alpha = blur * 0.9f
+            alpha = blur
         )
     }
 
-    // ---- decagon core (10-fold symmetric, so it may spin with the unit) ----
-    // Barely-rounded vertices: ten edges already read as round, so the core
-    // keeps crisp corners — the contrast against the round cells is the point.
-    // Everything inside is sized off `rd`, not `s`, so shrinking the core
-    // carries its own type down with it instead of overflowing the shape.
+    // ---- round core ----
+    // Everything inside is sized off `rd`, so the type scales with the shape.
     if (rating == null) {
-        val core = roundedPoly(cx, cy, rd, 10, 252f + theta, roundness = 0.05f)
-        drawPath(core, restingCoreFill)
-        digitPaint.color = hintColor.toArgbInt()
-        digitPaint.textSize = rd * 0.211f
+        // Unrated: glass, with the prompt in field ink
+        drawCircle(colors.glass, radius = rd, center = Offset(cx, cy))
+        drawCircle(
+            colors.glassLine, radius = rd - colors.lineWidth / 2f, center = Offset(cx, cy),
+            style = Stroke(width = colors.lineWidth)
+        )
+        digitPaint.color = colors.ink.toArgbInt()
+        digitPaint.use(colors.faces.hint)
+        digitPaint.textSize = rd * 0.24f
         drawContext.canvas.nativeCanvas.apply {
-            drawText("Pick a", cx, cy - rd * 0.055f, digitPaint)
-            drawText("rating", cx, cy + rd * 0.211f, digitPaint)
+            drawText("Pick a", cx, cy - rd * 0.04f, digitPaint)
+            drawText("rating", cx, cy + rd * 0.26f, digitPaint)
         }
     } else {
-        drawPath(roundedPoly(cx, cy, rd, 10, 252f + theta, roundness = 0.05f), dialScoreColor(rating))
+        // Rated: the score floods the core, with a faint halo in the same colour
+        val band = dialScoreColor(rating)
+        drawCircle(
+            band.copy(alpha = 0.25f), radius = s * HALO_R_FRAC, center = Offset(cx, cy),
+            style = Stroke(width = s * HALO_W_FRAC)
+        )
+        drawCircle(band, radius = rd, center = Offset(cx, cy))
         digitPaint.color = dialDigitColor(rating).toArgbInt()
-        digitPaint.textSize = rd * 0.684f
+        digitPaint.use(colors.faces.numeral)
+        digitPaint.textSize = rd * 0.80f
         drawContext.canvas.nativeCanvas.drawText(
-            rating.toString(), cx, cy + rd * 0.125f, digitPaint
+            rating.toString(), cx, cy + rd * 0.15f, digitPaint
         )
         val word = DIAL_WORDS[rating].orEmpty()
             .split(' ')
             .joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
-        digitPaint.textSize = rd * 0.180f
+        digitPaint.use(colors.faces.word)
+        // The serif reads smaller than the sans it replaced, so it's set larger
+        digitPaint.textSize = rd * 0.27f
         drawContext.canvas.nativeCanvas.drawText(
-            word, cx, cy + rd * 0.411f, digitPaint
+            word, cx, cy + rd * 0.50f, digitPaint
         )
     }
 
@@ -673,7 +687,7 @@ private fun DrawScope.drawDial(
         lineTo(cx, ntop + s * 0.034f)
         close()
     }
-    drawPath(notch, if (awake) awakeNotchColor else restingOutline)
+    drawPath(notch, if (awake) colors.ink else colors.ink.copy(alpha = 0.45f))
 }
 
 private fun Color.toArgbInt(): Int = toArgb()

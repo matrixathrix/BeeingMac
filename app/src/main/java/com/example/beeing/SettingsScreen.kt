@@ -102,12 +102,6 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
             }
             Section("NOTIFICATIONS") {
                 SettingsRow(
-                    sym = Sym.Alarm, title = "Hourly reminders",
-                    subtitle = "A nudge each hour to rate the last one",
-                    onClick = { c.onNotifPrefsChange(prefs.copy(remindersOn = !prefs.remindersOn)) }
-                ) { Switch(checked = prefs.remindersOn, onCheckedChange = { c.onNotifPrefsChange(prefs.copy(remindersOn = it)) }) }
-                Divider()
-                SettingsRow(
                     sym = Sym.Rest, title = "Silent hours",
                     subtitle = if (prefs.silentOn && prefs.silentStartMin != prefs.silentEndMin)
                         "Every day, ${formatMinuteOfDay(prefs.silentStartMin)} to ${formatMinuteOfDay(prefs.silentEndMin)} · no sound"
@@ -200,7 +194,7 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
 private fun Section(label: String, content: @Composable () -> Unit) {
     Text(
         label,
-        fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp,
+        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp)
     )

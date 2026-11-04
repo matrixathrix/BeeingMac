@@ -74,4 +74,19 @@ class StreakAlertsTest {
         assertFalse(isGiftedFade(events, later))
         assertFalse(isGiftedFade(listOf(day8), day8))
     }
+
+    @Test fun withdraws_a_saver_alert_once_the_day_completes() {
+        // A late rating completed the day: the replay no longer has the saver spend.
+        val kept = ev(StreakEventType.COMEBACK_GIFT, 1000L, id = "COMEBACK_GIFT:2026290")
+        val now = listOf(kept, ev(StreakEventType.COMPLETED, 2000L, id = "COMPLETED:2026301"))
+        assertEquals(
+            setOf("SAVER_USED:2026301"),
+            alertsToWithdraw(now, setOf("SAVER_USED:2026301", "COMEBACK_GIFT:2026290"))
+        )
+    }
+
+    @Test fun withdraws_nothing_while_events_still_stand() {
+        val e = ev(StreakEventType.SAVER_FADED, 1000L, id = "SAVER_FADED:2026301")
+        assertTrue(alertsToWithdraw(listOf(e), setOf(e.id)).isEmpty())
+    }
 }

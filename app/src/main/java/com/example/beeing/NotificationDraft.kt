@@ -73,16 +73,3 @@ fun hourStillRatable(targetTs: Long, nowMs: Long): Boolean {
     return targetTs in (currentHourStart - 2 * HOUR_MS)..(currentHourStart - HOUR_MS)
 }
 
-/** "14th" for 1-2 PM: the ordinal of the hour's END, 24 for the hour before midnight. */
-fun hourLabelFor(targetTs: Long): String {
-    val start = Calendar.getInstance().apply { timeInMillis = targetTs }.get(Calendar.HOUR_OF_DAY)
-    val end = start + 1
-    val suffix = when {
-        end in 11..13 -> "th"
-        end % 10 == 1 -> "st"
-        end % 10 == 2 -> "nd"
-        end % 10 == 3 -> "rd"
-        else -> "th"
-    }
-    return "$end$suffix"
-}

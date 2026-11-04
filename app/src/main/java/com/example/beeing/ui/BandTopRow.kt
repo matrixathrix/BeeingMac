@@ -10,20 +10,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,7 +31,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -50,11 +46,10 @@ import com.example.beeing.SUPER_DAY_HOURS
 import com.example.beeing.StreakState
 import com.example.beeing.ui.icons.BeeIcon
 import com.example.beeing.ui.icons.Sym
+import com.example.beeing.ui.theme.InstrumentSans
 import com.example.beeing.ui.theme.HoneyGold
 import com.example.beeing.ui.theme.LocalBeeExtras
 import com.example.beeing.ui.theme.RingQualifiedGreen
-import com.example.beeing.ui.theme.StreakAtRiskRed
-import com.example.beeing.ui.theme.SuperGold
 
 /**
  * What the shared top row needs from the app root. Provided once above the pager
@@ -69,11 +64,11 @@ class BandChrome(
     val onMenuClick: () -> Unit,
     val onTopRowHidden: (Boolean) -> Unit = {},
     /**
-     * How much of a band is under the row right now, 0…1, off the pager's
-     * continuous position: Streak and Now have one, Past doesn't (it opens on the
-     * plain page under a large title). The row crossfades its ink with the swipe.
+     * How much of the "Beeing" wordmark shows, 0…1, off the pager's continuous
+     * position: all three tabs sit on the field, but Past has its own large
+     * "Journal" title, so the wordmark fades out as the swipe reaches it.
      */
-    val bandUnder: () -> Float = { 1f },
+    val wordmarkShown: () -> Float = { 1f },
     /** How much of the Now tab is showing, 0…1: the status strip lives there only. */
     val nowShown: () -> Float = { 1f },
     /** Hours still to go to a Super day, while 12 is reachable today (else null). */
@@ -82,29 +77,32 @@ class BandChrome(
 
 val LocalBandChrome = compositionLocalOf<BandChrome?> { null }
 
-/** The row at the top of every tab's band, reading [LocalBandChrome]. */
+/** The "Beeing" wordmark: a brand mark in the header line, so the sans, not the serif (the question below is the screen's one serif). */
+private val WordmarkStyle = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.4).sp)
+
+/** The row at the top of every tab, reading [LocalBandChrome]. */
 @Composable
 fun BandTopRow(
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall
+    titleStyle: TextStyle = WordmarkStyle
 ) {
     val chrome = LocalBandChrome.current ?: return
     BandTopRow(
         state = chrome.state, unread = chrome.unread,
         onStreakClick = chrome.onStreakClick, onBellClick = chrome.onBellClick,
         onMenuClick = chrome.onMenuClick, titleModifier = titleModifier, titleStyle = titleStyle,
-        bandUnder = chrome.bandUnder(), nowShown = chrome.nowShown(),
+        wordmarkShown = chrome.wordmarkShown(), nowShown = chrome.nowShown(),
         superHoursLeft = chrome.superHoursLeft
     )
 }
 
 /**
- * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. The ⋮ has no
- * circle so the bell reads as the actionable one.
+ * "Beeing" · streak strip · bell (with an unread badge) · ⋮ settings. Bell and ⋮
+ * are both bare icons; the badge is what sets the bell apart.
  *
  * The strip shows on Now only: the Streak tab's hero says the same thing in large
- * type, and Past is the record. Over the plain page (Past) the wordmark fades out
- * under the tab's own large title and the ink turns from white to onBackground.
+ * type, and Past is the record. All three tabs sit on the field, so the ink is
+ * always field ink; over Past the wordmark fades out under its own large title.
  */
 @Composable
 fun BandTopRow(
@@ -114,17 +112,16 @@ fun BandTopRow(
     onBellClick: () -> Unit,
     onMenuClick: () -> Unit,
     titleModifier: Modifier = Modifier,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineSmall,
-    bandUnder: Float = 1f,
+    titleStyle: TextStyle = WordmarkStyle,
+    wordmarkShown: Float = 1f,
     nowShown: Float = 1f,
     superHoursLeft: Int? = null
 ) {
-    val ink = lerp(MaterialTheme.colorScheme.onBackground, Color.White, bandUnder)
-    CompositionLocalProvider(LocalContentColor provides ink) {
+    CompositionLocalProvider(LocalContentColor provides LocalBeeExtras.current.fieldInk) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (bandUnder > 0.01f) Text(
+            if (wordmarkShown > 0.01f) Text(
                 "Beeing", style = titleStyle, maxLines = 1, overflow = TextOverflow.Clip,
-                modifier = titleModifier.graphicsLayer { alpha = bandUnder }
+                modifier = titleModifier.graphicsLayer { alpha = wordmarkShown }
             )
             Spacer(Modifier.weight(1f))
             if (nowShown > 0.01f) {
@@ -134,8 +131,10 @@ fun BandTopRow(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            BellButton(unread, onBellClick, bandUnder)
-            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 28.dp, height = 40.dp)) {
+            BellButton(unread, onBellClick)
+            // The row runs to the screen's right edge (HourlyPulseApp), so this 36dp
+            // target ends there and the dots, at its centre, end on the 16dp edge
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(width = 36.dp, height = 40.dp)) {
                 Icon(Icons.Default.MoreVert, contentDescription = "Settings", modifier = Modifier.size(22.dp))
             }
         }
@@ -143,27 +142,27 @@ fun BandTopRow(
 }
 
 @Composable
-private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) {
+private fun BellButton(unread: Int, onClick: () -> Unit) {
     val extras = LocalBeeExtras.current
     val ink = LocalContentColor.current
-    // On the band: translucent white. On the page: a faint ink wash.
-    val fill = lerp(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.07f), OnBandFill, bandUnder)
-    val ringBehindBadge = lerp(MaterialTheme.colorScheme.background, extras.bandTop, bandUnder)
+    val ringBehindBadge = extras.fieldTop
     val description = if (unread > 0) "Warnings, $unread unread" else "Warnings"
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(fill)
-            .clickable(onClickLabel = "Open warnings", onClick = onClick)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(20.dp), tint = ink)
+    // A bare icon like the ⋮ beside it; the honey unread badge is what makes it
+    // stand out when it matters. The tap target is its own clipped circle so the
+    // badge, which rides the bell's shoulder past that circle, is never cut off.
+    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .clip(CircleShape)
+                .clickable(onClickLabel = "Open warnings", onClick = onClick)
+                .semantics { contentDescription = description }
+        )
+        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(22.dp), tint = ink)
         if (unread > 0) {
             Box(
                 Modifier
-                    .align(Alignment.TopEnd)
+                    .offset(x = 9.dp, y = (-13).dp)
                     .size(18.dp)
                     .border(2.dp, ringBehindBadge, CircleShape)
                     .padding(2.dp)
@@ -172,7 +171,7 @@ private fun BellButton(unread: Int, onClick: () -> Unit, bandUnder: Float = 1f) 
             ) {
                 Text(
                     if (unread > 9) "9+" else "$unread",
-                    fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = extras.onAccentFill
+                    fontSize = 8.sp, fontWeight = FontWeight.Bold, color = extras.onAccentFill
                 )
             }
         }
@@ -190,11 +189,13 @@ internal fun StatusStrip(
     modifier: Modifier = Modifier,
     superHoursLeft: Int? = null
 ) {
-    // Sits on the brand band: a translucent white pill, white content.
-    val stripBg = OnBandFill
+    // Sits straight on the night field, no container: two inline items in field
+    // ink (flame + count, ring + hours), like the wordmark beside them. Only the
+    // ripple shows the pill-shaped tap target.
+    val x = LocalBeeExtras.current
     val atRisk = state.recoveryOpen
     val shownStreak = state.displayStreak
-    val riskColor = StreakAtRiskRed
+    val riskColor = x.fieldRed
     // Screen readers would otherwise announce only the bare numbers ("5", "3/8"),
     // so the strip speaks as one labelled target instead of its two children.
     val streakLabel = when {
@@ -214,78 +215,71 @@ internal fun StatusStrip(
     val stripDescription =
         "$streakLabel · ${state.todayHours} of $countTarget hours rated today" +
             (superHoursLeft?.let { " · $it more for a Super day" } ?: "")
-    Card(
-        modifier = modifier
-            .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = stripDescription },
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(containerColor = stripBg, contentColor = Color.White)
-    ) {
+    CompositionLocalProvider(LocalContentColor provides x.fieldInk) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            modifier
+                .clip(PillShape)
+                .clickable(onClickLabel = "Open Streak tab", onClick = onClick)
+                .semantics(mergeDescendants = true) { contentDescription = stripDescription }
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // The leaf replaces the flame while beginner mode is on: the mode has
                 // to be visible from the main screen, and the paused count beside it
                 // reads as held, not lost.
+                // 18dp box: the glyph draws about as tall as the 17dp ring and the 16sp count
                 if (state.beginnerMode && !atRisk) {
-                    BeeIcon(Sym.Beginner, size = 17.dp, contentDescription = null)
+                    BeeIcon(Sym.Beginner, size = 18.dp, contentDescription = null)
                 } else {
                     BeeIcon(
-                        Sym.Fire, size = 17.dp, contentDescription = null,
-                        tint = if (atRisk) riskColor else HoneyGold
+                        Sym.Fire, size = 18.dp, contentDescription = null,
+                        tint = if (atRisk) riskColor else x.fieldHoney
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
                     "$shownStreak",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
                     color = if (atRisk) riskColor else Color.Unspecified
                 )
                 // Colour never travels alone: the mark says "at risk" too.
                 if (atRisk) Text(
-                    "!", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    "!", fontWeight = FontWeight.Bold, fontSize = 16.sp,
                     color = riskColor, modifier = Modifier.padding(start = 2.dp)
                 )
             }
-            StripDivider()
+            Spacer(Modifier.width(14.dp))
             MiniHourRing(
                 hours = state.todayHours,
                 hoursRequired = state.hoursRequired,
                 qualified = state.todayQualified,
                 superLap = state.todayQualified && !state.beginnerMode
             )
+            Spacer(Modifier.width(5.dp))
             Text(
                 "${state.todayHours}/$countTarget",
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
             )
         }
     }
 }
 
 @Composable
-private fun StripDivider() {
-    Box(
-        Modifier
-            .size(width = 1.dp, height = 18.dp)
-            .background(Color.White.copy(alpha = 0.3f))
-    )
-}
-
-@Composable
 private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, superLap: Boolean) {
-    val track = Color.White.copy(alpha = 0.22f)   // on the band
+    val x = LocalBeeExtras.current
+    val track = x.fieldInk.copy(alpha = 0.22f)   // straight on the field
     val fill = if (qualified) RingQualifiedGreen else HoneyGold
+    val lapColor = x.fieldSuper
     val fraction = (hours.toFloat() / hoursRequired).coerceIn(0f, 1f)
     // Hours past the goal, as a share of the Super day lap (hours 9–12)
     val lapFraction = ((hours - hoursRequired).toFloat() / (SUPER_DAY_HOURS - STREAK_HOURS_REQUIRED))
         .coerceIn(0f, 1f)
-    Canvas(Modifier.size(24.dp)) {
-        val stroke = 4.dp.toPx()
+    // 17dp, the flame's optical size: a quiet row, no taller than its text
+    Canvas(Modifier.size(17.dp)) {
+        val stroke = 3.dp.toPx()
         val inset = stroke / 2
         // The Super day lap here is the brief's fallback, a single 1.5dp SuperGold arc
         // sweeping extra/4, not the four-segment drawSuperLap: at this size its 4° gaps
@@ -293,11 +287,13 @@ private fun MiniHourRing(hours: Int, hoursRequired: Int, qualified: Boolean, sup
         // "/12" count beside the ring already says what the lap is for. It sits 1dp
         // outside the ring, spilling 2.5dp past the canvas into the strip's 8dp padding,
         // so neither the ring nor the strip's width changes. (Not yet checked on device.)
+        // Since the strip lost its pill there is no padding to spill into; the 16dp gap
+        // before the ring and the 6dp after it leave the arc its room.
         if (superLap && lapFraction > 0f) {
             val lapStroke = 1.5.dp.toPx()
             val r = size.minDimension / 2f + 1.dp.toPx() + lapStroke / 2f
             drawArc(
-                color = SuperGold,
+                color = lapColor,
                 startAngle = -90f, sweepAngle = 360f * lapFraction, useCenter = false,
                 topLeft = Offset(center.x - r, center.y - r),
                 size = androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
@@ -353,10 +349,10 @@ private fun BandTopRowSuperLapPreview() {
     )
 }
 
-/** The row's height: the overlay draws it once; each tab reserves exactly this much under its band. */
+/** The row's height: the overlay draws it once; each tab reserves exactly this much under it. */
 val BandTopRowHeight = 40.dp
 
-/** Placeholder under a tab's band where the (fixed) top row is drawn over it. */
+/** Placeholder at the top of a tab where the (fixed) top row is drawn over it. */
 @Composable
 fun BandTopRowSpacer() {
     Spacer(Modifier.height(BandTopRowHeight))

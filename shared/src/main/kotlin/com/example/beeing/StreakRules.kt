@@ -1,0 +1,567 @@
+package com.example.beeing
+
+import kotlinx.serialization.Serializable
+import java.util.Calendar
+
+// ============================================================
+// STREAK RULES  (pure logic — no Context, no Compose, JVM-testable)
+// ============================================================
+//
+// `replay` is the single walk over history. The streak meter, calendar, log,
+// warnings bell, celebrations and background alerts are all readers of what it
+// returns, so none of them can disagree. Savers, breaks and recoveries are
+// always replayed from ratings, never kept as a running counter.
+
+const val STREAK_HOURS_REQUIRED = 8   // counted hours for a day to be complete
+const val BEGINNER_HOURS_REQUIRED = 4 // ...and the softer day-one goal in beginner mode
+const val BEGINNER_GRADUATION_DAYS = 3 // completed beginner days before the one-time nudge
+const val SAVER_START = 2             // every history begins with this many savers
+const val SAVER_CAP = 5
+const val SUPER_DAY_HOURS = 12        // a Master day this long is a Super day
+const val SAVER_EARN_HOURS = SUPER_DAY_HOURS // ...and a Super day earns one saver
+const val COMEBACK_IDLE_DAYS = 7      // days in a row with no complete day => gift
+const val COMEBACK_GIFT = 2
+const val RECOVERY_DAYS = 3           // calendar days after a break
+const val RECOVERY_HOURS = 10         // hours on one of them that win the streak back
+const val RECLAIM_WINDOW_HOURS = 12   // how far back a past hour can be added (clock hours)
+const val RECLAIM_PER_DAY = 2         // past hours a calendar day may add
+// Stored sentinel inside persisted entries — the UI shows a badge instead, but the
+// stored string must never change or old backdated entries stop being recognized.
+const val RECLAIM_TAG = "💧reclaimed"
+
+/** True when this entry was added later ("Add a past hour"). It never counts toward a streak. */
+val RatingEntry.isReclaimed: Boolean get() = RECLAIM_TAG in tags
+
+/** Tags fit to show: the reclaim sentinel is carried by the icon badge instead. */
+fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
+
+/** One flip of the mode toggle. `enteredBeginner == false` means "back to Master". */
+@Serializable
+data class ModeEvent(val timestamp: Long, val enteredBeginner: Boolean)
+
+/** The mode in effect right now — i.e. the latest event. No events = Master. */
+fun isBeginnerMode(events: List<ModeEvent>): Boolean =
+    events.lastOrNull()?.enteredBeginner == true
+
+/** The daily goal a mode asks for. */
+fun hoursRequiredFor(beginner: Boolean): Int =
+    if (beginner) BEGINNER_HOURS_REQUIRED else STREAK_HOURS_REQUIRED
+
+/** The mode in effect at a given instant — Master before the first event. */
+internal fun beginnerAt(timeMs: Long, events: List<ModeEvent>): Boolean =
+    events.lastOrNull { it.timestamp <= timeMs }?.enteredBeginner ?: false
+
+fun Calendar.dayKey(): Long = get(Calendar.YEAR) * 1000L + get(Calendar.DAY_OF_YEAR)
+
+enum class DayOutcome { QUALIFIED, SAVED, FADED, BROKEN, MISSED, RECOVERED, BEGINNER_COMPLETE }
+
+enum class StreakEventType {
+    COMPLETED, BEGINNER, SAVER_EARNED, SAVER_USED, SAVER_FADED, LOW_SAVERS,
+    COMEBACK_GIFT, STREAK_BROKE, RECOVERY_DAYS_LEFT, RECOVERED, PAST_HOUR_ADDED,
+    SUPER_DAY
+}
+
+/**
+ * One thing that happened to the streak. `id` is stable across replays so the bell
+ * and the phone alerts can remember what they've already shown. `streak` is the
+ * count the event is about (the protected or broken count, or the new one).
+ */
+data class StreakEvent(
+    val id: String,
+    val timestamp: Long,
+    val type: StreakEventType,
+    val streak: Int,
+    val savers: Int,
+    val daysLeft: Int = 0,
+    val dayStartMs: Long
+)
+
+/**
+ * One calendar day as the replay saw it. `countedStarts` are the sorted start
+ * millis of its in-the-moment hours (backdated ones never appear); `goal` is the
+ * daily goal in the mode in effect at the day's end.
+ */
+data class DayTally(
+    val dayStartMs: Long,
+    val countedStarts: List<Long>,
+    val beginner: Boolean,
+    val goal: Int,
+    val streakAfter: Int,
+    val earnedSaver: Boolean,
+    val recovered: Boolean,
+    val isToday: Boolean
+) {
+    val countedHours: Int get() = countedStarts.size
+    /** A Master day with SUPER_DAY_HOURS counted hours. Beginner days never qualify. */
+    val superDay: Boolean get() = !beginner && countedHours >= SUPER_DAY_HOURS
+}
+
+data class StreakState(
+    val currentStreak: Int,        // consecutive complete days (the in-window run while recovery is open)
+    val displayStreak: Int,        // the pre-break count while recoveryOpen, else currentStreak
+    val todayHours: Int,           // COUNTED (in-the-moment) hours today; may exceed the goal
+    val todayQualified: Boolean,   // todayHours >= hoursRequired
+    val extraToday: Int,           // counted hours today beyond the goal
+    val beginnerMode: Boolean,     // today's mode
+    val hoursRequired: Int,        // today's goal: 4 in beginner mode, else 8
+    val beginnerDaysCompleted: Int,
+    val savers: Int,
+    val recoveryOpen: Boolean,
+    val recoveryDaysLeft: Int,     // including today; 0 when no window is open
+    val todayEarnedSaver: Boolean,
+    val todayRecovered: Boolean = false, // today's hours are what won the streak back
+    val recentDays: List<DayTally> = emptyList() // yesterday and today (oldest first), when the replay has them
+) {
+    /** In beginner mode the streak is frozen, not lost — say so, don't hide it. */
+    val streakPaused: Boolean get() = beginnerMode && currentStreak > 0
+}
+
+internal class ReplayDay(
+    val key: Long,                  // year * 1000 + dayOfYear
+    val dayStartMs: Long,
+    val countedStarts: List<Long>,  // sorted start millis of the counted hours
+    val outcome: DayOutcome?,       // null = today in progress, or a beginner day under the goal
+    val streakAfter: Int,
+    val saversAfter: Int,
+    val earnedSaver: Boolean,
+    val beginner: Boolean,          // the mode in effect at this day's END
+    val isToday: Boolean
+) {
+    val countedHours: Int get() = countedStarts.size
+}
+
+internal class Replay(
+    val days: List<ReplayDay>,
+    val events: List<StreakEvent>,   // unsorted
+    val savers: Int,
+    val streak: Int,
+    val recoveryOpen: Boolean,
+    val recoverableStreak: Int,
+    val recoveryDaysLeft: Int,
+    val beginnerDays: Int            // completed beginner days, including any before a resume
+)
+
+/**
+ * Everything the day walk carries from one day to the next, at the END of the day that
+ * starts at [lastDayStartMs]. The phone sends one to the watch, and the watch resumes
+ * the walk from it with [computeStreakStateFrom]: same rules, a few days instead of a
+ * whole history, and exactly the numbers a full replay would give.
+ */
+@Serializable
+data class ReplayCarry(
+    val lastDayStartMs: Long,
+    val streak: Int,
+    val savers: Int,
+    val idleRun: Int,
+    val windowDaysIn: Int?,      // days since the open window's break day (0 = the break day); null = none
+    val windowPrevStreak: Int,
+    val windowQualified: Int,
+    val windowTrailing: Int,
+    val beginnerDaysCompleted: Int,
+    val started: Boolean         // false: no rating on or before that day, so nothing has been walked yet
+)
+
+private class Window(val breakIndex: Int, val prevStreak: Int) {
+    var qualified = 0   // qualifying (>= goal) days inside the window so far
+    var trailing = 0    // the run of qualifying days ending at the latest window day
+}
+
+/**
+ * Walks every calendar day from the first rating through today.
+ *
+ *  - Only in-the-moment hours COUNT; entries carrying RECLAIM_TAG never do. An hour
+ *    counts once if any non-backdated entry covers it.
+ *  - A Master day with >= 8 counted hours is complete and extends the streak; >= 12
+ *    also earns a saver (cap 5).
+ *  - A finished Master day under 8 spends a saver automatically: it SAVES a running
+ *    streak (the saved day counts, so the streak grows by one), or FADES uselessly
+ *    with no streak. With no savers, a running streak
+ *    BREAKS and opens a 3-day recovery window; no streak just MISSES.
+ *  - Inside an open window nothing is spent. A day with >= 10 counted hours RECOVERS
+ *    the streak (old count + qualifying days up to it); when the window closes
+ *    without that, the streak is the run of qualifying days ending at the close.
+ *  - 7 idle days in a row (no complete day) gift +2 savers at the end of the 7th.
+ *  - Beginner days are transparent: they use up window days and count as activity,
+ *    but never earn, spend, break or recover.
+ *  - Today is in progress: it can qualify or recover, never miss.
+ */
+internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long): Replay =
+    walk(ratings, modeEvents, nowMs, null, null).replay!!
+
+/** The carry at the end of the finished day starting at [lastDayStartMs] (a day before today). */
+fun carryAt(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, lastDayStartMs: Long): ReplayCarry =
+    walk(ratings, modeEvents, Long.MAX_VALUE, null, localMidnight(lastDayStartMs)).carry!!
+
+private class Walk(val replay: Replay?, val carry: ReplayCarry?)
+
+private fun localMidnight(ms: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = ms
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+/**
+ * The start of the next calendar day. `add(DAY_OF_YEAR, 1)` keeps the wall-clock time, so
+ * after a day whose 00:00 doesn't exist (Chile, Cuba, Egypt... jump at midnight) it would
+ * stay at 01:00 for good: re-normalise to the day's real start every time.
+ */
+private fun nextMidnight(dayStartMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = dayStartMs
+    add(Calendar.DAY_OF_YEAR, 1)
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+/**
+ * The one walk. From the first rating (or resumed the day after [from]) through today,
+ * or until the day starting at [stopAfterDayStartMs], where it returns the carry instead.
+ * Resuming starts the walk at the next local midnight, never "+24h", so DST days hold.
+ */
+private fun walk(
+    ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long,
+    from: ReplayCarry?, stopAfterDayStartMs: Long?
+): Walk {
+    val resumeAt = from?.let { nextMidnight(it.lastDayStartMs) } ?: Long.MIN_VALUE
+    val countedTs = HashMap<Long, HashMap<Int, Long>>()
+    var earliest = Long.MAX_VALUE
+    val tmp = Calendar.getInstance()
+    for (e in ratings) {
+        if (e.timestamp < resumeAt) continue
+        if (e.timestamp < earliest) earliest = e.timestamp
+        if (e.isReclaimed) continue
+        tmp.timeInMillis = e.timestamp
+        val map = countedTs.getOrPut(tmp.dayKey()) { HashMap() }
+        val hour = tmp.get(Calendar.HOUR_OF_DAY)
+        val existing = map[hour]
+        if (existing == null || e.timestamp < existing) map[hour] = e.timestamp
+    }
+
+    val days = ArrayList<ReplayDay>()
+    val events = ArrayList<StreakEvent>()
+    var streak = from?.streak ?: 0
+    var savers = from?.savers ?: SAVER_START
+    var idleRun = from?.idleRun ?: 0
+    var beginnerDays = from?.beginnerDaysCompleted ?: 0
+    // Index 0 is the first day walked; a resumed window keeps its distance from the break day.
+    var window: Window? = from?.windowDaysIn?.let { daysIn ->
+        Window(-(daysIn + 1), from.windowPrevStreak).apply { qualified = from.windowQualified; trailing = from.windowTrailing }
+    }
+    var index = 0
+    var lastDaysLeft = 0
+    val started = from?.started == true
+
+    fun carry(lastDayStartMs: Long, walked: Boolean) = ReplayCarry(
+        lastDayStartMs, streak, savers, idleRun, window?.let { index - it.breakIndex },
+        window?.prevStreak ?: 0, window?.qualified ?: 0, window?.trailing ?: 0, beginnerDays, walked
+    )
+    fun empty() = Replay(emptyList(), emptyList(), savers, streak, false, 0, 0, beginnerDays)
+
+    // A carry from before any rating has walked nothing: start at the first rating, as a full replay does.
+    val firstDay = when {
+        started -> resumeAt
+        earliest == Long.MAX_VALUE -> null
+        else -> localMidnight(earliest)
+    }
+    if (stopAfterDayStartMs != null && (firstDay == null || firstDay > stopAfterDayStartMs)) {
+        return Walk(null, carry(stopAfterDayStartMs, started))
+    }
+    if (firstDay == null) return Walk(empty(), null)
+
+    val todayKey = Calendar.getInstance().apply { timeInMillis = nowMs }.dayKey()
+    val stopKey = stopAfterDayStartMs?.let { Calendar.getInstance().apply { timeInMillis = it }.dayKey() }
+    val cursor = Calendar.getInstance().apply { timeInMillis = firstDay }
+
+    while (true) {
+        val key = cursor.dayKey()
+        // A resume point after today (a watch clock behind the phone's) has nothing to walk.
+        if (stopKey == null && key > todayKey) break
+        val isToday = key == todayKey
+        val hourTs = countedTs[key]?.values?.sorted() ?: emptyList()
+        val n = hourTs.size
+        val dayStartMs = cursor.timeInMillis
+        // The last instant of this calendar day — derived from the next day's start
+        // so DST-shortened/lengthened days still end where they end.
+        val dayEndMs = nextMidnight(dayStartMs) - 1
+        val beginner = beginnerAt(dayEndMs, modeEvents)
+
+        fun ev(type: StreakEventType, ts: Long, eventStreak: Int, daysLeft: Int = 0, suffix: String = "") {
+            events.add(StreakEvent("${type.name}:$key$suffix", ts, type, eventStreak, savers, daysLeft, dayStartMs))
+        }
+
+        // The window closes the day after its last day: the run of qualifying days stands.
+        window?.let { if (index - it.breakIndex > RECOVERY_DAYS) { streak = it.trailing; window = null } }
+        window?.let {
+            val left = RECOVERY_DAYS + 1 - (index - it.breakIndex)
+            if (left <= 2) ev(StreakEventType.RECOVERY_DAYS_LEFT, dayStartMs, it.prevStreak, left, ":$left")
+        }
+
+        var outcome: DayOutcome? = null
+        var earned = false
+        // Runs only on Master QUALIFIED/RECOVERED days, so beginner days never reach it.
+        fun maybeEarn() {
+            // The Super day is recorded even at the saver cap, when there is nothing to earn.
+            if (n >= SUPER_DAY_HOURS) ev(StreakEventType.SUPER_DAY, hourTs[SUPER_DAY_HOURS - 1], streak)
+            if (n >= SAVER_EARN_HOURS && savers < SAVER_CAP) {
+                savers++; earned = true
+                ev(StreakEventType.SAVER_EARNED, hourTs[SAVER_EARN_HOURS - 1], streak)
+            }
+        }
+
+        val w = window
+        when {
+            beginner -> if (n >= BEGINNER_HOURS_REQUIRED) {
+                outcome = DayOutcome.BEGINNER_COMPLETE
+                ev(StreakEventType.BEGINNER, hourTs[BEGINNER_HOURS_REQUIRED - 1], streak)
+            }
+            w != null -> when {
+                n >= RECOVERY_HOURS -> {
+                    w.qualified++
+                    streak = w.prevStreak + w.qualified
+                    window = null
+                    outcome = DayOutcome.RECOVERED
+                    ev(StreakEventType.RECOVERED, hourTs[RECOVERY_HOURS - 1], streak)
+                    maybeEarn()
+                }
+                n >= STREAK_HOURS_REQUIRED -> {
+                    w.qualified++; w.trailing++; streak = w.trailing
+                    outcome = DayOutcome.QUALIFIED
+                    ev(StreakEventType.COMPLETED, hourTs[STREAK_HOURS_REQUIRED - 1], streak)
+                    maybeEarn()
+                }
+                !isToday -> { w.trailing = 0; streak = 0; outcome = DayOutcome.MISSED }
+            }
+            n >= STREAK_HOURS_REQUIRED -> {
+                streak++
+                outcome = DayOutcome.QUALIFIED
+                ev(StreakEventType.COMPLETED, hourTs[STREAK_HOURS_REQUIRED - 1], streak)
+                maybeEarn()
+            }
+            isToday -> {}
+            savers > 0 -> {
+                savers--
+                if (streak > 0) {
+                    // A saver doesn't just hold the streak: the saved day counts, so it grows
+                    streak++
+                    outcome = DayOutcome.SAVED
+                    ev(StreakEventType.SAVER_USED, dayEndMs, streak)
+                    if (savers <= 2) ev(StreakEventType.LOW_SAVERS, dayEndMs, streak)
+                } else {
+                    outcome = DayOutcome.FADED
+                    ev(StreakEventType.SAVER_FADED, dayEndMs, 0)
+                }
+            }
+            streak > 0 -> {
+                outcome = DayOutcome.BROKEN
+                ev(StreakEventType.STREAK_BROKE, dayEndMs, streak)
+                window = Window(index, streak)
+                streak = 0
+            }
+            else -> outcome = DayOutcome.MISSED
+        }
+
+        if (!isToday) {
+            val complete = outcome == DayOutcome.QUALIFIED || outcome == DayOutcome.RECOVERED ||
+                outcome == DayOutcome.BEGINNER_COMPLETE
+            idleRun = if (complete) 0 else idleRun + 1
+            if (idleRun > 0 && idleRun % COMEBACK_IDLE_DAYS == 0) {
+                savers = minOf(SAVER_CAP, savers + COMEBACK_GIFT)
+                ev(StreakEventType.COMEBACK_GIFT, dayEndMs, streak)
+            }
+        }
+
+        days.add(ReplayDay(key, dayStartMs, hourTs, outcome, streak, savers, earned, beginner, isToday))
+        lastDaysLeft = window?.let { RECOVERY_DAYS + 1 - (index - it.breakIndex) } ?: 0
+        if (outcome == DayOutcome.BEGINNER_COMPLETE) beginnerDays++
+        if (key == stopKey) return Walk(null, carry(dayStartMs, true))
+
+        if (isToday) break
+        cursor.timeInMillis = nextMidnight(dayStartMs)
+        index++
+    }
+    return Walk(Replay(days, events, savers, streak, window != null, window?.prevStreak ?: 0, lastDaysLeft, beginnerDays), null)
+}
+
+/** Current streak, savers and today's progress, read off the shared replay. */
+fun computeStreakState(
+    ratings: List<RatingEntry>,
+    modeEvents: List<ModeEvent>,
+    nowMs: Long = System.currentTimeMillis()
+): StreakState {
+    return stateOf(replay(ratings, modeEvents, nowMs), modeEvents, nowMs)
+}
+
+/**
+ * The same state resumed from a checkpoint: [ratings] need only cover the days after
+ * `carry.lastDayStartMs` (older ones are ignored). Equal to [computeStreakState] over the
+ * whole history, for any checkpoint day before yesterday.
+ */
+fun computeStreakStateFrom(
+    carry: ReplayCarry, ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long
+): StreakState = stateOf(walk(ratings, modeEvents, nowMs, carry, null).replay!!, modeEvents, nowMs)
+
+private fun stateOf(r: Replay, modeEvents: List<ModeEvent>, nowMs: Long): StreakState {
+    val today = r.days.lastOrNull()?.takeIf { it.isToday }
+    val todayHours = today?.countedHours ?: 0
+    // Today's mode comes from the events, not the replay: with no ratings at
+    // all the replay is empty, and a brand-new install is exactly that case.
+    val beginner = isBeginnerMode(modeEvents)
+    val required = hoursRequiredFor(beginner)
+    return StreakState(
+        currentStreak = r.streak,
+        displayStreak = if (r.recoveryOpen) r.recoverableStreak else r.streak,
+        todayHours = todayHours,
+        todayQualified = todayHours >= required,
+        extraToday = maxOf(0, todayHours - required),
+        beginnerMode = beginner,
+        hoursRequired = required,
+        beginnerDaysCompleted = r.beginnerDays,
+        savers = r.savers,
+        recoveryOpen = r.recoveryOpen,
+        recoveryDaysLeft = r.recoveryDaysLeft,
+        todayEarnedSaver = today?.earnedSaver == true,
+        todayRecovered = today?.outcome == DayOutcome.RECOVERED,
+        recentDays = r.days.takeLast(2).filter { it.dayStartMs >= yesterdayStart(nowMs) }.map { it.toTally() }
+    )
+}
+
+private fun ReplayDay.toTally() = DayTally(
+    dayStartMs = dayStartMs, countedStarts = countedStarts, beginner = beginner,
+    goal = hoursRequiredFor(beginner), streakAfter = streakAfter, earnedSaver = earnedSaver,
+    recovered = outcome == DayOutcome.RECOVERED, isToday = isToday
+)
+
+/** Midnight at the start of the calendar day before `nowMs`. */
+private fun yesterdayStart(nowMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = nowMs
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    add(Calendar.DAY_OF_YEAR, -1)
+}.timeInMillis
+
+/**
+ * The days that were Super days: a Master day (mode at the day's end) with
+ * >= SUPER_DAY_HOURS counted hours. Key = year * 1000 + dayOfYear. Backdated
+ * hours never count, so they can't make one.
+ */
+fun computeSuperDays(
+    ratings: List<RatingEntry>,
+    modeEvents: List<ModeEvent>,
+    nowMs: Long = System.currentTimeMillis()
+): Set<Long> =
+    replay(ratings, modeEvents, nowMs).days.filter { it.toTally().superDay }.map { it.key }.toSet()
+
+/**
+ * Per-day outcome for every day from the first rating through yesterday.
+ * Today appears only once it has qualified or recovered. Key = year * 1000 + dayOfYear.
+ */
+fun computeDayOutcomes(
+    ratings: List<RatingEntry>,
+    modeEvents: List<ModeEvent>,
+    nowMs: Long = System.currentTimeMillis()
+): Map<Long, DayOutcome> =
+    replay(ratings, modeEvents, nowMs).days
+        .mapNotNull { day -> day.outcome?.let { day.key to it } }
+        .toMap()
+
+/** Every streak event, newest first. `reclaimSpends` adds the "past hour added" rows. */
+fun computeStreakEvents(
+    ratings: List<RatingEntry>,
+    reclaimSpends: List<Long>,
+    modeEvents: List<ModeEvent>,
+    nowMs: Long = System.currentTimeMillis()
+): List<StreakEvent> {
+    val r = replay(ratings, modeEvents, nowMs)
+    val byKey = r.days.associateBy { it.key }
+    val cal = Calendar.getInstance()
+    val added = reclaimSpends.map { ms ->
+        cal.timeInMillis = ms
+        val day = byKey[cal.dayKey()]
+        StreakEvent(
+            id = "${StreakEventType.PAST_HOUR_ADDED.name}:${cal.dayKey()}:$ms",
+            timestamp = ms, type = StreakEventType.PAST_HOUR_ADDED,
+            streak = day?.streakAfter ?: 0, savers = day?.saversAfter ?: 0,
+            dayStartMs = day?.dayStartMs ?: ms
+        )
+    }
+    return (r.events + added).sortedByDescending { it.timestamp }
+}
+
+/**
+ * A full-screen streak moment: a Super day just reached (with or without a saver,
+ * which it can't earn at the cap), or a broken streak just won back. `late` = the
+ * day it belongs to is yesterday, finished off after midnight.
+ */
+sealed interface StreakMoment {
+    data class SuperDay(val savers: Int, val earnedSaver: Boolean, val late: Boolean) : StreakMoment
+    data class Recovered(val streak: Int) : StreakMoment
+}
+
+/**
+ * The one day that gained exactly one counted hour between two snapshots, or null.
+ * Days are keyed by `dayStartMs` over `now.recentDays`: a day `prev` didn't have
+ * counts as 0, a day only `prev` had (it rolled off at midnight) is ignored. Any
+ * other change — two days moving, a jump of several hours, no new hour at all —
+ * returns null, and so does a first composition (`prev == null`).
+ *
+ * The new hour must also be one of the two hours ratable at [nowMs] (the last two
+ * finished clock hours). That is the only way an in-the-moment counted hour appears;
+ * a Delete + Undo from the journal restores an old timestamp, and must not celebrate.
+ */
+internal fun singleNewHourDay(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
+): DayTally? {
+    if (prev == null) return null
+    val before = prev.recentDays.associate { it.dayStartMs to it.countedStarts }
+    val changed = now.recentDays.filter { it.countedHours != (before[it.dayStartMs]?.size ?: 0) }
+    val day = changed.singleOrNull() ?: return null
+    val old = before[day.dayStartMs].orEmpty()
+    if (day.countedHours != old.size + 1) return null
+    val added = day.countedStarts.filter { it !in old }.singleOrNull() ?: return null
+    // The watch already celebrated an hour it saved; the phone never does it again.
+    return day.takeIf { added in ratableHourStarts(nowMs) && added !in watchHourStarts }
+}
+
+/** Start millis of the two hours ratable at [nowMs]: the last two finished clock hours, DST-aware. */
+internal fun ratableHourStarts(nowMs: Long): Set<Long> {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = nowMs
+        set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+    cal.add(Calendar.HOUR_OF_DAY, -1)
+    val latest = cal.timeInMillis
+    cal.add(Calendar.HOUR_OF_DAY, -1)
+    return setOf(latest, cal.timeInMillis)
+}
+
+/** The daily ring just closed on `day`. `count` is what the takeover announces. */
+data class RingClosed(val day: DayTally, val count: Int, val beginner: Boolean, val late: Boolean)
+
+/** Fires on the one new hour that brings a day exactly to its goal; same guard as [streakMoment]. */
+fun ringClosed(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
+): RingClosed? {
+    val d = singleNewHourDay(prev, now, nowMs, watchHourStarts) ?: return null
+    if (d.countedHours != d.goal) return null
+    val count = if (d.beginner) now.beginnerDaysCompleted else d.streakAfter
+    return RingClosed(d, count, d.beginner, late = !d.isToday)
+}
+
+/**
+ * Compares the state before and after a change and says whether it was a moment.
+ * It only fires when exactly one new counted hour landed, so a replay (first
+ * composition), an import, a backdated save or a mode/goal toggle can never
+ * celebrate: none of them add a single counted hour. It is keyed by day, so a save
+ * for yesterday after midnight still counts.
+ */
+fun streakMoment(
+    prev: StreakState?, now: StreakState, nowMs: Long = System.currentTimeMillis(),
+    watchHourStarts: Set<Long> = emptySet()
+): StreakMoment? {
+    if (prev == null) return null
+    val d = singleNewHourDay(prev, now, nowMs, watchHourStarts) ?: return null
+    if (!d.beginner && d.countedHours == SUPER_DAY_HOURS) {
+        return StreakMoment.SuperDay(now.savers, d.earnedSaver, late = !d.isToday)
+    }
+    if (prev.recoveryOpen && !now.recoveryOpen && d.recovered) return StreakMoment.Recovered(now.currentStreak)
+    return null
+}
