@@ -132,7 +132,27 @@ internal class Replay(
     val streak: Int,
     val recoveryOpen: Boolean,
     val recoverableStreak: Int,
-    val recoveryDaysLeft: Int
+    val recoveryDaysLeft: Int,
+    val beginnerDays: Int            // completed beginner days, including any before a resume
+)
+
+/**
+ * Everything the day walk carries from one day to the next, at the END of the day that
+ * starts at [lastDayStartMs]. The phone sends one to the watch, and the watch resumes
+ * the walk from it with [computeStreakStateFrom]: same rules, a few days instead of a
+ * whole history, and exactly the numbers a full replay would give.
+ */
+data class ReplayCarry(
+    val lastDayStartMs: Long,
+    val streak: Int,
+    val savers: Int,
+    val idleRun: Int,
+    val windowDaysIn: Int?,      // days since the open window's break day (0 = the break day); null = none
+    val windowPrevStreak: Int,
+    val windowQualified: Int,
+    val windowTrailing: Int,
+    val beginnerDaysCompleted: Int,
+    val started: Boolean         // false: no rating on or before that day, so nothing has been walked yet
 )
 
 private class Window(val breakIndex: Int, val prevStreak: Int) {
@@ -159,13 +179,38 @@ private class Window(val breakIndex: Int, val prevStreak: Int) {
  *    but never earn, spend, break or recover.
  *  - Today is in progress: it can qualify or recover, never miss.
  */
-internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long): Replay {
-    if (ratings.isEmpty()) return Replay(emptyList(), emptyList(), SAVER_START, 0, false, 0, 0)
+internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long): Replay =
+    walk(ratings, modeEvents, nowMs, null, null).replay!!
 
+/** The carry at the end of the finished day starting at [lastDayStartMs] (a day before today). */
+fun carryAt(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, lastDayStartMs: Long): ReplayCarry =
+    walk(ratings, modeEvents, Long.MAX_VALUE, null, localMidnight(lastDayStartMs)).carry!!
+
+private class Walk(val replay: Replay?, val carry: ReplayCarry?)
+
+private fun localMidnight(ms: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = ms
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun nextMidnight(dayStartMs: Long): Long =
+    Calendar.getInstance().apply { timeInMillis = dayStartMs; add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+
+/**
+ * The one walk. From the first rating (or resumed the day after [from]) through today,
+ * or until the day starting at [stopAfterDayStartMs], where it returns the carry instead.
+ * Resuming starts the walk at the next local midnight, never "+24h", so DST days hold.
+ */
+private fun walk(
+    ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long,
+    from: ReplayCarry?, stopAfterDayStartMs: Long?
+): Walk {
+    val resumeAt = from?.let { nextMidnight(it.lastDayStartMs) } ?: Long.MIN_VALUE
     val countedTs = HashMap<Long, HashMap<Int, Long>>()
     var earliest = Long.MAX_VALUE
     val tmp = Calendar.getInstance()
     for (e in ratings) {
+        if (e.timestamp < resumeAt) continue
         if (e.timestamp < earliest) earliest = e.timestamp
         if (e.isReclaimed) continue
         tmp.timeInMillis = e.timestamp
@@ -175,21 +220,39 @@ internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, now
         if (existing == null || e.timestamp < existing) map[hour] = e.timestamp
     }
 
-    val todayKey = Calendar.getInstance().apply { timeInMillis = nowMs }.dayKey()
-    val cursor = Calendar.getInstance().apply {
-        timeInMillis = earliest
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
-
     val days = ArrayList<ReplayDay>()
     val events = ArrayList<StreakEvent>()
-    var streak = 0
-    var savers = SAVER_START
-    var idleRun = 0
-    var window: Window? = null
+    var streak = from?.streak ?: 0
+    var savers = from?.savers ?: SAVER_START
+    var idleRun = from?.idleRun ?: 0
+    var beginnerDays = from?.beginnerDaysCompleted ?: 0
+    // Index 0 is the first day walked; a resumed window keeps its distance from the break day.
+    var window: Window? = from?.windowDaysIn?.let { daysIn ->
+        Window(-(daysIn + 1), from.windowPrevStreak).apply { qualified = from.windowQualified; trailing = from.windowTrailing }
+    }
     var index = 0
     var lastDaysLeft = 0
+    val started = from?.started == true
+
+    fun carry(lastDayStartMs: Long, walked: Boolean) = ReplayCarry(
+        lastDayStartMs, streak, savers, idleRun, window?.let { index - it.breakIndex },
+        window?.prevStreak ?: 0, window?.qualified ?: 0, window?.trailing ?: 0, beginnerDays, walked
+    )
+    fun empty() = Replay(emptyList(), emptyList(), savers, streak, false, 0, 0, beginnerDays)
+
+    // A carry from before any rating has walked nothing: start at the first rating, as a full replay does.
+    val firstDay = when {
+        started -> resumeAt
+        earliest == Long.MAX_VALUE -> null
+        else -> localMidnight(earliest)
+    }
+    if (stopAfterDayStartMs != null && (firstDay == null || firstDay > stopAfterDayStartMs)) {
+        return Walk(null, carry(stopAfterDayStartMs, started))
+    }
+    if (firstDay == null) return Walk(empty(), null)
+
+    val todayKey = Calendar.getInstance().apply { timeInMillis = nowMs }.dayKey()
+    val cursor = Calendar.getInstance().apply { timeInMillis = firstDay }
 
     while (true) {
         val key = cursor.dayKey()
@@ -289,12 +352,14 @@ internal fun replay(ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, now
 
         days.add(ReplayDay(key, dayStartMs, hourTs, outcome, streak, savers, earned, beginner, isToday))
         lastDaysLeft = window?.let { RECOVERY_DAYS + 1 - (index - it.breakIndex) } ?: 0
+        if (outcome == DayOutcome.BEGINNER_COMPLETE) beginnerDays++
+        if (dayStartMs == stopAfterDayStartMs) return Walk(null, carry(dayStartMs, true))
 
         if (isToday) break
         cursor.add(Calendar.DAY_OF_YEAR, 1)
         index++
     }
-    return Replay(days, events, savers, streak, window != null, window?.prevStreak ?: 0, lastDaysLeft)
+    return Walk(Replay(days, events, savers, streak, window != null, window?.prevStreak ?: 0, lastDaysLeft, beginnerDays), null)
 }
 
 /** Current streak, savers and today's progress, read off the shared replay. */
@@ -303,7 +368,19 @@ fun computeStreakState(
     modeEvents: List<ModeEvent>,
     nowMs: Long = System.currentTimeMillis()
 ): StreakState {
-    val r = replay(ratings, modeEvents, nowMs)
+    return stateOf(replay(ratings, modeEvents, nowMs), modeEvents, nowMs)
+}
+
+/**
+ * The same state resumed from a checkpoint: [ratings] need only cover the days after
+ * `carry.lastDayStartMs` (older ones are ignored). Equal to [computeStreakState] over the
+ * whole history, for any checkpoint day before yesterday.
+ */
+fun computeStreakStateFrom(
+    carry: ReplayCarry, ratings: List<RatingEntry>, modeEvents: List<ModeEvent>, nowMs: Long
+): StreakState = stateOf(walk(ratings, modeEvents, nowMs, carry, null).replay!!, modeEvents, nowMs)
+
+private fun stateOf(r: Replay, modeEvents: List<ModeEvent>, nowMs: Long): StreakState {
     val today = r.days.lastOrNull()?.takeIf { it.isToday }
     val todayHours = today?.countedHours ?: 0
     // Today's mode comes from the events, not the replay: with no ratings at
@@ -318,7 +395,7 @@ fun computeStreakState(
         extraToday = maxOf(0, todayHours - required),
         beginnerMode = beginner,
         hoursRequired = required,
-        beginnerDaysCompleted = r.days.count { it.outcome == DayOutcome.BEGINNER_COMPLETE },
+        beginnerDaysCompleted = r.beginnerDays,
         savers = r.savers,
         recoveryOpen = r.recoveryOpen,
         recoveryDaysLeft = r.recoveryDaysLeft,
