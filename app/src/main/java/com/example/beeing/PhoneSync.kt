@@ -4,9 +4,11 @@ import android.content.Context
 import android.util.Log
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.PutDataRequest
+import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Wearable
 import java.util.Calendar
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // ============================================================
@@ -88,6 +90,16 @@ fun refreshWatchInstalled(context: Context) {
     } catch (e: Exception) {
         Log.w("PhoneSync", "capability check skipped", e)
     }
+}
+
+/** Blocking (call off the main thread): is the watch app connected right now? Errors count as no. */
+fun watchReachable(context: Context): Boolean = try {
+    Tasks.await(
+        Wearable.getCapabilityClient(context).getCapability(CAPABILITY_WATCH, CapabilityClient.FILTER_REACHABLE),
+        3, TimeUnit.SECONDS
+    ).nodes.isNotEmpty()
+} catch (e: Exception) {
+    false
 }
 
 fun watchCharging(context: Context): Boolean = context.getSharedPreferences("b", 0).getBoolean(CHARGING_KEY, false)

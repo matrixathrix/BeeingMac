@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,6 +80,12 @@ fun SilentHoursSheet(prefs: NotificationPrefs, onChange: (NotificationPrefs) -> 
                 "Hourly reminders still arrive, with no sound or vibration. Streak alerts and the weekly report go quiet too.",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (watchInstalled(LocalContext.current)) {
+                Text(
+                    "Beeing on your watch keeps the same silent hours. Changes reach your watch the next time it connects to your phone.",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Every day", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 Switch(checked = prefs.silentOn, onCheckedChange = { onChange(prefs.copy(silentOn = it)) })
@@ -195,6 +202,12 @@ fun PauseSheet(
                     ),
                     fontSize = 14.sp
                 )
+                if (watchInstalled(LocalContext.current)) {
+                    Text(
+                        "Your watch pauses too. If it isn't connected right now, the pause starts as soon as it reconnects.",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (mode == PauseMode.OFF) {
                     pauseRisk(streakState, streakState.todayQualified, streakState.beginnerMode, now, u)?.let { RiskCard(it) }
                 }

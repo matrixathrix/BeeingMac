@@ -146,13 +146,25 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                // Hourly reminders obey silent hours and pause;
-                // the alarm keeps rescheduling either way, so a pause ends on its own.
-                when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
-                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, CHANNEL_HOURLY)
-                    Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
-                    Delivery.NONE -> {}
-                }
+                // Hourly reminders obey silent hours and pause; the alarm keeps
+                // rescheduling either way, so a pause ends on its own. With Beeing on a
+                // watch that is reachable and off its charger, the watch buzzes and the
+                // phone's copy arrives silently (asking the Data Layer needs a thread).
+                val base = hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())
+                val pending = goAsync()
+                Thread {
+                    try {
+                        val delivery = if (base == Delivery.SOUND && watchInstalled(context))
+                            phoneDelivery(base, watchReachable(context), watchCharging(context)) else base
+                        when (delivery) {
+                            Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, CHANNEL_HOURLY)
+                            Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
+                            Delivery.NONE -> {}
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }.start()
                 scheduleExactHourlyAlarm(context)
                 publishState(context) // the hour turned: the watch's waiting hours move with it
             }
@@ -287,6 +299,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOnlyAlertOnce(alertOnce)
+            .setLocalOnly(watchInstalled(context)) // the watch posts its own; never bridge a second one
             .setAutoCancel(true) // body tap only; the chips are broadcasts and never cancel
             .setContentIntent(openIntent)
             .build()

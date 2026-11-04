@@ -115,4 +115,18 @@ class NotificationPrefsTest {
         val r = pauseRisk(state(streak = 5, savers = 0), false, false, at(28, 20), at(30, 0))
         assertEquals(2, r!!.days)
     }
+
+    // --- who buzzes when the watch is around ------------------------------------
+
+    @Test fun connected_unplugged_watch_silences_phone() =
+        assertEquals(Delivery.SILENT, phoneDelivery(Delivery.SOUND, watchReachable = true, watchCharging = false))
+
+    @Test fun charging_watch_lets_phone_ring() =
+        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = true, watchCharging = true))
+
+    @Test fun no_watch_rings() =
+        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = false, watchCharging = false))
+
+    @Test fun paused_none_stays_none() =
+        assertEquals(Delivery.NONE, phoneDelivery(Delivery.NONE, watchReachable = true, watchCharging = false))
 }
