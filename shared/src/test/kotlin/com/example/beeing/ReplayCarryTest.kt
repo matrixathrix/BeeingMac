@@ -90,4 +90,39 @@ class ReplayCarryTest {
         assertEquals(full, computeStreakStateFrom(carryAt(r, emptyList(), dayStart(3)), r, emptyList(), nowMs).key())
         assertEquals(full, computeStreakStateFrom(carryAt(r, emptyList(), dayStart(4)), r, emptyList(), nowMs).key())
     }
+
+    // --- zones whose DST jump is at midnight (Chile, Cuba, Lebanon, Egypt...) ----------
+
+    /** America/Santiago skips 6 Sep 2026 00:00-01:00: that day starts at 01:00. */
+    private fun santiago() {
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Santiago"))
+        nowMs = Calendar.getInstance().apply {
+            set(2026, Calendar.SEPTEMBER, 20, 20, 0, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val sep6 = Calendar.getInstance().apply {
+            set(2026, Calendar.SEPTEMBER, 6, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+        }
+        assertEquals("tzdata: 6 Sep 2026 has no midnight in Santiago", 1, sep6.get(Calendar.HOUR_OF_DAY))
+    }
+
+    @Test(timeout = 10_000) fun resume_across_a_day_without_midnight() {
+        santiago()
+        // Hours 8..15 (never the missing hour), from 30 Aug to yesterday.
+        assertEverySplit(hist(List(21) { 8 }, today = 3))
+    }
+
+    @Test(timeout = 10_000) fun checkpoint_on_a_day_without_midnight_keeps_the_next_days_first_hour() {
+        santiago()
+        // 6 Sep is offset 14 from 20 Sep. A rating at 00:00 on 7 Sep must survive the resume.
+        val r = hist(List(21) { 8 }, today = 3) + entry(13, 0)
+        val full = computeStreakState(r, emptyList(), nowMs).key()
+        assertEquals(full, computeStreakStateFrom(carryAt(r, emptyList(), dayStart(14)), r, emptyList(), nowMs).key())
+    }
+
+    @Test(timeout = 10_000) fun a_resume_point_after_today_does_not_loop() {
+        // A watch whose clock is behind the phone's: the carry ends after "today".
+        val r = hist(List(5) { 8 }, today = 2)
+        val carry = carryAt(r, emptyList(), dayStart(1)).copy(lastDayStartMs = dayStart(-3))
+        computeStreakStateFrom(carry, r, emptyList(), nowMs)
+    }
 }

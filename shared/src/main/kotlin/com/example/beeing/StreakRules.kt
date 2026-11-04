@@ -199,8 +199,16 @@ private fun localMidnight(ms: Long): Long = Calendar.getInstance().apply {
     set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
 }.timeInMillis
 
-private fun nextMidnight(dayStartMs: Long): Long =
-    Calendar.getInstance().apply { timeInMillis = dayStartMs; add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+/**
+ * The start of the next calendar day. `add(DAY_OF_YEAR, 1)` keeps the wall-clock time, so
+ * after a day whose 00:00 doesn't exist (Chile, Cuba, Egypt... jump at midnight) it would
+ * stay at 01:00 for good: re-normalise to the day's real start every time.
+ */
+private fun nextMidnight(dayStartMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = dayStartMs
+    add(Calendar.DAY_OF_YEAR, 1)
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
 
 /**
  * The one walk. From the first rating (or resumed the day after [from]) through today,
@@ -258,17 +266,20 @@ private fun walk(
     if (firstDay == null) return Walk(empty(), null)
 
     val todayKey = Calendar.getInstance().apply { timeInMillis = nowMs }.dayKey()
+    val stopKey = stopAfterDayStartMs?.let { Calendar.getInstance().apply { timeInMillis = it }.dayKey() }
     val cursor = Calendar.getInstance().apply { timeInMillis = firstDay }
 
     while (true) {
         val key = cursor.dayKey()
+        // A resume point after today (a watch clock behind the phone's) has nothing to walk.
+        if (stopKey == null && key > todayKey) break
         val isToday = key == todayKey
         val hourTs = countedTs[key]?.values?.sorted() ?: emptyList()
         val n = hourTs.size
         val dayStartMs = cursor.timeInMillis
         // The last instant of this calendar day — derived from the next day's start
         // so DST-shortened/lengthened days still end where they end.
-        val dayEndMs = (cursor.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis - 1
+        val dayEndMs = nextMidnight(dayStartMs) - 1
         val beginner = beginnerAt(dayEndMs, modeEvents)
 
         fun ev(type: StreakEventType, ts: Long, eventStreak: Int, daysLeft: Int = 0, suffix: String = "") {
@@ -359,10 +370,10 @@ private fun walk(
         days.add(ReplayDay(key, dayStartMs, hourTs, outcome, streak, savers, earned, beginner, isToday))
         lastDaysLeft = window?.let { RECOVERY_DAYS + 1 - (index - it.breakIndex) } ?: 0
         if (outcome == DayOutcome.BEGINNER_COMPLETE) beginnerDays++
-        if (dayStartMs == stopAfterDayStartMs) return Walk(null, carry(dayStartMs, true))
+        if (key == stopKey) return Walk(null, carry(dayStartMs, true))
 
         if (isToday) break
-        cursor.add(Calendar.DAY_OF_YEAR, 1)
+        cursor.timeInMillis = nextMidnight(dayStartMs)
         index++
     }
     return Walk(Replay(days, events, savers, streak, window != null, window?.prevStreak ?: 0, lastDaysLeft, beginnerDays), null)
