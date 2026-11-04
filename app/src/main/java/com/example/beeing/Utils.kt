@@ -154,6 +154,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                     Delivery.NONE -> {}
                 }
                 scheduleExactHourlyAlarm(context)
+                publishState(context) // the hour turned: the watch's waiting hours move with it
             }
         }
     }
@@ -362,6 +363,7 @@ fun loadTags(c: Context): List<String> {
 fun saveTags(c: Context, tags: List<String>) {
     val prefs = c.getSharedPreferences("b", 0)
     prefs.edit { putString("tags_v2", tags.joinToString(",")) }
+    publishState(c)
 }
 
 // --- DATA PERSISTENCE ---
@@ -380,6 +382,12 @@ fun saveRating(context: Context, entry: RatingEntry) {
     prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
     // A save for an hour supersedes its deletion (this is also how Undo restores one).
     clearTombstone(context, entry.timestamp)
+    publishState(context)
+}
+
+/** Replaces every stored rating at once (the watch merge writes through this). */
+fun saveAllRatings(context: Context, ratings: List<RatingEntry>) {
+    context.getSharedPreferences("b", 0).edit { putString("ratings", ratings.joinToString("|") { encodeRatingRow(it) }) }
 }
 
 fun loadRatings(context: Context): List<RatingEntry> {
@@ -396,6 +404,7 @@ fun deleteRating(context: Context, id: Long) {
     val existing = all.filter { it.id != id }
     prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
     all.firstOrNull { it.id == id }?.let { recordTombstone(context, it.timestamp, System.currentTimeMillis()) }
+    publishState(context)
 }
 
 // --- BACKUP/RESTORE ---

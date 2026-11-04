@@ -82,6 +82,9 @@ private fun loadMillisList(context: android.content.Context, key: String): List<
 
 fun loadReclaimSpends(context: android.content.Context) = loadMillisList(context, "reclaim_spends")
 
+fun saveReclaimSpends(context: android.content.Context, spends: List<Long>) =
+    context.getSharedPreferences("b", 0).edit().putString("reclaim_spends", spends.joinToString(",")).apply()
+
 fun recordReclaimSpend(context: android.content.Context) {
     val prefs = context.getSharedPreferences("b", 0)
     val cur = prefs.getString("reclaim_spends", "") ?: ""
@@ -119,6 +122,7 @@ fun recordModeEvent(context: android.content.Context, enteredBeginner: Boolean) 
     val cur = prefs.getString(MODE_EVENTS_KEY, "") ?: ""
     val record = "${System.currentTimeMillis()}:${if (enteredBeginner) 1 else 0}"
     prefs.edit().putString(MODE_EVENTS_KEY, if (cur.isBlank()) record else "$cur,$record").apply()
+    publishState(context)
 }
 
 /**

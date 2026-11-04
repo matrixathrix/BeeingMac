@@ -25,7 +25,7 @@ data class PhoneState(
     val prefs: NotificationPrefs,        // silent hours and pause, for the watch's own reminders
     val carry: ReplayCarry,              // the replay at the end of the day before yesterday
     val recentRatings: List<RatingEntry>, // yesterday + today, every origin
-    val mergedWatchIds: List<Long>       // watch ratings the phone has applied (last 2 days)
+    val mergedWatchIds: List<Long>       // watch ratings the phone has processed, taken in or turned down
 )
 
 // Lenient on purpose: a newer app on one side may send fields the other doesn't know.

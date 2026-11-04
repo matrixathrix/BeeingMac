@@ -29,4 +29,5 @@ fun saveNotificationPrefs(ctx: Context, p: NotificationPrefs) {
         .putLong(PAUSE_UNTIL_KEY, p.pauseUntilMs)
         .putString(PAUSE_MODE_KEY, p.pauseMode.name)
         .apply()
+    publishState(ctx)
 }

@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
         // A first-ever launch starts in beginner mode (4-hour days). Runs before
         // any composition so the first frame already knows its goal.
         ensureModeInitialized(this)
+        refreshWatchInstalled(this)
+        publishState(this)
         consumePendingRating(intent)
 
         val requestPermissionLauncher = registerForActivityResult(
