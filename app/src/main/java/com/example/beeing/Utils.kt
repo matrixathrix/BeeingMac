@@ -29,19 +29,23 @@ fun scoreBandColor(score: Int): androidx.compose.ui.graphics.Color = when {
 const val ACTION_NOTIF_SCORE = "com.example.beeing.NOTIF_SCORE"
 const val ACTION_NOTIF_TAG = "com.example.beeing.NOTIF_TAG"
 const val ACTION_NOTIF_SUBMIT = "com.example.beeing.NOTIF_SUBMIT"
-const val CHANNEL_STREAK_ALERTS = "streak_alerts"
+// Sounding channels play the Beeing tone. A channel's sound is fixed when it is
+// created, so moving to the tone needed new ids; the old ones are deleted below.
+const val CHANNEL_HOURLY = "hourly_bee_v2"
+const val CHANNEL_WEEKLY = "weekly_report_v2"
+const val CHANNEL_STREAK_ALERTS = "streak_alerts_v2"
 const val CHANNEL_STREAK_ALERTS_SILENT = "streak_alerts_silent"
 
 fun createNotificationChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val soundUri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+        val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.beepingandroidbuzz}")
         val audioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
         val channel = NotificationChannel(
-            "hourly_bee",
+            CHANNEL_HOURLY,
             "Hourly Reminders",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
@@ -50,7 +54,7 @@ fun createNotificationChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val weeklyChannel = NotificationChannel(
-            "weekly_report",
+            CHANNEL_WEEKLY,
             "Weekly Report",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
@@ -60,6 +64,7 @@ fun createNotificationChannel(context: Context) {
 
         // Silent twins: a channel's sound is fixed at creation, so "no sound" needs its own.
         val manager = context.getSystemService(NotificationManager::class.java)
+        listOf("hourly_bee", "weekly_report", "streak_alerts").forEach { manager.deleteNotificationChannel(it) }
         fun silent(id: String, name: String, importance: Int) = NotificationChannel(id, name, importance).apply {
             setSound(null, null)
             enableVibration(false)
@@ -144,7 +149,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Hourly reminders obey silent hours and pause;
                 // the alarm keeps rescheduling either way, so a pause ends on its own.
                 when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
-                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee")
+                    Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, CHANNEL_HOURLY)
                     Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
                     Delivery.NONE -> {}
                 }
