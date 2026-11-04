@@ -116,10 +116,6 @@ private const val TICK_VOLUME = 0.45f
 // audio HAL (see DialTicker.updateWhine()), so fast spin is silent except for
 // haptics.
 
-val DIAL_WORDS = mapOf(
-    1 to "terrible", 2 to "bad", 3 to "rough", 4 to "meh", 5 to "okay",
-    6 to "fine", 7 to "pretty good", 8 to "great", 9 to "excellent", 10 to "golden"
-)
 
 /**
  * The dial speaks the app's score bands (red 1–4 / amber 5–7 / green 8–10),

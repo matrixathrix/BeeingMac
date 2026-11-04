@@ -25,4 +25,5 @@ dependencyResolutionManagement {
 rootProject.name = "Beeing"
 include(":app")
 include(":shared")
+include(":wear")
  

@@ -762,7 +762,6 @@ fun isSameDay(c1: Calendar, c2: Calendar) =
             c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR)
 
 
-fun formatHour(h: Int) = "${if(h%12==0) 12 else h%12}${if(h<12)"am" else "pm"}"
 
 fun getOrdinalSuffix(n: Int) = when {
     n in 11..13 -> "th"
