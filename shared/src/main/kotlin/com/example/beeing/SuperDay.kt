@@ -26,8 +26,8 @@ private fun nextDayStart(dayStartMs: Long): Long = Calendar.getInstance().apply 
  * already counted. Walks the day's real clock hours, so a DST day has 23 or 25.
  *
  * Each uncounted hour is either ratable right now (the two just-finished hours), still to
- * come, or past and gone. Only the clock limits the day: silent hours, a pause and the
- * reminders switch are ignored on purpose, so the invite never comes and goes for
+ * come, or past and gone. Only the clock limits the day: silent hours and a pause are
+ * ignored on purpose, so the invite never comes and goes for
  * reasons the user can't see (owner call, 2026-10-31).
  */
 fun reachableHours(dayStartMs: Long, countedStarts: Collection<Long>, nowMs: Long): Int {

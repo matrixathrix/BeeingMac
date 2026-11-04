@@ -19,7 +19,7 @@ import java.util.Locale
 //
 // Day verdicts land at midnight, so a daily alarm just after it replays the engine,
 // compares with the ids it already notified and posts each new event exactly once.
-// Hourly-reminder settings (pause, reminders switch) never apply here; the only
+// Hourly-reminder settings (pause) never apply here; the only
 // setting that does is silent hours, which post the alert on the silent channel.
 
 private val ALERT_TYPES = setOf(StreakEventType.COMEBACK_GIFT, StreakEventType.SAVER_USED, StreakEventType.SAVER_FADED)
@@ -101,8 +101,8 @@ class StreakAlertReceiver : BroadcastReceiver() {
         if (toPost.isEmpty()) return
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // Silent hours are the only setting that reaches an alert; pause and the
-        // reminders switch are about hourly reminders alone.
+        // Silent hours are the only setting that reaches an alert; pause is about
+        // hourly reminders alone.
         val channel = if (otherDelivery(loadNotificationPrefs(context), now) == Delivery.SILENT)
             CHANNEL_STREAK_ALERTS_SILENT else CHANNEL_STREAK_ALERTS
         val open = PendingIntent.getActivity(

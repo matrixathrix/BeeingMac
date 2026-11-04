@@ -15,9 +15,9 @@ class NotificationPrefsTest {
     }.timeInMillis
 
     private fun prefs(
-        reminders: Boolean = true, silent: Boolean = false, start: Int = 22 * 60, end: Int = 7 * 60,
+        silent: Boolean = false, start: Int = 22 * 60, end: Int = 7 * 60,
         pauseUntil: Long = 0L, mode: PauseMode = PauseMode.OFF
-    ) = NotificationPrefs(reminders, silent, start, end, pauseUntil, mode)
+    ) = NotificationPrefs(silent, start, end, pauseUntil, mode)
 
     private fun state(streak: Int, savers: Int, beginner: Boolean = false) = StreakState(
         currentStreak = streak, displayStreak = streak, todayHours = 0, todayQualified = false, extraToday = 0,
@@ -68,11 +68,6 @@ class NotificationPrefsTest {
         val p = prefs(pauseUntil = at(28, 20), mode = PauseMode.OFF)
         assertEquals(Delivery.SOUND, hourlyDelivery(p, at(28, 20, 1)))
         assertEquals(Delivery.SOUND, hourlyDelivery(p, at(30, 9)))
-    }
-
-    @Test fun reminders_off_is_none() {
-        assertEquals(Delivery.NONE, hourlyDelivery(prefs(reminders = false), at(28, 12)))
-        assertEquals(Delivery.SOUND, otherDelivery(prefs(reminders = false), at(28, 12)))
     }
 
     @Test fun silent_hours_make_hourly_and_other_silent_but_never_none() {

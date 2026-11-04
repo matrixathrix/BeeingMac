@@ -102,12 +102,6 @@ fun SettingsScreen(callbacks: SettingsCallbacks, onBack: () -> Unit) {
             }
             Section("NOTIFICATIONS") {
                 SettingsRow(
-                    sym = Sym.Alarm, title = "Hourly reminders",
-                    subtitle = "A nudge each hour to rate the last one",
-                    onClick = { c.onNotifPrefsChange(prefs.copy(remindersOn = !prefs.remindersOn)) }
-                ) { Switch(checked = prefs.remindersOn, onCheckedChange = { c.onNotifPrefsChange(prefs.copy(remindersOn = it)) }) }
-                Divider()
-                SettingsRow(
                     sym = Sym.Rest, title = "Silent hours",
                     subtitle = if (prefs.silentOn && prefs.silentStartMin != prefs.silentEndMin)
                         "Every day, ${formatMinuteOfDay(prefs.silentStartMin)} to ${formatMinuteOfDay(prefs.silentEndMin)} · no sound"

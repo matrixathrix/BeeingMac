@@ -4,7 +4,6 @@ import android.content.Context
 
 // Persistence for the pure rules in :shared NotificationRules.kt.
 
-private const val REMINDERS_KEY = "hourly_reminders"
 private const val SILENT_ON_KEY = "silent_on"
 private const val SILENT_START_KEY = "silent_start_min"
 private const val SILENT_END_KEY = "silent_end_min"
@@ -14,7 +13,6 @@ private const val PAUSE_MODE_KEY = "pause_mode"
 fun loadNotificationPrefs(ctx: Context): NotificationPrefs {
     val p = ctx.getSharedPreferences("b", 0)
     return NotificationPrefs(
-        remindersOn = p.getBoolean(REMINDERS_KEY, true),
         silentOn = p.getBoolean(SILENT_ON_KEY, false),
         silentStartMin = p.getInt(SILENT_START_KEY, 1320),
         silentEndMin = p.getInt(SILENT_END_KEY, 420),
@@ -25,7 +23,6 @@ fun loadNotificationPrefs(ctx: Context): NotificationPrefs {
 
 fun saveNotificationPrefs(ctx: Context, p: NotificationPrefs) {
     ctx.getSharedPreferences("b", 0).edit()
-        .putBoolean(REMINDERS_KEY, p.remindersOn)
         .putBoolean(SILENT_ON_KEY, p.silentOn)
         .putInt(SILENT_START_KEY, p.silentStartMin)
         .putInt(SILENT_END_KEY, p.silentEndMin)

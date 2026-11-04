@@ -16,7 +16,6 @@ enum class PauseMode { QUIET, OFF }
 enum class Delivery { SOUND, SILENT, NONE }
 
 data class NotificationPrefs(
-    val remindersOn: Boolean,
     val silentOn: Boolean,
     val silentStartMin: Int,   // minutes after midnight
     val silentEndMin: Int,
@@ -37,7 +36,6 @@ fun inSilentHours(p: NotificationPrefs, nowMs: Long): Boolean {
 fun pauseActive(p: NotificationPrefs, nowMs: Long): Boolean = p.pauseUntilMs > nowMs
 
 fun hourlyDelivery(p: NotificationPrefs, nowMs: Long): Delivery = when {
-    !p.remindersOn -> Delivery.NONE
     pauseActive(p, nowMs) && p.pauseMode == PauseMode.OFF -> Delivery.NONE
     pauseActive(p, nowMs) -> Delivery.SILENT
     inSilentHours(p, nowMs) -> Delivery.SILENT

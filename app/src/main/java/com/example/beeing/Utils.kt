@@ -141,7 +141,7 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
                 // Calculate Label (e.g., "5th")
                 val ordinal = "${if (endHour == 0) 24 else endHour}${getSuffix(if (endHour == 0) 24 else endHour)}"
 
-                // Hourly reminders obey silent hours, pause and the reminders switch;
+                // Hourly reminders obey silent hours and pause;
                 // the alarm keeps rescheduling either way, so a pause ends on its own.
                 when (hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())) {
                     Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee")
