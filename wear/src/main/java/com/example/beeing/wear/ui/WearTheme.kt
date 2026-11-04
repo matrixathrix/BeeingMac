@@ -33,6 +33,13 @@ fun scoreColor(score: Int): Color = when {
     else -> Color(0xFFB71C1C)
 }
 
+/** A score as text on the dark field (the phone's ScoreText*Dark): the fill red is too dark to read. */
+fun scoreTextColor(score: Int): Color = when {
+    score >= 8 -> Color(0xFF81C784)
+    score >= 5 -> Color(0xFFFFCA28)
+    else -> Color(0xFFFF8A80)
+}
+
 /** Readable ink on a score fill (white on the dark red, near-black on amber and green). */
 fun onScoreColor(score: Int): Color = if (score <= 4) Color.White else Color(0xFF1A0A1E)
 

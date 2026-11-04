@@ -25,6 +25,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".RatingActivity"
+            android:exported="false"
+            android:taskAffinity="" />
+
         <!-- The phone's state (Data Layer). -->
         <service
             android:name=".WatchSync"
