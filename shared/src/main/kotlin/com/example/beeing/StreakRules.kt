@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import kotlinx.serialization.Serializable
 import java.util.Calendar
 
 // ============================================================
@@ -35,6 +36,7 @@ val RatingEntry.isReclaimed: Boolean get() = RECLAIM_TAG in tags
 fun RatingEntry.visibleTags(): List<String> = tags.filter { it != RECLAIM_TAG }
 
 /** One flip of the mode toggle. `enteredBeginner == false` means "back to Master". */
+@Serializable
 data class ModeEvent(val timestamp: Long, val enteredBeginner: Boolean)
 
 /** The mode in effect right now — i.e. the latest event. No events = Master. */
@@ -145,6 +147,7 @@ internal class Replay(
  * the walk from it with [computeStreakStateFrom]: same rules, a few days instead of a
  * whole history, and exactly the numbers a full replay would give.
  */
+@Serializable
 data class ReplayCarry(
     val lastDayStartMs: Long,
     val streak: Int,

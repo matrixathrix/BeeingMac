@@ -1,8 +1,12 @@
 package com.example.beeing
 
+import kotlinx.serialization.Serializable
+
 /** Which device saved a rating. The phone never celebrates a watch-saved hour again. */
+@Serializable
 enum class Origin { PHONE, WATCH }
 
+@Serializable
 data class RatingEntry(
     val id: Long,
     val score: Int,

@@ -1,5 +1,6 @@
 package com.example.beeing
 
+import kotlinx.serialization.Serializable
 import java.util.Calendar
 
 // ============================================================
@@ -11,10 +12,12 @@ import java.util.Calendar
 // silently then). Everything here is a pure function of the prefs and the clock,
 // so the receiver, the settings rows and the tests cannot disagree.
 
+@Serializable
 enum class PauseMode { QUIET, OFF }
 
 enum class Delivery { SOUND, SILENT, NONE }
 
+@Serializable
 data class NotificationPrefs(
     val silentOn: Boolean,
     val silentStartMin: Int,   // minutes after midnight

@@ -2,6 +2,7 @@
 // notification rules and the rating model. No Android, so it tests on the JVM.
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 java {
@@ -16,5 +17,7 @@ kotlin {
 }
 
 dependencies {
+    // api: the @Serializable model types are part of this module's public surface
+    api(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
