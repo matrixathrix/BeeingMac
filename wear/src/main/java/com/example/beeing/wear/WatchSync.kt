@@ -1,12 +1,9 @@
 package com.example.beeing.wear
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import com.example.beeing.Origin
-import com.example.beeing.PATH_CHARGING
 import com.example.beeing.PATH_RATING_PREFIX
 import com.example.beeing.PATH_STATE
 import com.example.beeing.RatingEntry
@@ -30,6 +27,7 @@ fun saveFromWatch(ctx: Context, hourStartMs: Long, score: Int, tags: List<String
     )
     WatchStore.saveLocal(ctx, e)
     clearReminderIfDone(ctx)
+    reportDuty(ctx)
     try {
         Wearable.getDataClient(ctx).putDataItem(
             PutDataRequest.create(PATH_RATING_PREFIX + hourStartMs).setData(encodeRating(e)).setUrgent()
@@ -54,22 +52,12 @@ class WatchSync : WearableListenerService() {
                 // No host = every node's copy of that path.
                 data.deleteDataItems(Uri.Builder().scheme("wear").path(PATH_RATING_PREFIX + e.timestamp).build())
             }
+            // The first state is also "set up": arm the hourly reminder even if the app was never opened.
+            createWatchChannels(this)
+            scheduleWatchHour(this)
             clearReminderIfDone(this)
+            reportDuty(this)
             WatchSurfaces.refresh(this)
-        }
-    }
-}
-
-/** Tells the phone when the watch goes on or off its charger (an event, no sensor). */
-class ChargingReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val charging = intent.action == Intent.ACTION_POWER_CONNECTED
-        try {
-            Wearable.getDataClient(context).putDataItem(
-                PutDataRequest.create(PATH_CHARGING).setData(byteArrayOf(if (charging) 1 else 0)).setUrgent()
-            )
-        } catch (ex: Exception) {
-            Log.w("WatchSync", "charging flag skipped", ex)
         }
     }
 }

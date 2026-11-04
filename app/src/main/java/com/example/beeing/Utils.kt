@@ -148,14 +148,15 @@ class NotificationReceiver : android.content.BroadcastReceiver() {
 
                 // Hourly reminders obey silent hours and pause; the alarm keeps
                 // rescheduling either way, so a pause ends on its own. With Beeing on a
-                // watch that is reachable and off its charger, the watch buzzes and the
-                // phone's copy arrives silently (asking the Data Layer needs a thread).
+                // watch that is nearby and on duty, the watch buzzes and the phone's
+                // copy arrives silently (asking the Data Layer needs a thread).
                 val base = hourlyDelivery(loadNotificationPrefs(context), System.currentTimeMillis())
                 val pending = goAsync()
                 Thread {
                     try {
+                        refreshWatchInstalledNow(context) // a watch app installed since launch still counts
                         val delivery = if (base == Delivery.SOUND && watchInstalled(context))
-                            phoneDelivery(base, watchReachable(context), watchCharging(context)) else base
+                            phoneDelivery(base, watchReachable(context), watchOnDuty(context)) else base
                         when (delivery) {
                             Delivery.SOUND -> showCustomNotification(context, manager, targetTimestamp, ordinal, CHANNEL_HOURLY)
                             Delivery.SILENT -> showCustomNotification(context, manager, targetTimestamp, ordinal, "hourly_bee_silent")
@@ -380,26 +381,28 @@ fun saveTags(c: Context, tags: List<String>) {
 }
 
 // --- DATA PERSISTENCE ---
+// The watch merge (a binder thread) and the UI both read-modify-write ratings, reclaim
+// spends and tombstones; every such write holds this one lock, or one side's save is lost.
+internal val STORE_LOCK = Any()
+
 // Rows are encoded by encodeRatingRow/decodeRatingRow (:shared RatingRow.kt).
 fun saveRating(context: Context, entry: RatingEntry) {
     val prefs = context.getSharedPreferences("b", 0)
-    val existing = loadRatings(context).toMutableList()
-    existing.removeAll { it.id == entry.id }
-
     // Safety: Sanitize note to prevent CSV corruption
-    val safeNote = entry.note.replace(",", " ").replace("\n", " ")
-    val safeEntry = entry.copy(note = safeNote)
-
-    existing.add(safeEntry)
-
-    prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
-    // A save for an hour supersedes its deletion (this is also how Undo restores one).
-    clearTombstone(context, entry.timestamp)
+    val safeEntry = entry.copy(note = entry.note.replace(",", " ").replace("\n", " "))
+    synchronized(STORE_LOCK) {
+        // One row per hour: a save replaces the same entry and any other row for its hour
+        // (a watch rating may have merged while this screen still showed the hour waiting).
+        val next = upsertRating(loadRatings(context), safeEntry)
+        prefs.edit { putString("ratings", next.joinToString("|") { encodeRatingRow(it) }) }
+        // A save for an hour supersedes its deletion (this is also how Undo restores one).
+        clearTombstone(context, entry.timestamp)
+    }
     publishState(context)
 }
 
 /** Replaces every stored rating at once (the watch merge writes through this). */
-fun saveAllRatings(context: Context, ratings: List<RatingEntry>) {
+fun saveAllRatings(context: Context, ratings: List<RatingEntry>) = synchronized(STORE_LOCK) {
     context.getSharedPreferences("b", 0).edit { putString("ratings", ratings.joinToString("|") { encodeRatingRow(it) }) }
 }
 
@@ -413,10 +416,11 @@ fun loadRatings(context: Context): List<RatingEntry> {
 
 fun deleteRating(context: Context, id: Long) {
     val prefs = context.getSharedPreferences("b", 0)
-    val all = loadRatings(context)
-    val existing = all.filter { it.id != id }
-    prefs.edit { putString("ratings", existing.joinToString("|") { encodeRatingRow(it) }) }
-    all.firstOrNull { it.id == id }?.let { recordTombstone(context, it.timestamp, System.currentTimeMillis()) }
+    synchronized(STORE_LOCK) {
+        val all = loadRatings(context)
+        prefs.edit { putString("ratings", all.filter { it.id != id }.joinToString("|") { encodeRatingRow(it) }) }
+        all.firstOrNull { it.id == id }?.let { recordTombstone(context, it.timestamp, System.currentTimeMillis()) }
+    }
     publishState(context)
 }
 

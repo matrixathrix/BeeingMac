@@ -50,12 +50,12 @@ fun otherDelivery(p: NotificationPrefs, nowMs: Long): Delivery =
     if (inSilentHours(p, nowMs)) Delivery.SILENT else Delivery.SOUND
 
 /**
- * The phone's hourly reminder when Beeing is on a watch: while the watch is reachable
- * and off its charger it does the buzzing, so the phone's copy arrives silently. On
- * the charger it isn't being worn, so the phone rings.
+ * The phone's hourly reminder when Beeing is on a watch. Only while the watch is nearby
+ * and says it is on duty (set up, its notifications allowed, off its charger) does it do
+ * the buzzing, so the phone's copy arrives silently; anything else and the phone rings.
  */
-fun phoneDelivery(base: Delivery, watchReachable: Boolean, watchCharging: Boolean): Delivery =
-    if (base == Delivery.SOUND && watchReachable && !watchCharging) Delivery.SILENT else base
+fun phoneDelivery(base: Delivery, watchReachable: Boolean, watchOnDuty: Boolean): Delivery =
+    if (base == Delivery.SOUND && watchReachable && watchOnDuty) Delivery.SILENT else base
 
 /** The longest a pause may run: 48 hours from now, floored to the local hour. */
 fun maxPauseUntil(nowMs: Long): Long = Calendar.getInstance().apply {

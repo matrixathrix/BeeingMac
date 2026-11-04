@@ -100,6 +100,12 @@
                 android:value="0" />
         </service>
 
+        <!-- Runs once when the watch goes on its charger (see Duty.kt). -->
+        <service
+            android:name=".ChargingJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- The phone's state (Data Layer). -->
         <service
             android:name=".WatchSync"
@@ -120,13 +126,5 @@
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".ChargingReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
-                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

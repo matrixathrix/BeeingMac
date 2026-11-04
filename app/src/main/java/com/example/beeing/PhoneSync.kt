@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val PROCESSED_KEY = "watch_processed_ids"
 private const val INSTALLED_KEY = "watch_installed"
-private const val CHARGING_KEY = "watch_charging"
+private const val ON_DUTY_KEY = "watch_on_duty"
 private const val PROCESSED_MAX = 200
 
 private val publisher = Executors.newSingleThreadExecutor()
@@ -92,17 +92,35 @@ fun refreshWatchInstalled(context: Context) {
     }
 }
 
-/** Blocking (call off the main thread): is the watch app connected right now? Errors count as no. */
+/**
+ * Blocking (call off the main thread): is the watch app connected and NEARBY right now?
+ * Reachable also covers a watch at home over Wi-Fi or the cloud, which would silence the
+ * phone for a watch nobody is wearing. Errors count as no.
+ */
 fun watchReachable(context: Context): Boolean = try {
     Tasks.await(
         Wearable.getCapabilityClient(context).getCapability(CAPABILITY_WATCH, CapabilityClient.FILTER_REACHABLE),
         3, TimeUnit.SECONDS
-    ).nodes.isNotEmpty()
+    ).nodes.any { it.isNearby }
 } catch (e: Exception) {
     false
 }
 
-fun watchCharging(context: Context): Boolean = context.getSharedPreferences("b", 0).getBoolean(CHARGING_KEY, false)
+/** Blocking (off the main thread): re-check whether a watch has the app, so a fresh install counts. */
+fun refreshWatchInstalledNow(context: Context) {
+    try {
+        val nodes = Tasks.await(
+            Wearable.getCapabilityClient(context).getCapability(CAPABILITY_WATCH, CapabilityClient.FILTER_ALL),
+            3, TimeUnit.SECONDS
+        ).nodes
+        context.getSharedPreferences("b", 0).edit().putBoolean(INSTALLED_KEY, nodes.isNotEmpty()).apply()
+    } catch (e: Exception) {
+        Log.w("PhoneSync", "capability check skipped", e)
+    }
+}
 
-fun setWatchCharging(context: Context, charging: Boolean) =
-    context.getSharedPreferences("b", 0).edit().putBoolean(CHARGING_KEY, charging).apply()
+/** The watch's last word on whether it will buzz (set up, notifications on, off its charger). Unknown = no. */
+fun watchOnDuty(context: Context): Boolean = context.getSharedPreferences("b", 0).getBoolean(ON_DUTY_KEY, false)
+
+fun setWatchOnDuty(context: Context, onDuty: Boolean) =
+    context.getSharedPreferences("b", 0).edit().putBoolean(ON_DUTY_KEY, onDuty).apply()

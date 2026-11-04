@@ -6,13 +6,13 @@ import kotlinx.serialization.json.Json
 
 // The phone <-> watch sync over the Wear Data Layer (DataClient only: it holds items
 // until the other side is reachable, for days if need be).
-//  - Watch -> phone: one item per save at PATH_RATING_PREFIX + hourStartMs, and the
-//    charging flag at PATH_CHARGING.
+//  - Watch -> phone: one item per save at PATH_RATING_PREFIX + hourStartMs, and
+//    whether it will buzz for reminders at PATH_DUTY (1 byte: 1 = on duty).
 //  - Phone -> watch: one PhoneState at PATH_STATE, replaced on every change.
 
 const val PATH_STATE = "/state"
 const val PATH_RATING_PREFIX = "/rating/"
-const val PATH_CHARGING = "/charging"
+const val PATH_DUTY = "/duty"
 const val CAPABILITY_WATCH = "beeing_watch"
 
 /** What the phone tells the watch. */

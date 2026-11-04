@@ -32,6 +32,9 @@ import com.example.beeing.wear.ui.RingClosedScreen
 import com.example.beeing.wear.ui.ScoreScreen
 import com.example.beeing.wear.ui.TagsScreen
 import com.example.beeing.wear.ui.WearTheme
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 /** Score, then tags, then save — for the hour in [EXTRA_HOUR], or the one about to expire. */
@@ -86,11 +89,16 @@ private fun RatingApp(prefer: Long?, onDone: () -> Unit) {
     var moment by remember { mutableStateOf<Moment?>(null) }
     var afterMoment by remember { mutableStateOf<RatingFlow?>(null) }
 
-    // Only while this screen exists: catch the hour turning under it.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(msToNextMinute(System.currentTimeMillis()))
-            flow = flow?.onClock(System.currentTimeMillis(), ratedHours(ctx)) ?: run { onDone(); null }
+    // Only while the screen is actually showing, and never under a celebration or the
+    // "Saved" flash (the saved hour is no longer waiting, so a tick would close them).
+    val lifecycle = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                delay(msToNextMinute(System.currentTimeMillis()))
+                if (moment != null || saved) continue
+                flow = flow?.onClock(System.currentTimeMillis(), ratedHours(ctx)) ?: run { onDone(); null }
+            }
         }
     }
 

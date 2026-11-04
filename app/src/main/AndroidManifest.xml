@@ -64,7 +64,7 @@
                 android:resource="@xml/lock_accessibility_service_config" />
         </service>
 
-        <!-- Ratings and the charging flag from Beeing on the watch (Data Layer). -->
+        <!-- Ratings and the on-duty flag from Beeing on the watch (Data Layer). -->
         <service
             android:name=".WatchListenerService"
             android:exported="true">
@@ -74,7 +74,7 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:path="/charging" />
+                <data android:scheme="wear" android:host="*" android:path="/duty" />
             </intent-filter>
         </service>
 

@@ -6,7 +6,7 @@ import com.google.android.gms.wearable.WearableListenerService
 
 /**
  * Takes in what the watch sends: each rating it saved (merged by [applyIncoming]) and
- * its charging flag. Woken by the Data Layer only when an item changes.
+ * whether it is on duty for reminders. Woken by the Data Layer only when an item changes.
  */
 class WatchListenerService : WearableListenerService() {
 
@@ -20,7 +20,7 @@ class WatchListenerService : WearableListenerService() {
             when {
                 path.startsWith(PATH_RATING_PREFIX) -> {
                     val incoming = decodeRating(data) ?: continue
-                    synchronized(MERGE_LOCK) {
+                    synchronized(STORE_LOCK) {
                         val applied = applyIncoming(
                             incoming, loadRatings(this), loadTombstones(this), loadReclaimSpends(this)
                         )
@@ -32,16 +32,12 @@ class WatchListenerService : WearableListenerService() {
                     }
                     merged = true
                 }
-                path == PATH_CHARGING -> setWatchCharging(this, data.firstOrNull() == 1.toByte())
+                path == PATH_DUTY -> setWatchOnDuty(this, data.firstOrNull() == 1.toByte())
             }
         }
         if (merged) {
             withdrawStaleAlerts(this)
             publishState(this)
         }
-    }
-
-    private companion object {
-        val MERGE_LOCK = Any()
     }
 }

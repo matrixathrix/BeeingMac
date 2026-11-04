@@ -23,10 +23,11 @@ private fun writeTombstones(ctx: Context, list: List<Tombstone>, nowMs: Long) {
     }
 }
 
-fun recordTombstone(ctx: Context, hourStartMs: Long, nowMs: Long) =
+fun recordTombstone(ctx: Context, hourStartMs: Long, nowMs: Long) = synchronized(STORE_LOCK) {
     writeTombstones(ctx, loadTombstones(ctx).filter { it.hourStartMs != hourStartMs } + Tombstone(hourStartMs, nowMs), nowMs)
+}
 
-fun clearTombstone(ctx: Context, hourStartMs: Long) {
+fun clearTombstone(ctx: Context, hourStartMs: Long) = synchronized(STORE_LOCK) {
     val cur = loadTombstones(ctx)
     if (cur.any { it.hourStartMs == hourStartMs }) {
         writeTombstones(ctx, cur.filter { it.hourStartMs != hourStartMs }, System.currentTimeMillis())

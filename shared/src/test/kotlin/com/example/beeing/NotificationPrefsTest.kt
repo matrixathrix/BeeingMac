@@ -117,16 +117,17 @@ class NotificationPrefsTest {
     }
 
     // --- who buzzes when the watch is around ------------------------------------
+    // "On duty" = the watch says it will buzz: set up, notifications allowed, off its charger.
 
-    @Test fun connected_unplugged_watch_silences_phone() =
-        assertEquals(Delivery.SILENT, phoneDelivery(Delivery.SOUND, watchReachable = true, watchCharging = false))
+    @Test fun reachable_watch_on_duty_silences_phone() =
+        assertEquals(Delivery.SILENT, phoneDelivery(Delivery.SOUND, watchReachable = true, watchOnDuty = true))
 
-    @Test fun charging_watch_lets_phone_ring() =
-        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = true, watchCharging = true))
+    @Test fun watch_off_duty_lets_phone_ring() =
+        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = true, watchOnDuty = false))
 
-    @Test fun no_watch_rings() =
-        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = false, watchCharging = false))
+    @Test fun unreachable_watch_lets_phone_ring() =
+        assertEquals(Delivery.SOUND, phoneDelivery(Delivery.SOUND, watchReachable = false, watchOnDuty = true))
 
     @Test fun paused_none_stays_none() =
-        assertEquals(Delivery.NONE, phoneDelivery(Delivery.NONE, watchReachable = true, watchCharging = false))
+        assertEquals(Delivery.NONE, phoneDelivery(Delivery.NONE, watchReachable = true, watchOnDuty = true))
 }

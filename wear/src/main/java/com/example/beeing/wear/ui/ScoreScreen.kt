@@ -52,6 +52,7 @@ fun ScoreScreen(
     val haptics = LocalHapticFeedback.current
     val focus = remember { FocusRequester() }
     val crown = remember { FloatArray(1) }
+    val current = remember { IntArray(1) }.also { it[0] = score ?: 0 }
     fun set(s: Int) {
         if (s != score) { onScore(s); haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     }
@@ -60,9 +61,11 @@ fun ScoreScreen(
     Box(
         Modifier.fillMaxSize().background(FieldBottom)
             .onRotaryScrollEvent { e ->
-                crown[0] += e.verticalScrollPixels
-                while (crown[0] >= CROWN_STEP_PX) { crown[0] -= CROWN_STEP_PX; set(((score ?: 4) + 1).coerceAtMost(10)) }
-                while (crown[0] <= -CROWN_STEP_PX) { crown[0] += CROWN_STEP_PX; set(((score ?: 6) - 1).coerceAtLeast(1)) }
+                // One event can carry several detents: step from a running value, not the
+                // score captured at composition, or a fast turn moves a single step.
+                val r = applyCrown(current[0].takeIf { it > 0 }, crown[0] + e.verticalScrollPixels, CROWN_STEP_PX)
+                crown[0] = r.remainder
+                r.score?.let { current[0] = it; set(it) }
                 true
             }
             .focusRequester(focus).focusable(),
@@ -124,4 +127,15 @@ private fun BezelDots(score: Int?, onTap: (Int) -> Unit) {
             }
         }
     }
+}
+
+/** Where a crown turn of [accumulatedPx] leaves the score: ±1 per [stepPx], 1..10, first detent lands on 5. */
+data class Crown(val score: Int?, val remainder: Float)
+
+fun applyCrown(score: Int?, accumulatedPx: Float, stepPx: Float): Crown {
+    var s = score
+    var acc = accumulatedPx
+    while (acc >= stepPx) { acc -= stepPx; s = ((s ?: 4) + 1).coerceAtMost(10) }
+    while (acc <= -stepPx) { acc += stepPx; s = ((s ?: 6) - 1).coerceAtLeast(1) }
+    return Crown(s, acc)
 }

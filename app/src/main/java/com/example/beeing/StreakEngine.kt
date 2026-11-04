@@ -82,10 +82,11 @@ private fun loadMillisList(context: android.content.Context, key: String): List<
 
 fun loadReclaimSpends(context: android.content.Context) = loadMillisList(context, "reclaim_spends")
 
-fun saveReclaimSpends(context: android.content.Context, spends: List<Long>) =
+fun saveReclaimSpends(context: android.content.Context, spends: List<Long>) = synchronized(STORE_LOCK) {
     context.getSharedPreferences("b", 0).edit().putString("reclaim_spends", spends.joinToString(",")).apply()
+}
 
-fun recordReclaimSpend(context: android.content.Context) {
+fun recordReclaimSpend(context: android.content.Context) = synchronized(STORE_LOCK) {
     val prefs = context.getSharedPreferences("b", 0)
     val cur = prefs.getString("reclaim_spends", "") ?: ""
     val next = if (cur.isBlank()) "${System.currentTimeMillis()}" else "$cur,${System.currentTimeMillis()}"

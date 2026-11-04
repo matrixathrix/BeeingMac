@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         createWatchChannels(this)
         scheduleWatchHour(this)
+        reportDuty(this)
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)

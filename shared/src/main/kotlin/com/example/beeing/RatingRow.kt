@@ -4,6 +4,10 @@ package com.example.beeing
 // (modifiedAt, origin P/W) were appended for the watch; rows saved before them
 // have six fields and read as phone saves whose last change was their creation.
 
+/** [e] saved into [list]: replaces the same entry (an edit) and any other row for its hour. */
+fun upsertRating(list: List<RatingEntry>, e: RatingEntry): List<RatingEntry> =
+    list.filter { it.id != e.id && it.timestamp != e.timestamp } + e
+
 fun encodeRatingRow(e: RatingEntry): String =
     "${e.id},${e.score},${e.timestamp},${e.hourLabel},${e.note},${e.tags.joinToString(";")}," +
         "${e.modifiedAt},${if (e.origin == Origin.WATCH) "W" else "P"}"

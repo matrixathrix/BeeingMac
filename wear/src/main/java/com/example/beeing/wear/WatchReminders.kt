@@ -110,6 +110,7 @@ class HourReceiver : BroadcastReceiver() {
         }
         createWatchChannels(context)
         scheduleWatchHour(context)
+        reportDuty(context)
         updateReminder(context)
         WatchSurfaces.refresh(context)
     }
