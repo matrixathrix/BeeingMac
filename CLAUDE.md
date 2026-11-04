@@ -192,6 +192,23 @@ watch both need: `StreakRules.kt`, `SuperDay.kt`, `Model.kt` (`RatingEntry`,
 | `RatingFrameGaps.kt` | Pure: `shareRatingGaps` and its base/min gaps, the rule `RatingFrame` (Now tab) uses to spread spare height over its four gaps |
 | `TrendsSelection.kt` | Pure: `previousSpan` (what a selected Trends bar's ▲ ▼ compare against) and `spanLabel` (the scope chip's text) |
 
+**`:wear`** (`wear/src/main/java/com/example/beeing/wear/`, Wear OS app, same
+`applicationId` and signing key as `:app` — the Data Layer only pairs matching apps):
+
+| File | What lives there |
+|---|---|
+| `WatchStore.kt` | Prefs `"w"`: the phone's last `PhoneState`, local saves not yet processed by the phone (kept until listed in `mergedWatchIds`, 14-day bound), the chime-tip flag |
+| `WatchSync.kt` | `saveFromWatch` (local + DataItem `/rating/<hourStart>`), `WatchSync` (takes in `/state`, prunes processed saves and their items), `ChargingReceiver` (`/charging`) |
+| `WatchReminders.kt` | Own hourly alarm (exact when allowed), channels `watch_hourly_v1` (Beeing tone, double-tap vibration) / `_silent_v1`, one notification id, `hourlyDelivery` over the phone's prefs, `clearReminderIfDone` (never re-posts) |
+| `RatingFlow.kt` / `RatingActivity.kt` | Pure flow (`startFlow`, `onClock`, `afterSave`, `switchHour`; `RatingFlowTest`) and its host: Score → Tags → save, ring-closed / Super day moment via `ringClosed` / `streakMoment` over `watchStreakState` |
+| `ui/` | `WearTheme` (dark field, Instrument Sans), `ScoreScreen` (crown, bezel dots), `TagsScreen` (top 8 two per row, More, Save), `Moments.kt` (ring-closed, caught up, chime tip, `StreakLine`), `Pieces.kt` (pills) |
+| `BeeingTileService.kt` / `Complications.kt` | Tile and three complications (ring, waiting, streak + savers); freshness / update period 0, pushed by `WatchSurfaces.refresh` |
+| `WatchSurfaces.kt` | The one redraw hook (save, sync, hour, boot) and `view()` |
+
+Shared watch pieces: `WatchRules.kt` (`waitingHours`, `topTags`, `WatchView`, `watchView`,
+`watchStreakState`), `Wire.kt` (`PhoneState`, paths, JSON codecs), `ApplyIncoming.kt`,
+`HourLabels.kt` (`formatHour`, `hourRangeLabel`, `hourLabelFor`, `DIAL_WORDS`).
+
 ## Data model & persistence gotchas
 
 - `RatingEntry(id, score, timestamp, hourLabel, note, tags, modifiedAt, origin)` — **timestamp is
@@ -315,6 +332,18 @@ watch both need: `StreakRules.kt`, `SuperDay.kt`, `Model.kt` (`RatingEntry`,
   once (`alertsToPost`; ids in `"alert_notified_ids"`, baseline
   `"alert_baseline_ms"`, reset on import). Tap → `MainActivity` with extra
   `OPEN_TAB = 0` → Streak tab.
+- **Watch sync** (`PhoneSync.kt` / `WatchListenerService.kt` on the phone): DataClient
+  only. The phone's `publishState` (coalesced, background thread) runs from every
+  low-level writer — `saveRating`, `deleteRating`, `saveTags`, `recordModeEvent`,
+  `saveNotificationPrefs` — plus app start and the hourly alarm, and sends one
+  `PhoneState`: the replay carry at the end of the day before yesterday, yesterday +
+  today's ratings, tags + `topTags`, mode events, quiet prefs, and the ids of watch
+  ratings it has processed (`"watch_processed_ids"`). Incoming `/rating/*` items go
+  through `applyIncoming` (idempotent); `/charging` sets `"watch_charging"`. The
+  watch resumes the replay from the carry (`computeStreakStateFrom`), so its numbers
+  are the phone's. **Who buzzes:** `phoneDelivery` makes the phone's reminder silent
+  while the watch app is reachable and not charging; the phone's reminder is always
+  `setLocalOnly` once `"watch_installed"`.
 - **Hour targeting:** `targetedHourOffset` (0 = latest completed hour,
   1 = the expiring grace hour). With both pending, default is 1 (expiring
   first) unless a notification deep-link chose otherwise — logic split
@@ -1449,3 +1478,13 @@ watch both need: `StreakRules.kt`, `SuperDay.kt`, `Model.kt` (`RatingEntry`,
   the watch saved. (7) Streak alerts run at **02:01**, and an alert a later rating
   disproved is cancelled. (8) Sounding channels moved to the Beeing tone under v2 ids.
   Not device-verified (no phone connected; `test assembleDebug` only).
+- 2026-11-05 (**Beeing for Wear OS**, plan `docs/superpowers/plans/2026-11-05-wear-app.md`):
+  the `:wear` app (see its file map) and the sync seam above. The watch only rates
+  and tags (no history, notes, editing or settings), works offline for days, posts its
+  own reminder, celebrates the ring closing and the 12th hour, and offers a Tile and
+  three complications. Decisions worth keeping: the watch keeps a save until the phone
+  lists it as processed (pruning by age would starve the resumed replay); the phone
+  lists dropped watch ratings as processed too, so they stop overriding its copy; the
+  watch never re-posts its reminder after a save or sync (it only clears it). Device
+  checks for the owner: `docs/superpowers/plans/2026-11-05-wear-device-checklist.md`.
+  Not device-verified (no phone or watch connected; `test assembleDebug` only).
