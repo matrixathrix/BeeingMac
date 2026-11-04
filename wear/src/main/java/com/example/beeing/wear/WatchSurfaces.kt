@@ -13,6 +13,7 @@ import com.example.beeing.watchView
 object WatchSurfaces {
     fun refresh(ctx: Context) {
         TileService.getUpdater(ctx).requestUpdate(BeeingTileService::class.java)
+        refreshComplications(ctx)
     }
 
     fun view(ctx: Context, nowMs: Long = System.currentTimeMillis()): WatchView =
